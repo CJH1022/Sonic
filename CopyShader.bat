@@ -1,0 +1,1 @@
+xcopy /s /y ".\GameClient\*.fx" ".\Game\Content\Shader\"

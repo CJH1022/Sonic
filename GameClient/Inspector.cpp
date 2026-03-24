@@ -1,0 +1,82 @@
+#include "pch.h"
+#include "Inspector.h"
+
+#include "LevelMgr.h"
+#include "GameObject.h"
+
+
+
+Inspector::Inspector()
+	: EditorUI("Inspector")
+{
+	CreateChildUI();
+
+	SetTargetObject(nullptr);
+}
+
+Inspector::~Inspector()
+{
+}
+
+void Inspector::SetTargetObject(Ptr<GameObject> _Object)
+{
+	// 입력된 게임오브젝트의 정보를 보여줄 ComponentUI 들을 활성화 시킨다.
+	m_TargetObject = _Object;
+
+	for (UINT i = 0; i < (UINT)COMPONENT_TYPE::END; ++i)
+	{
+		if (nullptr == m_arrComUI[i])
+			continue;
+
+		m_arrComUI[i]->SetTarget(m_TargetObject);
+	}
+		
+	// AssetUI 를 비활성화한다.
+	m_TargetAsset = nullptr;
+	for (UINT i = 0; i < (UINT)ASSET_TYPE::END; ++i)
+	{
+		if(nullptr != m_arrAssetUI[i])
+			m_arrAssetUI[i]->SetActive(false);
+	}
+}
+
+void Inspector::SetTargetAsset(Ptr<Asset> _Asset)
+{
+	// ComponentUI 들을 비활성화 시킨다.
+	SetTargetObject(nullptr);
+
+
+	// 입력된 에셋 담당 UI 를 활성화시킨다.
+	m_TargetAsset = _Asset;
+	if (nullptr == m_TargetAsset)
+	{
+		for (UINT i = 0; i < (UINT)ASSET_TYPE::END; ++i)
+		{
+			m_arrAssetUI[i]->SetActive(false);
+		}
+	}
+
+	else
+	{
+		ASSET_TYPE Type = m_TargetAsset->GetType();
+		m_arrAssetUI[(UINT)Type]->SetActive(true);
+		m_arrAssetUI[(UINT)Type]->SetTargetAsset(m_TargetAsset);
+	}
+}
+
+void Inspector::Tick_UI()
+{
+	if (nullptr == m_TargetObject)
+		return;
+
+	wstring Name = m_TargetObject->GetName();
+	string strName = string(Name.begin(), Name.end());
+
+	if (strName.empty())
+		strName = "No Name";
+
+	ImGui::Button(strName.c_str());
+
+	ImGui::Separator();
+}
+

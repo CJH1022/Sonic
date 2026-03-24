@@ -1,0 +1,870 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="framework.h">
+      <Filter>Default</Filter>
+    </ClInclude>
+    <ClInclude Include="GameClient.h">
+      <Filter>Default</Filter>
+    </ClInclude>
+    <ClInclude Include="Resource.h">
+      <Filter>Default</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>Default</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine.h">
+      <Filter>GameEngine\01. Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="define.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="struct.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="func.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="enum.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="global.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Device.h">
+      <Filter>GameEngine\02. Device</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
+      <Filter>Default</Filter>
+    </ClInclude>
+    <ClInclude Include="single.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleMath.h">
+      <Filter>GameEngine\Module</Filter>
+    </ClInclude>
+    <ClInclude Include="PathMgr.h">
+      <Filter>GameEngine\03. Manager\01. PathMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="TimeMgr.h">
+      <Filter>GameEngine\03. Manager\02. TimeMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="KeyMgr.h">
+      <Filter>GameEngine\03. Manager\03. KeyMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity.h">
+      <Filter>GameEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="Asset.h">
+      <Filter>GameEngine\04. Asset</Filter>
+    </ClInclude>
+    <ClInclude Include="AMesh.h">
+      <Filter>GameEngine\04. Asset\01. Mesh</Filter>
+    </ClInclude>
+    <ClInclude Include="ATexture.h">
+      <Filter>GameEngine\04. Asset\02. Texture</Filter>
+    </ClInclude>
+    <ClInclude Include="AGraphicShader.h">
+      <Filter>GameEngine\04. Asset\03. GraphicShader</Filter>
+    </ClInclude>
+    <ClInclude Include="Ptr.h">
+      <Filter>GameEngine\Module</Filter>
+    </ClInclude>
+    <ClInclude Include="GameObject.h">
+      <Filter>GameEngine\05. GameObject</Filter>
+    </ClInclude>
+    <ClInclude Include="Component.h">
+      <Filter>GameEngine\06. Component</Filter>
+    </ClInclude>
+    <ClInclude Include="CTransform.h">
+      <Filter>GameEngine\06. Component\01. Transform</Filter>
+    </ClInclude>
+    <ClInclude Include="CScript.h">
+      <Filter>GameEngine\06. Component\Script</Filter>
+    </ClInclude>
+    <ClInclude Include="AssetMgr.h">
+      <Filter>GameEngine\03. Manager\04. AssetMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="ConstBuffer.h">
+      <Filter>GameEngine\02. Device\ConstBuffer</Filter>
+    </ClInclude>
+    <ClInclude Include="LevelMgr.h">
+      <Filter>GameEngine\03. Manager\05. LevelMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="ALevel.h">
+      <Filter>GameEngine\04. Asset\04. Level</Filter>
+    </ClInclude>
+    <ClInclude Include="Layer.h">
+      <Filter>GameEngine\04. Asset\04. Level\Layer</Filter>
+    </ClInclude>
+    <ClInclude Include="components.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="assets.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="CCamera.h">
+      <Filter>GameEngine\06. Component\02. Camera</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderMgr.h">
+      <Filter>GameEngine\03. Manager\06. RenderMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="AMaterial.h">
+      <Filter>GameEngine\04. Asset\05. Material</Filter>
+    </ClInclude>
+    <ClInclude Include="CRenderComponent.h">
+      <Filter>GameEngine\06. Component\RenderComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="CMeshRender.h">
+      <Filter>GameEngine\06. Component\RenderComponent\01. MeshRender</Filter>
+    </ClInclude>
+    <ClInclude Include="CBillboardRender.h">
+      <Filter>GameEngine\06. Component\RenderComponent\02. BillboardRender</Filter>
+    </ClInclude>
+    <ClInclude Include="TaskMgr.h">
+      <Filter>GameEngine\03. Manager\07. TaskMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="CCollider2D.h">
+      <Filter>GameEngine\06. Component\03. Collider2D</Filter>
+    </ClInclude>
+    <ClInclude Include="CSpriteRender.h">
+      <Filter>GameEngine\06. Component\RenderComponent\03. SpriteRender</Filter>
+    </ClInclude>
+    <ClInclude Include="CollisionMgr.h">
+      <Filter>GameEngine\03. Manager\08. CollisionMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="ASprite.h">
+      <Filter>GameEngine\04. Asset\06. Sprite</Filter>
+    </ClInclude>
+    <ClInclude Include="CFlipbookRender.h">
+      <Filter>GameEngine\06. Component\RenderComponent\04. FlipbookRender</Filter>
+    </ClInclude>
+    <ClInclude Include="AFlipbook.h">
+      <Filter>GameEngine\04. Asset\07. Flipbook</Filter>
+    </ClInclude>
+    <ClInclude Include="ATileMap.h">
+      <Filter>GameEngine\04. Asset\08. TileMap</Filter>
+    </ClInclude>
+    <ClInclude Include="CTileRender.h">
+      <Filter>GameEngine\06. Component\RenderComponent\05. TileRender</Filter>
+    </ClInclude>
+    <ClInclude Include="StructuredBuffer.h">
+      <Filter>GameEngine\02. Device\StructuredBuffer</Filter>
+    </ClInclude>
+    <ClInclude Include="CLight2D.h">
+      <Filter>GameEngine\06. Component\04. Light2D</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imconfig.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imgui.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imgui_impl_dx11.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imgui_impl_win32.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imgui_internal.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imstb_rectpack.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imstb_textedit.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGui\imstb_truetype.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorMgr.h">
+      <Filter>GameEngine\03. Manager\09. EditorMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="EditorUI.h">
+      <Filter>GameEngine\07. EditorUI</Filter>
+    </ClInclude>
+    <ClInclude Include="Inspector.h">
+      <Filter>GameEngine\07. EditorUI\01. Inspector</Filter>
+    </ClInclude>
+    <ClInclude Include="Outliner.h">
+      <Filter>GameEngine\07. EditorUI\04. Outliner</Filter>
+    </ClInclude>
+    <ClInclude Include="Menu.h">
+      <Filter>GameEngine\07. EditorUI\06. Menu</Filter>
+    </ClInclude>
+    <ClInclude Include="ComponentUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI</Filter>
+    </ClInclude>
+    <ClInclude Include="TransformUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\01. TransformUI</Filter>
+    </ClInclude>
+    <ClInclude Include="Collider2DUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\03. ColliderUI</Filter>
+    </ClInclude>
+    <ClInclude Include="CameraUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\02. Camera</Filter>
+    </ClInclude>
+    <ClInclude Include="Light2DUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\04. Light2D</Filter>
+    </ClInclude>
+    <ClInclude Include="FlipbookRenderUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\03. FlipbookRender</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshRenderUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\01. MeshRenderUI</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteRenderUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\02. SpriteRenderUI</Filter>
+    </ClInclude>
+    <ClInclude Include="TileRenderUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\04. TileRender</Filter>
+    </ClInclude>
+    <ClInclude Include="ListUI.h">
+      <Filter>GameEngine\07. EditorUI\07. ListUI</Filter>
+    </ClInclude>
+    <ClInclude Include="ContentUI.h">
+      <Filter>GameEngine\07. EditorUI\05. Content</Filter>
+    </ClInclude>
+    <ClInclude Include="TreeUI.h">
+      <Filter>GameEngine\07. EditorUI\08. TreeUI</Filter>
+    </ClInclude>
+    <ClInclude Include="extern.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="AssetUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI</Filter>
+    </ClInclude>
+    <ClInclude Include="FlipbookUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\9. FlipbookUI</Filter>
+    </ClInclude>
+    <ClInclude Include="GraphicShaderUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\5. GraphicShaderUI</Filter>
+    </ClInclude>
+    <ClInclude Include="MaterialUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\2. MaterialUI</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\1. MeshUI</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\8. SpriteUI</Filter>
+    </ClInclude>
+    <ClInclude Include="TextureUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\3. TextureUI</Filter>
+    </ClInclude>
+    <ClInclude Include="TileMapUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\10. TileMapUI</Filter>
+    </ClInclude>
+    <ClInclude Include="SoundUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\4. SoundUI</Filter>
+    </ClInclude>
+    <ClInclude Include="LevelUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\7. LevelUI</Filter>
+    </ClInclude>
+    <ClInclude Include="ComputeShaderUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\6. ComputeShaderUI</Filter>
+    </ClInclude>
+    <ClInclude Include="PrefabUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI</Filter>
+    </ClInclude>
+    <ClInclude Include="CEditorCamMoveScript.h">
+      <Filter>GameEngine\03. Manager\09. EditorMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CCamMoveScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CMissileScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CMonsterScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CPlayerScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\ScriptMgr.h">
+      <Filter>Source\ScriptMgr</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CSpringScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CTileScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="ImageEditor.h">
+      <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CBlockScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CBlockMovingScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CBlockPushingScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="GameClient.ico">
+      <Filter>Default</Filter>
+    </Image>
+    <Image Include="small.ico">
+      <Filter>Default</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Default">
+      <UniqueIdentifier>{40add8b9-0306-4e6b-8abd-9838f18aa16c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header">
+      <UniqueIdentifier>{a54028ab-951a-496f-9549-f0023d35e20e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine">
+      <UniqueIdentifier>{96fd932f-e62c-4d40-b9c8-b6a0ef42a3c0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\01. Engine">
+      <UniqueIdentifier>{45d7f260-bc48-4480-91d3-8879683ec1a9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\02. Device">
+      <UniqueIdentifier>{211fd450-0da8-4139-b40c-7079182ed2e8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\Module">
+      <UniqueIdentifier>{470a0a53-9e6f-494a-965f-990f0ef2cfc7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HLSL">
+      <UniqueIdentifier>{782c2332-f066-435a-bffa-caa39e267be9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager">
+      <UniqueIdentifier>{0713c34f-f3a8-4049-b8a9-16fe25b0dd3e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\01. PathMgr">
+      <UniqueIdentifier>{54446320-1cfc-4b59-bde0-0c9d622854a2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\02. TimeMgr">
+      <UniqueIdentifier>{43814f7a-8b8a-4232-a2d2-cc3c2ab99ebc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\03. KeyMgr">
+      <UniqueIdentifier>{3eb3634d-6dca-4573-91cb-b3c4da222abf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset">
+      <UniqueIdentifier>{617c5a60-e5fc-49af-91fb-85cfc2ca018a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\01. Mesh">
+      <UniqueIdentifier>{474480da-ed40-48b9-964c-42500773c335}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\02. Texture">
+      <UniqueIdentifier>{93c39129-b426-433b-9290-01dc57ed2cee}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\03. GraphicShader">
+      <UniqueIdentifier>{606d833a-5a1c-4f56-9e8e-6489054ceadf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\05. GameObject">
+      <UniqueIdentifier>{9127cd1f-d4dd-4bce-a65c-ba07d29c178d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component">
+      <UniqueIdentifier>{21d2918a-81b7-4a10-a504-55ffc6f7bb2c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\01. Transform">
+      <UniqueIdentifier>{2192a52d-9073-4074-8662-663a66cac884}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\02. Device\ConstBuffer">
+      <UniqueIdentifier>{3898aced-167e-44b8-8418-fb0a8b43c28e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\Script">
+      <UniqueIdentifier>{0ac73ff1-9766-40f3-b7a9-3884f9a6a867}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\04. AssetMgr">
+      <UniqueIdentifier>{9c561041-4c2a-4e3f-bd6c-1cc6709fa3ae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\05. LevelMgr">
+      <UniqueIdentifier>{a6305cd5-1d34-4ae7-8b04-0d0dcab1f41c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\04. Level">
+      <UniqueIdentifier>{68aa6f92-f35a-4cae-98cb-b306196f8e0b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\04. Level\Layer">
+      <UniqueIdentifier>{0b8e93c9-b820-4878-ac75-ec551dfd7a21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\06. RenderMgr">
+      <UniqueIdentifier>{5c511de6-7033-4eea-bfa6-ff155477bfd5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\05. Material">
+      <UniqueIdentifier>{aa06013e-d638-4833-a517-b3221eedf53c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HLSL\1. Header">
+      <UniqueIdentifier>{ec62321e-7f3d-42f2-ab46-96f366a8a014}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\RenderComponent">
+      <UniqueIdentifier>{2e2e6f44-ee6f-47ee-b1f0-31659778fcf0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\02. Camera">
+      <UniqueIdentifier>{4eeafc2b-44f0-400e-a833-1058db2f77c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\RenderComponent\01. MeshRender">
+      <UniqueIdentifier>{6eda636d-a95f-4d23-8a77-3a2e2d71ffc2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\RenderComponent\02. BillboardRender">
+      <UniqueIdentifier>{d360e8a0-ab6b-47ba-976a-37c643d3400a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HLSL\2. Render">
+      <UniqueIdentifier>{c2066b5a-e2a7-4fbd-85e9-9837a5bf6692}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HLSL\2. Render\2D">
+      <UniqueIdentifier>{74f5a2e5-90c4-4fe0-a240-d23cd5323cda}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HLSL\2. Render\3D">
+      <UniqueIdentifier>{62071d04-ae4c-49d2-8678-56d909e962e7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\07. TaskMgr">
+      <UniqueIdentifier>{11ce98e3-ebf2-4411-91da-4e63fe7ec125}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\03. Collider2D">
+      <UniqueIdentifier>{b9ca8178-0c7f-40e7-9db7-0cf89b1b5201}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\RenderComponent\03. SpriteRender">
+      <UniqueIdentifier>{88702e19-496f-4171-a794-df280351bfdc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\08. CollisionMgr">
+      <UniqueIdentifier>{21f21938-3268-4a9c-a151-a7b66f9b3f65}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\06. Sprite">
+      <UniqueIdentifier>{08878d1b-4214-4f3c-b85c-547bc5b34a5e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\RenderComponent\04. FlipbookRender">
+      <UniqueIdentifier>{3916e59d-2c73-4daa-bdd2-87beafcc5cc1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\07. Flipbook">
+      <UniqueIdentifier>{f57c9fd6-1f2f-4f14-af84-3c3cd2bcd594}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\08. TileMap">
+      <UniqueIdentifier>{4df9f117-b44b-4190-94d8-52bbeced1d3d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\RenderComponent\05. TileRender">
+      <UniqueIdentifier>{dc22e4e1-6714-4626-82a6-d9d28b7db742}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\02. Device\StructuredBuffer">
+      <UniqueIdentifier>{d6cbe92a-2b12-418c-97e8-ed5846e7f566}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\06. Component\04. Light2D">
+      <UniqueIdentifier>{32d245fc-c4f3-40be-b921-6e67c1bcc606}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ImGui">
+      <UniqueIdentifier>{a685a65d-035a-486c-8fd5-3c6ca38ae1c5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\03. Manager\09. EditorMgr">
+      <UniqueIdentifier>{4034f1f7-b589-4ab5-8c1e-e823c913fce0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI">
+      <UniqueIdentifier>{d78d9fc6-6953-4855-9469-58dddd09ff36}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\01. Inspector">
+      <UniqueIdentifier>{bb2fd944-d200-4649-9985-3cb82d2904e9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI">
+      <UniqueIdentifier>{38022c80-252e-40a2-ab6a-4336d8628daf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\01. TransformUI">
+      <UniqueIdentifier>{84e59853-0408-4984-9c21-5b92ab08bc45}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\02. Camera">
+      <UniqueIdentifier>{5d4c8f7a-82fa-40d7-8915-44801c7ec144}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\03. ColliderUI">
+      <UniqueIdentifier>{620a5f06-1492-46ec-ac29-9fc813ba76ce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\04. Light2D">
+      <UniqueIdentifier>{83de0c71-94b4-4f73-b3df-2367180336ee}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\RenderComponent">
+      <UniqueIdentifier>{a3e84e96-cde1-4b0d-a783-fbbb80c906fa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\01. MeshRenderUI">
+      <UniqueIdentifier>{d9f31d2f-9258-4ee3-b571-68954f712932}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\02. SpriteRenderUI">
+      <UniqueIdentifier>{6af20d7e-9e28-4478-bcc2-a61c2fb8b9bb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\03. FlipbookRender">
+      <UniqueIdentifier>{f632939c-1893-40d6-adcd-332be3bd2bfd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\04. TileRender">
+      <UniqueIdentifier>{a8686ceb-0ec5-4782-a2a8-43c623166bf8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI">
+      <UniqueIdentifier>{7bb86a5a-466a-4d76-b59f-66f53faa942a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\06. Menu">
+      <UniqueIdentifier>{bb7df3b7-787e-4f35-96ef-41d34d1f47ce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\04. Outliner">
+      <UniqueIdentifier>{56d74603-5ede-4804-b777-479f22718eb9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\05. Content">
+      <UniqueIdentifier>{b74cc8fd-4828-4a61-86e9-dfdf54942f4c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\07. ListUI">
+      <UniqueIdentifier>{95545740-12e2-45b6-bf85-6e46004ecd14}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\08. TreeUI">
+      <UniqueIdentifier>{48abb8a1-53fd-4ee9-9574-85252a5585a7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\1. MeshUI">
+      <UniqueIdentifier>{55566617-f354-470d-b5f4-e8aca9c499c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\2. MaterialUI">
+      <UniqueIdentifier>{80c4bfc8-798a-44d1-8c0c-d1574f983dbb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\9. FlipbookUI">
+      <UniqueIdentifier>{6c2b0e32-08aa-4306-bd79-7d36ea6d680f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\10. TileMapUI">
+      <UniqueIdentifier>{e28e04da-7f70-4678-a186-6915564159c5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\5. GraphicShaderUI">
+      <UniqueIdentifier>{d1780406-1273-4f6d-8b9f-ae7de0a7c989}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\7. LevelUI">
+      <UniqueIdentifier>{03748e0f-6cf8-4d14-b5d1-b1000a870857}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\6. ComputeShaderUI">
+      <UniqueIdentifier>{ca941f8d-099e-4ca3-a8f6-6cf4001de613}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\8. SpriteUI">
+      <UniqueIdentifier>{2474ec55-5f68-4edd-b62c-d425a3c08e5f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\4. SoundUI">
+      <UniqueIdentifier>{854e1ef9-69b6-48c3-b0f2-8e1d8c7b4d4b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\3. TextureUI">
+      <UniqueIdentifier>{798f629a-6dbf-45b3-8ca6-ddf3edb844a0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI">
+      <UniqueIdentifier>{01de38b3-f7ab-444f-a9a3-023494e04400}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{56a5ff93-338b-46c8-bee8-4a2a64b6b0bc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\Scripts">
+      <UniqueIdentifier>{5bdeec9e-ba37-4eed-b754-54eb57665fa5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\ScriptMgr">
+      <UniqueIdentifier>{07b63f70-0a78-49ff-bd58-db5335bcacd9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\09. ImageEditorUI">
+      <UniqueIdentifier>{b5ce831f-bcd6-4514-a878-2c21df9d1027}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="GameClient.rc">
+      <Filter>Default</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Engine.cpp">
+      <Filter>GameEngine\01. Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="Device.cpp">
+      <Filter>GameEngine\02. Device</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>Default</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine_Init.cpp">
+      <Filter>GameEngine\01. Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="PathMgr.cpp">
+      <Filter>GameEngine\03. Manager\01. PathMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="TimeMgr.cpp">
+      <Filter>GameEngine\03. Manager\02. TimeMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="KeyMgr.cpp">
+      <Filter>GameEngine\03. Manager\03. KeyMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="Entity.cpp">
+      <Filter>GameEngine</Filter>
+    </ClCompile>
+    <ClCompile Include="Asset.cpp">
+      <Filter>GameEngine\04. Asset</Filter>
+    </ClCompile>
+    <ClCompile Include="AMesh.cpp">
+      <Filter>GameEngine\04. Asset\01. Mesh</Filter>
+    </ClCompile>
+    <ClCompile Include="ATexture.cpp">
+      <Filter>GameEngine\04. Asset\02. Texture</Filter>
+    </ClCompile>
+    <ClCompile Include="AGraphicShader.cpp">
+      <Filter>GameEngine\04. Asset\03. GraphicShader</Filter>
+    </ClCompile>
+    <ClCompile Include="GameObject.cpp">
+      <Filter>GameEngine\05. GameObject</Filter>
+    </ClCompile>
+    <ClCompile Include="Component.cpp">
+      <Filter>GameEngine\06. Component</Filter>
+    </ClCompile>
+    <ClCompile Include="CTransform.cpp">
+      <Filter>GameEngine\06. Component\01. Transform</Filter>
+    </ClCompile>
+    <ClCompile Include="CScript.cpp">
+      <Filter>GameEngine\06. Component\Script</Filter>
+    </ClCompile>
+    <ClCompile Include="AssetMgr.cpp">
+      <Filter>GameEngine\03. Manager\04. AssetMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="ConstBuffer.cpp">
+      <Filter>GameEngine\02. Device\ConstBuffer</Filter>
+    </ClCompile>
+    <ClCompile Include="LevelMgr.cpp">
+      <Filter>GameEngine\03. Manager\05. LevelMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="ALevel.cpp">
+      <Filter>GameEngine\04. Asset\04. Level</Filter>
+    </ClCompile>
+    <ClCompile Include="Layer.cpp">
+      <Filter>GameEngine\04. Asset\04. Level\Layer</Filter>
+    </ClCompile>
+    <ClCompile Include="CCamera.cpp">
+      <Filter>GameEngine\06. Component\02. Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="RenderMgr.cpp">
+      <Filter>GameEngine\03. Manager\06. RenderMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="extern.cpp">
+      <Filter>Header</Filter>
+    </ClCompile>
+    <ClCompile Include="AMaterial.cpp">
+      <Filter>GameEngine\04. Asset\05. Material</Filter>
+    </ClCompile>
+    <ClCompile Include="AssetMgr_Init.cpp">
+      <Filter>GameEngine\03. Manager\04. AssetMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="func.cpp">
+      <Filter>Header</Filter>
+    </ClCompile>
+    <ClCompile Include="CRenderComponent.cpp">
+      <Filter>GameEngine\06. Component\RenderComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="CMeshRender.cpp">
+      <Filter>GameEngine\06. Component\RenderComponent\01. MeshRender</Filter>
+    </ClCompile>
+    <ClCompile Include="CBillboardRender.cpp">
+      <Filter>GameEngine\06. Component\RenderComponent\02. BillboardRender</Filter>
+    </ClCompile>
+    <ClCompile Include="TaskMgr.cpp">
+      <Filter>GameEngine\03. Manager\07. TaskMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="CCollider2D.cpp">
+      <Filter>GameEngine\06. Component\03. Collider2D</Filter>
+    </ClCompile>
+    <ClCompile Include="CSpriteRender.cpp">
+      <Filter>GameEngine\06. Component\RenderComponent\03. SpriteRender</Filter>
+    </ClCompile>
+    <ClCompile Include="CollisionMgr.cpp">
+      <Filter>GameEngine\03. Manager\08. CollisionMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="ASprite.cpp">
+      <Filter>GameEngine\04. Asset\06. Sprite</Filter>
+    </ClCompile>
+    <ClCompile Include="CFlipbookRender.cpp">
+      <Filter>GameEngine\06. Component\RenderComponent\04. FlipbookRender</Filter>
+    </ClCompile>
+    <ClCompile Include="AFlipbook.cpp">
+      <Filter>GameEngine\04. Asset\07. Flipbook</Filter>
+    </ClCompile>
+    <ClCompile Include="ATileMap.cpp">
+      <Filter>GameEngine\04. Asset\08. TileMap</Filter>
+    </ClCompile>
+    <ClCompile Include="CTileRender.cpp">
+      <Filter>GameEngine\06. Component\RenderComponent\05. TileRender</Filter>
+    </ClCompile>
+    <ClCompile Include="StructuredBuffer.cpp">
+      <Filter>GameEngine\02. Device\StructuredBuffer</Filter>
+    </ClCompile>
+    <ClCompile Include="CLight2D.cpp">
+      <Filter>GameEngine\06. Component\04. Light2D</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGui\imgui.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGui\imgui_demo.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGui\imgui_draw.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGui\imgui_impl_dx11.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGui\imgui_impl_win32.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGui\imgui_tables.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGui\imgui_widgets.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorMgr.cpp">
+      <Filter>GameEngine\03. Manager\09. EditorMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="EditorUI.cpp">
+      <Filter>GameEngine\07. EditorUI</Filter>
+    </ClCompile>
+    <ClCompile Include="Inspector.cpp">
+      <Filter>GameEngine\07. EditorUI\01. Inspector</Filter>
+    </ClCompile>
+    <ClCompile Include="Outliner.cpp">
+      <Filter>GameEngine\07. EditorUI\04. Outliner</Filter>
+    </ClCompile>
+    <ClCompile Include="Menu.cpp">
+      <Filter>GameEngine\07. EditorUI\06. Menu</Filter>
+    </ClCompile>
+    <ClCompile Include="ComponentUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI</Filter>
+    </ClCompile>
+    <ClCompile Include="TransformUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\01. TransformUI</Filter>
+    </ClCompile>
+    <ClCompile Include="Collider2DUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\03. ColliderUI</Filter>
+    </ClCompile>
+    <ClCompile Include="CameraUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\02. Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="Light2DUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\04. Light2D</Filter>
+    </ClCompile>
+    <ClCompile Include="FlipbookRenderUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\03. FlipbookRender</Filter>
+    </ClCompile>
+    <ClCompile Include="MeshRenderUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\01. MeshRenderUI</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteRenderUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\02. SpriteRenderUI</Filter>
+    </ClCompile>
+    <ClCompile Include="TileRenderUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\04. TileRender</Filter>
+    </ClCompile>
+    <ClCompile Include="Inspector_Init.cpp">
+      <Filter>GameEngine\07. EditorUI\01. Inspector</Filter>
+    </ClCompile>
+    <ClCompile Include="ListUI.cpp">
+      <Filter>GameEngine\07. EditorUI\07. ListUI</Filter>
+    </ClCompile>
+    <ClCompile Include="ContentUI.cpp">
+      <Filter>GameEngine\07. EditorUI\05. Content</Filter>
+    </ClCompile>
+    <ClCompile Include="TreeUI.cpp">
+      <Filter>GameEngine\07. EditorUI\08. TreeUI</Filter>
+    </ClCompile>
+    <ClCompile Include="AssetUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI</Filter>
+    </ClCompile>
+    <ClCompile Include="FlipbookUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\9. FlipbookUI</Filter>
+    </ClCompile>
+    <ClCompile Include="GraphicShaderUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\5. GraphicShaderUI</Filter>
+    </ClCompile>
+    <ClCompile Include="MaterialUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\2. MaterialUI</Filter>
+    </ClCompile>
+    <ClCompile Include="MeshUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\1. MeshUI</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\8. SpriteUI</Filter>
+    </ClCompile>
+    <ClCompile Include="TextureUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\3. TextureUI</Filter>
+    </ClCompile>
+    <ClCompile Include="TileMapUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\10. TileMapUI</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="SoundUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\4. SoundUI</Filter>
+    </ClCompile>
+    <ClCompile Include="LevelUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\7. LevelUI</Filter>
+    </ClCompile>
+    <ClCompile Include="ComputeShaderUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\6. ComputeShaderUI</Filter>
+    </ClCompile>
+    <ClCompile Include="PrefabUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI</Filter>
+    </ClCompile>
+    <ClCompile Include="CEditorCamMoveScript.cpp">
+      <Filter>GameEngine\03. Manager\09. EditorMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CCamMoveScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CMissileScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CMonsterScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CPlayerScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\ScriptMgr.cpp">
+      <Filter>Source\ScriptMgr</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CSpringScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CTileScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="ImageEditor.cpp">
+      <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CBlockScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CBlockMovingScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CBlockPushingScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="SimpleMath.inl">
+      <Filter>GameEngine\Module</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="std2d.fx">
+      <Filter>HLSL\2. Render\2D</Filter>
+    </FxCompile>
+    <FxCompile Include="value.fx">
+      <Filter>HLSL\1. Header</Filter>
+    </FxCompile>
+    <FxCompile Include="billboard.fx">
+      <Filter>HLSL\2. Render\2D</Filter>
+    </FxCompile>
+    <FxCompile Include="dbg.fx">
+      <Filter>HLSL\2. Render</Filter>
+    </FxCompile>
+    <FxCompile Include="sprite.fx">
+      <Filter>HLSL\2. Render\2D</Filter>
+    </FxCompile>
+    <FxCompile Include="flipbook.fx">
+      <Filter>HLSL\2. Render\2D</Filter>
+    </FxCompile>
+    <FxCompile Include="tile.fx">
+      <Filter>HLSL\2. Render\2D</Filter>
+    </FxCompile>
+    <FxCompile Include="struct.fx">
+      <Filter>HLSL\1. Header</Filter>
+    </FxCompile>
+    <FxCompile Include="func.fx">
+      <Filter>HLSL\1. Header</Filter>
+    </FxCompile>
+  </ItemGroup>
+</Project>
