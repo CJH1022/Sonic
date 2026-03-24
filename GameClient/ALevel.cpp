@@ -109,3 +109,68 @@ Ptr<GameObject> ALevel::FindObjectByName(const wstring& _Name)
 	// 없다
 	return nullptr;
 }
+
+int ALevel::Save(const wstring& _FilePath)
+{
+	FILE* pFile = nullptr;
+	_wfopen_s(&pFile, _FilePath.c_str(), L"wb");
+	if (nullptr == pFile)
+		return E_FAIL;
+
+	SaveWString(pFile, GetName());
+	fwrite(m_Matrix, sizeof(UINT), MAX_LAYER, pFile);
+
+	for (UINT i = 0; i < MAX_LAYER; ++i)
+	{
+		SaveWString(pFile, m_arrLayer[i].GetName());
+
+		const vector<Ptr<GameObject>>& vecParents = m_arrLayer[i].GetParentObjects();
+		size_t ParentCount = vecParents.size();
+		fwrite(&ParentCount, sizeof(size_t), 1, pFile);
+
+		for (const auto& Object : vecParents)
+		{
+			Object->SaveToLevelFile(pFile);
+		}
+	}
+
+	fclose(pFile);
+	return S_OK;
+}
+
+int ALevel::Load(const wstring& _FilePath)
+{
+	FILE* pFile = nullptr;
+	_wfopen_s(&pFile, _FilePath.c_str(), L"rb");
+	if (nullptr == pFile)
+		return E_FAIL;
+
+	for (UINT i = 0; i < MAX_LAYER; ++i)
+	{
+		m_arrLayer[i].Clear();
+		m_arrLayer[i].m_LayerIdx = i;
+	}
+
+	SetName(LoadWString(pFile));
+	fread(m_Matrix, sizeof(UINT), MAX_LAYER, pFile);
+
+	for (UINT i = 0; i < MAX_LAYER; ++i)
+	{
+		wstring LayerName = LoadWString(pFile);
+		m_arrLayer[i].SetName(LayerName);
+
+		size_t ParentCount = 0;
+		fread(&ParentCount, sizeof(size_t), 1, pFile);
+
+		for (size_t j = 0; j < ParentCount; ++j)
+		{
+			Ptr<GameObject> pObject = new GameObject;
+			pObject->LoadFromLevelFile(pFile);
+			AddObject(i, pObject);
+		}
+	}
+
+	fclose(pFile);
+	m_Changed = false;
+	return S_OK;
+}

@@ -30,6 +30,40 @@ void Inspector::SetTargetObject(Ptr<GameObject> _Object)
 
 		m_arrComUI[i]->SetTarget(m_TargetObject);
 	}
+
+	if (nullptr != m_TargetObject)
+	{
+		const vector<Ptr<CScript>>& vecScripts = m_TargetObject->GetScripts();
+
+		if (m_vecScriptUI.size() < vecScripts.size())
+		{
+			int AddCount = (int)vecScripts.size() - (int)m_vecScriptUI.size();
+
+			for (int i = 0; i < AddCount; ++i)
+			{
+				ScriptUI* pScriptUI = new ScriptUI;
+				pScriptUI->SetSizeAsChild(Vec2(0.f, 150.f));
+				AddChildUI(pScriptUI);
+
+				m_vecScriptUI.push_back(pScriptUI);
+			}
+		}
+
+		for (size_t i = 0; i < m_vecScriptUI.size(); ++i)
+		{
+			if (vecScripts.size() <= i)
+				m_vecScriptUI[i]->SetScript(nullptr);
+			else
+				m_vecScriptUI[i]->SetScript(vecScripts[i].Get());
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < m_vecScriptUI.size(); ++i)
+		{
+			m_vecScriptUI[i]->SetScript(nullptr);
+		}
+	}
 		
 	// AssetUI 를 비활성화한다.
 	m_TargetAsset = nullptr;

@@ -60,6 +60,9 @@ void LevelMgr::ChangeLevelState(LEVEL_STATE _NextState)
 	if (m_LevelState == LEVEL_STATE::STOP
 		&& _NextState == LEVEL_STATE::PLAY)
 	{
+		if (nullptr == m_SharedLevel)
+			return;
+
 		// 원본 에셋 레벨의 복제본 레벨을 만들어서 현재 레벨로 가리킨다.
 		m_CurLevel = m_SharedLevel->Clone();
 		m_CurLevel->SetChanged();
@@ -70,7 +73,10 @@ void LevelMgr::ChangeLevelState(LEVEL_STATE _NextState)
 			  && _NextState == LEVEL_STATE::STOP)
 	{
 		m_CurLevel = m_SharedLevel;
-		m_CurLevel->SetChanged();
+		if (nullptr != m_CurLevel)
+		{
+			m_CurLevel->SetChanged();
+		}
 	}
 
 	m_LevelState = _NextState;

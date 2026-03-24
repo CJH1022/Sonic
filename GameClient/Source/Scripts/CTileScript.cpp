@@ -13,6 +13,523 @@
 #include "CTileRender.h"
 #include "CPlayerScript.h"
 
+#include <filesystem>
+#include <cstdio>
+
+void CTileScript::InitializeTileTypeUnlockState()
+{
+    if (s_bTileTypeUnlockInitialized)
+        return;
+
+    for (int i = 0; i < (int)TILETYPE::END; ++i)
+    {
+        s_TileTypeUnlocked[i] = false;
+    }
+
+    for (int typeValue = (int)TILETYPE::EMPTY_BLOCK; typeValue <= (int)TILETYPE::CIRCLE_BLOCK_4; ++typeValue)
+    {
+        s_TileTypeUnlocked[typeValue] = true;
+    }
+
+    s_bTileTypeUnlockInitialized = true;
+}
+
+bool CTileScript::IsValidTileTypeValue(int _TypeValue)
+{
+    return (int)TILETYPE::EMPTY_BLOCK <= _TypeValue
+        && _TypeValue < (int)TILETYPE::END;
+}
+
+TILETYPE CTileScript::ToTileType(int _TypeValue)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return TILETYPE::EMPTY_BLOCK;
+
+    return (TILETYPE)_TypeValue;
+}
+
+bool CTileScript::IsLineTileType(TILETYPE _Type)
+{
+    return (TILETYPE::LINE_BLOCK_1 <= _Type && _Type <= TILETYPE::LINE_BLOCK_6)
+        || (TILETYPE::LINE_BLOCK_7 <= _Type && _Type <= TILETYPE::LINE_BLOCK_20);
+}
+
+bool CTileScript::IsCircleTileType(TILETYPE _Type)
+{
+    return (TILETYPE::CIRCLE_BLOCK_1 <= _Type && _Type <= TILETYPE::CIRCLE_BLOCK_4)
+        || (TILETYPE::CIRCLE_BLOCK_5 <= _Type && _Type <= TILETYPE::CIRCLE_BLOCK_20);
+}
+
+bool CTileScript::IsLineTileTypeValue(int _TypeValue)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return false;
+    return IsLineTileType((TILETYPE)_TypeValue);
+}
+
+bool CTileScript::IsCircleTileTypeValue(int _TypeValue)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return false;
+    return IsCircleTileType((TILETYPE)_TypeValue);
+}
+
+bool CTileScript::IsUnlockedTileTypeValue(int _TypeValue)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return false;
+
+    InitializeTileTypeUnlockState();
+    return s_TileTypeUnlocked[_TypeValue];
+}
+
+void CTileScript::GetEditableTileTypeValues(vector<int>& _OutTypeValues, bool _IncludeEmpty, bool _IncludeLocked)
+{
+    InitializeTileTypeUnlockState();
+    _OutTypeValues.clear();
+
+    if (_IncludeEmpty)
+    {
+        _OutTypeValues.push_back((int)TILETYPE::EMPTY_BLOCK);
+    }
+
+    for (int typeValue = (int)TILETYPE::LINE_BLOCK_1; typeValue < (int)TILETYPE::END; ++typeValue)
+    {
+        if (_IncludeLocked || s_TileTypeUnlocked[typeValue])
+        {
+            _OutTypeValues.push_back(typeValue);
+        }
+    }
+}
+
+bool CTileScript::CreateCustomTileType(bool _Circle, TILETYPE _CopyFrom, TILETYPE& _OutNewType)
+{
+    InitializeTileTypeUnlockState();
+    if (!s_bFormulaInitialized)
+        ResetTileFormulaConfigToDefault();
+
+    const int startType = _Circle ? (int)TILETYPE::CIRCLE_BLOCK_5 : (int)TILETYPE::LINE_BLOCK_7;
+    const int endType = _Circle ? (int)TILETYPE::CIRCLE_BLOCK_20 : (int)TILETYPE::LINE_BLOCK_20;
+
+    int newTypeValue = -1;
+    for (int i = startType; i <= endType; ++i)
+    {
+        if (!s_TileTypeUnlocked[i])
+        {
+            newTypeValue = i;
+            break;
+        }
+    }
+
+    if (newTypeValue == -1)
+        return false;
+
+    TILE_FORMULA_CONFIG srcCfg = {};
+    TILETYPE fallbackType = _Circle ? TILETYPE::CIRCLE_BLOCK_1 : TILETYPE::LINE_BLOCK_3;
+
+    if ((_Circle && IsCircleTileType(_CopyFrom)) || (!_Circle && IsLineTileType(_CopyFrom)))
+    {
+        GetTileFormulaConfig(_CopyFrom, srcCfg);
+    }
+    else
+    {
+        GetTileFormulaConfig(fallbackType, srcCfg);
+    }
+
+    s_TileTypeUnlocked[newTypeValue] = true;
+    s_FormulaConfig[newTypeValue] = srcCfg;
+    _OutNewType = (TILETYPE)newTypeValue;
+    return true;
+}
+
+bool CTileScript::DeleteCustomTileType(TILETYPE _Type)
+{
+    return DeleteCustomTileTypeByValue((int)_Type);
+}
+
+bool CTileScript::DeleteCustomTileTypeByValue(int _TypeValue)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return false;
+
+    if (_TypeValue < (int)TILETYPE::LINE_BLOCK_7)
+        return false;
+
+    InitializeTileTypeUnlockState();
+    if (!s_bFormulaInitialized)
+        ResetTileFormulaConfigToDefault();
+
+    s_TileTypeUnlocked[_TypeValue] = false;
+
+    if (IsLineTileTypeValue(_TypeValue))
+    {
+        s_FormulaConfig[_TypeValue] = s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_3];
+    }
+    else if (IsCircleTileTypeValue(_TypeValue))
+    {
+        const TILE_FORMULA_CONFIG lineFallback = s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_3];
+        s_FormulaConfig[_TypeValue] = TILE_FORMULA_CONFIG{ lineFallback.a, lineFallback.b, lineFallback.c, 0.8f, 0.5f, 0.5f };
+    }
+
+    return true;
+}
+
+bool CTileScript::IsSpecialTileType(TILETYPE _Type)
+{
+    return _Type == TILETYPE::CIRCLE_BLOCK_3
+        || _Type == TILETYPE::CIRCLE_BLOCK_4;
+}
+
+Vec4 CTileScript::GetDebugColorByType(TILETYPE _Type)
+{
+    if (_Type == TILETYPE::EMPTY_BLOCK)
+    {
+        return Vec4(1.f, 1.f, 1.f, 1.f);
+    }
+
+    if (IsSpecialTileType(_Type))
+    {
+        return Vec4(1.f, 0.3f, 0.3f, 1.f);
+    }
+
+    return Vec4(0.f, 0.f, 0.f, 1.f);
+}
+
+Vec4 CTileScript::GetDebugColorByTypeValue(int _TypeValue)
+{
+    return GetDebugColorByType(ToTileType(_TypeValue));
+}
+
+const char* CTileScript::GetTileTypeName(TILETYPE _Type)
+{
+    return GetTileTypeNameByValue((int)_Type);
+}
+
+const char* CTileScript::GetTileTypeNameByValue(int _TypeValue)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return "UNKNOWN";
+
+    if (_TypeValue == (int)TILETYPE::EMPTY_BLOCK)
+        return "EMPTY";
+
+    static char s_Buf[64] = {};
+
+    if (IsLineTileTypeValue(_TypeValue))
+    {
+        int lineNo = 0;
+        if (_TypeValue <= (int)TILETYPE::LINE_BLOCK_6)
+            lineNo = _TypeValue - (int)TILETYPE::LINE_BLOCK_1 + 1;
+        else
+            lineNo = _TypeValue - (int)TILETYPE::LINE_BLOCK_7 + 7;
+
+        if (lineNo <= 6)
+            sprintf_s(s_Buf, "LINE_%d", lineNo);
+        else
+            sprintf_s(s_Buf, "LINE_CUSTOM_%d", lineNo);
+        return s_Buf;
+    }
+
+    if (IsCircleTileTypeValue(_TypeValue))
+    {
+        int circleNo = 0;
+        if (_TypeValue <= (int)TILETYPE::CIRCLE_BLOCK_4)
+            circleNo = _TypeValue - (int)TILETYPE::CIRCLE_BLOCK_1 + 1;
+        else
+            circleNo = _TypeValue - (int)TILETYPE::CIRCLE_BLOCK_5 + 5;
+
+        if (circleNo <= 4)
+            sprintf_s(s_Buf, "CIRCLE_%d", circleNo);
+        else
+            sprintf_s(s_Buf, "CIRCLE_CUSTOM_%d", circleNo);
+        return s_Buf;
+    }
+
+    return "UNKNOWN";
+}
+
+void CTileScript::ResetTileFormulaConfigToDefault()
+{
+    InitializeTileTypeUnlockState();
+
+    for (int i = 0; i < (int)TILETYPE::END; ++i)
+    {
+        s_FormulaConfig[i] = TILE_FORMULA_CONFIG{ 0.f, 0.f, -1.f, 0.8f, 0.5f, 0.5f };
+    }
+
+    s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_1] = TILE_FORMULA_CONFIG{ 0.1f, 0.4f, -1.f, 0.8f, 0.5f, 0.5f };
+    s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_2] = TILE_FORMULA_CONFIG{ 0.4f, 0.8f, -1.f, 0.8f, 0.5f, 0.5f };
+    s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_3] = TILE_FORMULA_CONFIG{ 0.8f, 0.8f, -1.f, 0.8f, 0.5f, 0.5f };
+    s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_4] = TILE_FORMULA_CONFIG{ 0.8f, 0.4f, -1.f, 0.8f, 0.5f, 0.5f };
+    s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_5] = TILE_FORMULA_CONFIG{ 0.4f, 0.1f, -1.f, 0.8f, 0.5f, 0.5f };
+    s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_6] = TILE_FORMULA_CONFIG{ 0.1f, 0.1f, -1.f, 0.8f, 0.5f, 0.5f };
+
+    const TILE_FORMULA_CONFIG lineFallback = s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_3];
+    s_FormulaConfig[(int)TILETYPE::CIRCLE_BLOCK_1] = TILE_FORMULA_CONFIG{ lineFallback.a, lineFallback.b, lineFallback.c, 0.8f, 1.f, 1.f };
+    s_FormulaConfig[(int)TILETYPE::CIRCLE_BLOCK_2] = TILE_FORMULA_CONFIG{ lineFallback.a, lineFallback.b, lineFallback.c, 0.8f, 0.f, 1.f };
+    s_FormulaConfig[(int)TILETYPE::CIRCLE_BLOCK_3] = TILE_FORMULA_CONFIG{ lineFallback.a, lineFallback.b, lineFallback.c, 0.8f, 1.f, 0.f };
+    s_FormulaConfig[(int)TILETYPE::CIRCLE_BLOCK_4] = TILE_FORMULA_CONFIG{ lineFallback.a, lineFallback.b, lineFallback.c, 0.8f, 0.f, 0.f };
+
+    for (int i = (int)TILETYPE::LINE_BLOCK_7; i <= (int)TILETYPE::LINE_BLOCK_20; ++i)
+    {
+        s_FormulaConfig[i] = s_FormulaConfig[(int)TILETYPE::LINE_BLOCK_3];
+    }
+    for (int i = (int)TILETYPE::CIRCLE_BLOCK_5; i <= (int)TILETYPE::CIRCLE_BLOCK_20; ++i)
+    {
+        s_FormulaConfig[i] = TILE_FORMULA_CONFIG{ 0.f, 0.f, -1.f, 0.8f, 0.5f, 0.5f };
+    }
+
+    s_bFormulaInitialized = true;
+}
+
+bool CTileScript::SetTileFormulaConfig(TILETYPE _Type, const TILE_FORMULA_CONFIG& _Config)
+{
+    return SetTileFormulaConfigByValue((int)_Type, _Config);
+}
+
+bool CTileScript::GetTileFormulaConfig(TILETYPE _Type, TILE_FORMULA_CONFIG& _OutConfig)
+{
+    return GetTileFormulaConfigByValue((int)_Type, _OutConfig);
+}
+
+bool CTileScript::SetTileFormulaConfigByValue(int _TypeValue, const TILE_FORMULA_CONFIG& _Config)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return false;
+
+    if (_TypeValue == (int)TILETYPE::EMPTY_BLOCK)
+        return false;
+
+    if (!s_bFormulaInitialized)
+        ResetTileFormulaConfigToDefault();
+
+    s_FormulaConfig[_TypeValue] = _Config;
+    return true;
+}
+
+bool CTileScript::GetTileFormulaConfigByValue(int _TypeValue, TILE_FORMULA_CONFIG& _OutConfig)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        return false;
+
+    if (!s_bFormulaInitialized)
+        ResetTileFormulaConfigToDefault();
+
+    _OutConfig = s_FormulaConfig[_TypeValue];
+    return true;
+}
+
+void CTileScript::SetTileMapPlacement(const TILE_MAP_PLACEMENT& _Placement)
+{
+    s_MapPlacement = _Placement;
+}
+
+void CTileScript::GetTileMapPlacement(TILE_MAP_PLACEMENT& _OutPlacement)
+{
+    _OutPlacement = s_MapPlacement;
+}
+
+void CTileScript::GetDefaultTileMap(UINT& _OutRow, UINT& _OutCol, vector<int>& _OutTileValues)
+{
+    _OutRow = 6;
+    _OutCol = 25;
+
+    static const int kDefaultMap[6][25] =
+    {
+        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 8, 9, 1, 1, 1, 8, 9},
+        {7, 7, 7, 7, 2, 3, 4, 4, 4, 4, 5, 6, 7, 7, 2, 3, 4, 4, 10, 11, 4, 4, 4, 10, 11},
+        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+    };
+
+    _OutTileValues.assign(_OutRow * _OutCol, (int)TILETYPE::EMPTY_BLOCK);
+
+    for (UINT row = 0; row < _OutRow; ++row)
+    {
+        for (UINT col = 0; col < _OutCol; ++col)
+        {
+            _OutTileValues[row * _OutCol + col] = kDefaultMap[row][col];
+        }
+    }
+}
+
+bool CTileScript::SaveTileScriptPreset(const wstring& _FilePath, UINT _Row, UINT _Col, const vector<int>& _TileValues)
+{
+    if (0 == _Row || 0 == _Col)
+        return false;
+
+    if (_TileValues.size() != (size_t)_Row * (size_t)_Col)
+        return false;
+
+    if (!s_bFormulaInitialized)
+        ResetTileFormulaConfigToDefault();
+    InitializeTileTypeUnlockState();
+
+    std::filesystem::path path(_FilePath);
+    if (!path.parent_path().empty())
+    {
+        std::filesystem::create_directories(path.parent_path());
+    }
+
+    FILE* pFile = nullptr;
+    _wfopen_s(&pFile, _FilePath.c_str(), L"wb");
+    if (nullptr == pFile)
+        return false;
+
+    const UINT kMagic = 0x31505354; // 'TSP1'
+    fwrite(&kMagic, sizeof(UINT), 1, pFile);
+    fwrite(&_Row, sizeof(UINT), 1, pFile);
+    fwrite(&_Col, sizeof(UINT), 1, pFile);
+
+    UINT mapCount = (UINT)_TileValues.size();
+    fwrite(&mapCount, sizeof(UINT), 1, pFile);
+    if (0 < mapCount)
+    {
+        fwrite(_TileValues.data(), sizeof(int), mapCount, pFile);
+    }
+
+    UINT configCount = (UINT)((int)TILETYPE::END - (int)TILETYPE::EMPTY_BLOCK);
+    fwrite(&configCount, sizeof(UINT), 1, pFile);
+
+    for (int typeValue = (int)TILETYPE::EMPTY_BLOCK; typeValue < (int)TILETYPE::END; ++typeValue)
+    {
+        const TILE_FORMULA_CONFIG& cfg = s_FormulaConfig[typeValue];
+        fwrite(&typeValue, sizeof(int), 1, pFile);
+        fwrite(&cfg, sizeof(TILE_FORMULA_CONFIG), 1, pFile);
+    }
+
+    UINT unlockedCount = 0;
+    for (int typeValue = (int)TILETYPE::LINE_BLOCK_7; typeValue < (int)TILETYPE::END; ++typeValue)
+    {
+        if (s_TileTypeUnlocked[typeValue])
+            ++unlockedCount;
+    }
+
+    fwrite(&unlockedCount, sizeof(UINT), 1, pFile);
+    for (int typeValue = (int)TILETYPE::LINE_BLOCK_7; typeValue < (int)TILETYPE::END; ++typeValue)
+    {
+        if (s_TileTypeUnlocked[typeValue])
+            fwrite(&typeValue, sizeof(int), 1, pFile);
+    }
+
+    const UINT kMetaMagic = 0x50414D54; // 'TMAP'
+    fwrite(&kMetaMagic, sizeof(UINT), 1, pFile);
+    fwrite(&s_MapPlacement, sizeof(TILE_MAP_PLACEMENT), 1, pFile);
+
+    fclose(pFile);
+
+    return true;
+}
+
+bool CTileScript::LoadTileScriptPreset(const wstring& _FilePath, UINT& _OutRow, UINT& _OutCol, vector<int>& _OutTileValues, bool _ApplyFormula)
+{
+    FILE* pFile = nullptr;
+    _wfopen_s(&pFile, _FilePath.c_str(), L"rb");
+    if (nullptr == pFile)
+        return false;
+
+    UINT magic = 0;
+    fread(&magic, sizeof(UINT), 1, pFile);
+    if (magic != 0x31505354)
+    {
+        fclose(pFile);
+        return false;
+    }
+
+    fread(&_OutRow, sizeof(UINT), 1, pFile);
+    fread(&_OutCol, sizeof(UINT), 1, pFile);
+
+    if (0 == _OutRow || 0 == _OutCol || _OutRow > 1024 || _OutCol > 1024)
+    {
+        fclose(pFile);
+        return false;
+    }
+
+    UINT mapCount = 0;
+    fread(&mapCount, sizeof(UINT), 1, pFile);
+    if (mapCount != (UINT)(_OutRow * _OutCol))
+    {
+        fclose(pFile);
+        return false;
+    }
+
+    _OutTileValues.assign(mapCount, (int)TILETYPE::EMPTY_BLOCK);
+    if (0 < mapCount)
+    {
+        fread(_OutTileValues.data(), sizeof(int), mapCount, pFile);
+    }
+
+    for (UINT i = 0; i < mapCount; ++i)
+    {
+        if (!IsValidTileTypeValue(_OutTileValues[i]))
+            _OutTileValues[i] = (int)TILETYPE::EMPTY_BLOCK;
+    }
+
+    InitializeTileTypeUnlockState();
+    for (UINT i = 0; i < mapCount; ++i)
+    {
+        if ((int)TILETYPE::LINE_BLOCK_7 <= _OutTileValues[i])
+            s_TileTypeUnlocked[_OutTileValues[i]] = true;
+    }
+
+    UINT configCount = 0;
+    fread(&configCount, sizeof(UINT), 1, pFile);
+
+    if (_ApplyFormula && !s_bFormulaInitialized)
+        ResetTileFormulaConfigToDefault();
+
+    for (UINT i = 0; i < configCount; ++i)
+    {
+        int typeValue = 0;
+        TILE_FORMULA_CONFIG cfg = {};
+        fread(&typeValue, sizeof(int), 1, pFile);
+        fread(&cfg, sizeof(TILE_FORMULA_CONFIG), 1, pFile);
+
+        if (_ApplyFormula && IsValidTileTypeValue(typeValue))
+        {
+            s_FormulaConfig[typeValue] = cfg;
+        }
+    }
+
+    UINT unlockedCount = 0;
+    if (1 == fread(&unlockedCount, sizeof(UINT), 1, pFile))
+    {
+        for (UINT i = 0; i < unlockedCount; ++i)
+        {
+            int unlockedType = 0;
+            if (1 != fread(&unlockedType, sizeof(int), 1, pFile))
+                break;
+
+            if (IsValidTileTypeValue(unlockedType) && unlockedType >= (int)TILETYPE::LINE_BLOCK_7)
+            {
+                s_TileTypeUnlocked[unlockedType] = true;
+            }
+        }
+    }
+
+    UINT metaMagic = 0;
+    if (1 == fread(&metaMagic, sizeof(UINT), 1, pFile))
+    {
+        if (metaMagic == 0x50414D54)
+        {
+            TILE_MAP_PLACEMENT placement = s_MapPlacement;
+            if (1 == fread(&placement, sizeof(TILE_MAP_PLACEMENT), 1, pFile))
+            {
+                s_MapPlacement = placement;
+            }
+        }
+    }
+
+    fclose(pFile);
+
+    if (_ApplyFormula)
+        s_bFormulaInitialized = true;
+
+    return true;
+}
+
 CTileScript::CTileScript()
     : CScript(SCRIPT_TYPE::TILESCRIPT)
 {
@@ -35,14 +552,28 @@ void CTileScript::Begin()
 void CTileScript::Tick()
 {
     DbgInfo info = {};
-    info.Color = Vec4(0.f, 1.f, 0.f, 1.f);
+    info.Color = GetDebugColorByType(m_eType);
     info.DepthTest = false;
     info.Life = 0.f;
 
     Vec3 vWorldPos = Transform()->GetWorldPos();
     Vec3 vWorldScale = Transform()->GetRelativeScale();
 
-    if (m_eType == TILETYPE::CIRCLE_BLOCK_1 || m_eType == TILETYPE::CIRCLE_BLOCK_2)
+    bool bDrawCircle = false;
+    if (m_eType == TILETYPE::CIRCLE_BLOCK_3)
+    {
+        bDrawCircle = s_bHalfChecker;
+    }
+    else if (m_eType == TILETYPE::CIRCLE_BLOCK_4)
+    {
+        bDrawCircle = !s_bHalfChecker;
+    }
+    else if (IsCircleTileType(m_eType))
+    {
+        bDrawCircle = true;
+    }
+
+    if (bDrawCircle)
     {
         info.Shape = DBG_SHAPE::CIRCLE;
         info.Pos = Vec3(
@@ -299,14 +830,13 @@ void CTileScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider
     // 2. [중요] Push 값의 월드 단위 변환
     // localNormal의 magnitude(mag)는 로컬 기준이므로, 
     // 실제 밀어낼 거리(World Distance)는 타일 스케일을 반영해야 합니다.
-    float worldPush = 0.001f;
     if (fValue < 0.f)
     {
         float push = (-fValue / mag);
 
         // 타일의 평균 스케일을 곱해 로컬 push를 월드 push로 변환합니다.
         // (정밀도를 위해 해당 방향의 스케일 성분을 고려하는 것이 좋음)
-        worldPush = push * ((vTileScale.x + vTileScale.y) * 0.5f) + 0.001f;
+        float worldPush = push * ((vTileScale.x + vTileScale.y) * 0.5f) + 0.001f;
         const float maxPush = 12.f;
         if (worldPush > maxPush)
             worldPush = maxPush;
@@ -353,7 +883,6 @@ void CTileScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider
     if (blockedByWallLikeTile && pPlayer->GetAction() == ActionState::Break)
     {
         pPlayer->RequestBreakWallStop();
-
         pPlayer->SetVelocity(Vec2(0.f, 0.f));
         return;
     }
@@ -391,9 +920,9 @@ void CTileScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider
 
         if (pPlayer->GetAction() == ActionState::Break)
         {
-            Vec2 v = pPlayer->GetVelocity();
-            v.x = 0.f;
-            pPlayer->SetVelocity(v);
+            Vec2 vBlocked = pPlayer->GetVelocity();
+            vBlocked.x = 0.f;
+            pPlayer->SetVelocity(vBlocked);
             return;
         }
     }
@@ -453,129 +982,85 @@ void CTileScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider
 
 void CTileScript::TileMapSetting(TILETYPE i)
 {
-    m_eType = i;
+    TileMapSetting((int)i);
+}
 
-    switch (i)
+void CTileScript::TileMapSetting(int _TypeValue)
+{
+    if (!IsValidTileTypeValue(_TypeValue))
+        _TypeValue = (int)TILETYPE::EMPTY_BLOCK;
+
+    if (!s_bFormulaInitialized)
+        ResetTileFormulaConfigToDefault();
+
+    m_eType = (TILETYPE)_TypeValue;
+
+    auto SetLineFormula = [this](const TILE_FORMULA_CONFIG& cfg)
+        {
+            a = cfg.a;
+            b = cfg.b;
+            c = cfg.c;
+
+            f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
+            dfdx = [this](float x, float y) { return c * (a - b); };
+            dfdy = [this](float x, float y) { return c; };
+        };
+
+    auto SetCircleFormula = [this](const TILE_FORMULA_CONFIG& cfg)
+        {
+            r = cfg.r;
+            center_x = cfg.center_x;
+            center_y = cfg.center_y;
+
+            f = [this](float x, float y)
+                {
+                    return r * r - (x - center_x) * (x - center_x) - (y - center_y) * (y - center_y);
+                };
+            dfdx = [this](float x, float y) { return -2.f * (x - center_x); };
+            dfdy = [this](float x, float y) { return -2.f * (y - center_y); };
+        };
+
+    if (m_eType == TILETYPE::EMPTY_BLOCK)
     {
-    case TILETYPE::EMPTY_BLOCK:
         f = [](float x, float y) { return 1.0f; };
         dfdx = [](float x, float y) { return 1.f; };
         dfdy = [](float x, float y) { return 1.f; };
-        break;
-
-    case TILETYPE::LINE_BLOCK_1:
-        a = 0.1f; b = 0.4f; c = -1.0f;
-        f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-        dfdx = [this](float x, float y) { return c * (a - b); };
-        dfdy = [this](float x, float y) { return c; };
-        break;
-
-    case TILETYPE::LINE_BLOCK_2:
-        a = 0.4f; b = 0.8f; c = -1.f;
-        f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-        dfdx = [this](float x, float y) { return c * (a - b); };
-        dfdy = [this](float x, float y) { return c; };
-        break;
-
-    case TILETYPE::LINE_BLOCK_3:
-        a = 0.8f; b = 0.8f; c = -1.f;
-        f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-        dfdx = [this](float x, float y) { return c * (a - b); };
-        dfdy = [this](float x, float y) { return c; };
-        break;
-
-    case TILETYPE::LINE_BLOCK_4:
-        a = 0.8f; b = 0.4f; c = -1.f;
-        f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-        dfdx = [this](float x, float y) { return c * (a - b); };
-        dfdy = [this](float x, float y) { return c; };
-        break;
-
-    case TILETYPE::LINE_BLOCK_5:
-        a = 0.4f; b = 0.1f; c = -1.f;
-        f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-        dfdx = [this](float x, float y) { return c * (a - b); };
-        dfdy = [this](float x, float y) { return c; };
-        break;
-
-    case TILETYPE::LINE_BLOCK_6:
-        a = 0.1f; b = 0.1f; c = -1.f;
-        f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-        dfdx = [this](float x, float y) { return c * (a - b); };
-        dfdy = [this](float x, float y) { return c; };
-        break;
-
-    case TILETYPE::CIRCLE_BLOCK_1:
-        r = 0.8f; center_x = 1.f; center_y = 1.f;
-        f = [this](float x, float y)
-            {
-                return r * r - (x - center_x) * (x - center_x) - (y - center_y) * (y - center_y);
-            };
-        dfdx = [this](float x, float y) { return -2.f * (x - center_x); };
-        dfdy = [this](float x, float y) { return -2.f * (y - center_y); };
-        break;
-
-    case TILETYPE::CIRCLE_BLOCK_2:
-        r = 0.8f; center_x = 0.f; center_y = 1.f;
-        f = [this](float x, float y)
-            {
-                return r * r - (x - center_x) * (x - center_x) - (y - center_y) * (y - center_y);
-            };
-        dfdx = [this](float x, float y) { return -2.f * (x - center_x); };
-        dfdy = [this](float x, float y) { return -2.f * (y - center_y); };
-        break;
-
-    case TILETYPE::CIRCLE_BLOCK_3:
-        // 하프 체커와 닿지 않았을 경우
-        if (s_bHalfChecker == false)
-        {
-            a = 0.8f; b = 0.8f; c = -1.f;
-            f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-            dfdx = [this](float x, float y) { return c * (a - b); };
-            dfdy = [this](float x, float y) { return c; };
-            break;
-        }
-        else
-        {
-            r = 0.8f; center_x = 1.f; center_y = 0.f;
-            f = [this](float x, float y)
-                {
-                    return r * r - (x - center_x) * (x - center_x) - (y - center_y) * (y - center_y);
-                };
-            dfdx = [this](float x, float y) { return -2.f * (x - center_x); };
-            dfdy = [this](float x, float y) { return -2.f * (y - center_y); };
-            break;
-        }
-
-
-    case TILETYPE::CIRCLE_BLOCK_4:
-        // 하프 체커와 닿지 않았을 경우
-        if (s_bHalfChecker == true)
-        {
-            a = 0.8f; b = 0.8f; c = -1.f;
-            f = [this](float x, float y) { return c * (y - (b - a) * x - a); };
-            dfdx = [this](float x, float y) { return c * (a - b); };
-            dfdy = [this](float x, float y) { return c; };
-            break;
-        }
-        else
-        {
-            r = 0.8f; center_x = 0.f; center_y = 0.f; // 
-            f = [this](float x, float y)
-                {
-                    return r * r - (x - center_x) * (x - center_x) - (y - center_y) * (y - center_y);
-                };
-            dfdx = [this](float x, float y) { return -2.f * (x - center_x); };
-            dfdy = [this](float x, float y) { return -2.f * (y - center_y); };
-            break;
-        }
-
-    default:
-        f = [](float x, float y) { return -1.0f; };
-        dfdx = [](float x, float y) { return 0.f; };
-        dfdy = [](float x, float y) { return 0.f; };
-        break;
+        return;
     }
+
+    if (m_eType == TILETYPE::CIRCLE_BLOCK_3)
+    {
+        if (!s_bHalfChecker)
+            SetLineFormula(s_FormulaConfig[_TypeValue]);
+        else
+            SetCircleFormula(s_FormulaConfig[_TypeValue]);
+        return;
+    }
+
+    if (m_eType == TILETYPE::CIRCLE_BLOCK_4)
+    {
+        if (s_bHalfChecker)
+            SetLineFormula(s_FormulaConfig[_TypeValue]);
+        else
+            SetCircleFormula(s_FormulaConfig[_TypeValue]);
+        return;
+    }
+
+    if (IsLineTileType(m_eType))
+    {
+        SetLineFormula(s_FormulaConfig[_TypeValue]);
+        return;
+    }
+
+    if (IsCircleTileType(m_eType))
+    {
+        SetCircleFormula(s_FormulaConfig[_TypeValue]);
+        return;
+    }
+
+    f = [](float x, float y) { return -1.0f; };
+    dfdx = [](float x, float y) { return 0.f; };
+    dfdy = [](float x, float y) { return 0.f; };
 }
 
 float CTileScript::GetFvalue(Vec2 _pos)

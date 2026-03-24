@@ -27,6 +27,7 @@ private:
 	void CreateEngineTexture();
 	void CreateEngineMaterial();
 	void CreateEngineSprite();
+	void CreateEnginePrefab();
 
 public:
 	void AddAsset(const wstring& _Key, Ptr<Asset> _Asset);
@@ -61,6 +62,8 @@ ASSET_TYPE GetAssetType()
 		return ASSET_TYPE::TILEMAP;
 	else if constexpr (std::is_same_v<T, ALevel>)
 		return ASSET_TYPE::LEVEL;
+	else if constexpr (std::is_same_v<T, APrefab>)
+		return ASSET_TYPE::PREFAB;
 
 	return ASSET_TYPE::END;
 }
@@ -87,8 +90,12 @@ Ptr<T> AssetMgr::Load(const wstring& _Key, const wstring& _RelativePath)
 	// 동일키로 먼저 등록된 에셋이 있으면, 그걸 반환
 	if (nullptr != pAsset)
 	{
-		pAsset->Load(CONTENT_PATH + _RelativePath);
-		pAsset->SetRelativePath(_RelativePath);
+		if (!_RelativePath.empty())
+		{
+			pAsset->Load(CONTENT_PATH + _RelativePath);
+			pAsset->SetRelativePath(_RelativePath);
+		}
+
 		pAsset->SetKey(_Key);
 		m_Changed = true;
 		return pAsset;
@@ -128,6 +135,10 @@ Ptr<T> LoadAssetRef(FILE* _File)
 	{
 		wstring Key = LoadWString(_File);
 		wstring RelativePath = LoadWString(_File);
+
+		if (RelativePath.empty())
+			return AssetMgr::GetInst()->Find<T>(Key);
+
 		return AssetMgr::GetInst()->Load<T>(Key, RelativePath);
 	}
 

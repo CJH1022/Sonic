@@ -179,6 +179,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="ALevel.h" />
     <ClInclude Include="AMaterial.h" />
     <ClInclude Include="AMesh.h" />
+    <ClInclude Include="APrefab.h" />
     <ClInclude Include="ASprite.h" />
     <ClInclude Include="Asset.h" />
     <ClInclude Include="AssetMgr.h" />
@@ -223,6 +224,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="AGraphicShader.h" />
     <ClInclude Include="GraphicShaderUI.h" />
     <ClInclude Include="ImageEditor.h" />
+    <ClInclude Include="TileScriptEditor.h" />
     <ClInclude Include="ImGui\imconfig.h" />
     <ClInclude Include="ImGui\imgui.h" />
     <ClInclude Include="ImGui\imgui_impl_dx11.h" />
@@ -249,6 +251,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="Ptr.h" />
     <ClInclude Include="RenderMgr.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="ScriptUI.h" />
     <ClInclude Include="SimpleMath.h" />
     <ClInclude Include="single.h" />
     <ClInclude Include="CSpriteRender.h" />
@@ -282,6 +285,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="ALevel.cpp" />
     <ClCompile Include="AMaterial.cpp" />
     <ClCompile Include="AMesh.cpp" />
+    <ClCompile Include="APrefab.cpp" />
     <ClCompile Include="ASprite.cpp" />
     <ClCompile Include="Asset.cpp" />
     <ClCompile Include="AssetMgr.cpp" />
@@ -321,6 +325,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="GameObject.cpp" />
     <ClCompile Include="GraphicShaderUI.cpp" />
     <ClCompile Include="ImageEditor.cpp" />
+    <ClCompile Include="TileScriptEditor.cpp" />
     <ClCompile Include="ImGui\imgui.cpp" />
     <ClCompile Include="ImGui\imgui_demo.cpp" />
     <ClCompile Include="ImGui\imgui_draw.cpp" />
@@ -352,6 +357,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="PrefabUI.cpp" />
     <ClCompile Include="RenderMgr.cpp" />
     <ClCompile Include="CSpriteRender.cpp" />
+    <ClCompile Include="ScriptUI.cpp" />
     <ClCompile Include="SoundUI.cpp" />
     <ClCompile Include="Source\ScriptMgr.cpp" />
     <ClCompile Include="Source\Scripts\CBlockMovingScript.cpp" />

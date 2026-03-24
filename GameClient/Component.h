@@ -30,6 +30,9 @@ public:
     virtual void Begin() {}
     virtual void FinalTick() = 0;
 
+    virtual void SaveToLevelFile(FILE* _File) {}
+    virtual void LoadFromLevelFile(FILE* _File) {}
+
     virtual Component* Clone() = 0;
 public:
     Component(COMPONENT_TYPE _Type);
@@ -38,4 +41,3 @@ public:
 
     friend class GameObject;
 };
-

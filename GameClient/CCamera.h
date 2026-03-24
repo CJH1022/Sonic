@@ -56,6 +56,9 @@ public:
     void SortObject();
     void Render();
 
+    virtual void SaveToLevelFile(FILE* _File) override;
+    virtual void LoadFromLevelFile(FILE* _File) override;
+
     CLONE(CCamera);
 public:
     CCamera();

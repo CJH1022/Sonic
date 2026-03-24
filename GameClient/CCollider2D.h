@@ -45,6 +45,9 @@ private:
 
 public:
     virtual void FinalTick() override;
+
+    virtual void SaveToLevelFile(FILE* _File) override;
+    virtual void LoadFromLevelFile(FILE* _File) override;
     
     CLONE(CCollider2D);
 public:

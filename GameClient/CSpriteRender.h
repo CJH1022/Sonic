@@ -18,6 +18,9 @@ public:
     virtual void Render() override;
     virtual void CreateMaterial() override;
 
+    virtual void SaveToLevelFile(FILE* _File) override;
+    virtual void LoadFromLevelFile(FILE* _File) override;
+
     CLONE(CSpriteRender);
 public:
     CSpriteRender();

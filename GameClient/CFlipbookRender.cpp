@@ -9,6 +9,9 @@ CFlipbookRender::CFlipbookRender()
 	, m_FPS(0.f)
 	, m_AccTime(0.f)
 	, m_CurSprite(0)
+	, m_CurFlipbook(0)
+	, m_RepeatCount(0)
+	, m_Finish(false)
 {
 }
 
@@ -108,4 +111,47 @@ bool CFlipbookRender::CheckFinish()
 			return true;
 		}
 	}
+
+	return false;
+}
+
+void CFlipbookRender::SaveToLevelFile(FILE* _File)
+{
+	CRenderComponent::SaveToLevelFile(_File);
+
+	size_t FlipbookCount = m_vecFlipbook.size();
+	fwrite(&FlipbookCount, sizeof(size_t), 1, _File);
+
+	for (const auto& Flipbook : m_vecFlipbook)
+	{
+		SaveAssetRef(_File, Flipbook.Get());
+	}
+
+	fwrite(&m_CurFlipbook, sizeof(int), 1, _File);
+	fwrite(&m_CurSprite, sizeof(int), 1, _File);
+	fwrite(&m_RepeatCount, sizeof(int), 1, _File);
+	fwrite(&m_Finish, sizeof(bool), 1, _File);
+	fwrite(&m_FPS, sizeof(float), 1, _File);
+	fwrite(&m_AccTime, sizeof(float), 1, _File);
+}
+
+void CFlipbookRender::LoadFromLevelFile(FILE* _File)
+{
+	CRenderComponent::LoadFromLevelFile(_File);
+
+	size_t FlipbookCount = 0;
+	fread(&FlipbookCount, sizeof(size_t), 1, _File);
+
+	m_vecFlipbook.clear();
+	for (size_t i = 0; i < FlipbookCount; ++i)
+	{
+		m_vecFlipbook.push_back(LoadAssetRef<AFlipbook>(_File));
+	}
+
+	fread(&m_CurFlipbook, sizeof(int), 1, _File);
+	fread(&m_CurSprite, sizeof(int), 1, _File);
+	fread(&m_RepeatCount, sizeof(int), 1, _File);
+	fread(&m_Finish, sizeof(bool), 1, _File);
+	fread(&m_FPS, sizeof(float), 1, _File);
+	fread(&m_AccTime, sizeof(float), 1, _File);
 }

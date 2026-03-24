@@ -30,6 +30,9 @@ public:
     float GetAngle() { return m_Info.Angle; }
     void SetAngle(float _Angle) { m_Info.Angle = _Angle; }
 
+    virtual void SaveToLevelFile(FILE* _File) override;
+    virtual void LoadFromLevelFile(FILE* _File) override;
+
     CLONE(CLight2D);
 public:
     CLight2D();

@@ -2,6 +2,7 @@
 #include "AssetMgr.h"
 
 #include "PathMgr.h"
+#include "Source/Scripts/CMissileScript.h"
 
 void AssetMgr::Init()
 {
@@ -14,6 +15,8 @@ void AssetMgr::Init()
 	CreateEngineMaterial();
 
 	CreateEngineSprite();
+
+	CreateEnginePrefab();
 }
 
 void AssetMgr::CreateEngineMesh()
@@ -846,4 +849,30 @@ void AssetMgr::CreateEngineSprite()
 
 		AddAsset(pTileMap->GetName(), pTileMap.Get());
 		// pTileMap->Save(CONTENT_PATH + pTileMap->GetKey());
+}
+
+void AssetMgr::CreateEnginePrefab()
+{
+	CreateDirectoryW((wstring(CONTENT_PATH) + L"Prefab").c_str(), nullptr);
+
+	Ptr<GameObject> pObject = new GameObject;
+	pObject->SetName(L"Missile");
+
+	pObject->AddComponent(new CTransform);
+	pObject->AddComponent(new CMeshRender);
+	pObject->AddComponent(new CCollider2D);
+	pObject->AddComponent(new CMissileScript);
+
+	pObject->Transform()->SetRelativeScale(Vec3(10.f, 30.f, 1.f));
+	pObject->MeshRender()->SetMesh(FIND(AMesh, L"RectMesh"));
+	pObject->MeshRender()->SetMaterial(FIND(AMaterial, L"Std2DMtrl"));
+
+	Ptr<APrefab> pMissilePrefab = new APrefab;
+	pMissilePrefab->SetObject(pObject);
+	AddAsset(L"Prefab\\Missile.pref", pMissilePrefab.Get());
+
+	wstring FilePath = wstring(CONTENT_PATH) + L"Prefab\\Missile.pref";
+	pMissilePrefab->Save(FilePath);
+
+	LOAD(APrefab, L"Prefab\\Missile.pref");
 }

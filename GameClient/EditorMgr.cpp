@@ -14,6 +14,7 @@
 #include "Inspector.h"
 #include "Outliner.h"
 #include "ImageEditor.h"
+#include "TileScriptEditor.h"
 #include "ContentUI.h"
 #include "ListUI.h"
 #include "TreeUI.h"
@@ -167,6 +168,10 @@ void EditorMgr::CreateEditorUI()
     AddUI(pUI->GetUIName(), pUI);
 
     pUI = new ImageEditor;
+    AddUI(pUI->GetUIName(), pUI);
+
+    pUI = new TileScriptEditor;
+    pUI->SetActive(false);
     AddUI(pUI->GetUIName(), pUI);
     
     pUI = new ListUI;

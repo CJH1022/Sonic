@@ -21,6 +21,8 @@ int ASprite::Save(const wstring& _FilePath)
 {
 	FILE* pFile = nullptr;
 	_wfopen_s(&pFile, _FilePath.c_str(), L"wb");
+	if (nullptr == pFile)
+		return E_FAIL;
 
 	// 가리키고 있던 텍스쳐가 누군지 저장
 	SaveAssetRef(pFile, m_Atlas.Get());	
@@ -40,6 +42,8 @@ int ASprite::Load(const wstring& _FilePath)
 {
 	FILE* pFile = nullptr;
 	_wfopen_s(&pFile, _FilePath.c_str(), L"rb");
+	if (nullptr == pFile)
+		return E_FAIL;
 
 	// 저장할때 가리키던 텍스쳐를 다시 가리키기
 	m_Atlas = LoadAssetRef<ATexture>(pFile);

@@ -3,18 +3,50 @@
 
 #include "Source/ScriptMgr.h"
 
+enum class SCRIPT_PARAM
+{
+    INT,
+    FLOAT,
+    VEC2,
+    VEC4,
+    MATRIX,
+
+    TEXTURE,
+    MATERIAL,
+    PREFAB,
+};
+
+struct tScriptParam
+{
+    SCRIPT_PARAM    Param;
+    void*           Data;
+    wstring         Desc;
+    bool            IsInput;
+    float           Step;
+};
+
 class CCollider2D;
 
 class CScript :
     public Component
 {
 private:
-    int    m_ScriptType;
+    int                  m_ScriptType;
+    vector<tScriptParam> m_vecScriptParam;
 
 public:
     int GetScriptType() { return m_ScriptType; }
 
+protected:
+    void AddScriptParam(SCRIPT_PARAM _Type, void* _Data, const wstring& _Desc, bool _IsInput = true, float _Step = 1.f)
+    {
+        m_vecScriptParam.push_back(tScriptParam{ _Type, _Data, _Desc, _IsInput, _Step });
+    }
+    void Instantiate(class APrefab* _Prefab, int _LayerIdx, Vec3 _WorldPos);
+
 public:
+    const vector<tScriptParam>& GetScriptParam() { return m_vecScriptParam; }
+
     virtual void Tick() = 0;
     virtual void FinalTick() final {};
 
@@ -30,6 +62,7 @@ public:
     virtual CScript* Clone() = 0;
 public:
     CScript(int _ScriptType);
+    CScript(const CScript& _Origin);
     virtual ~CScript();
 };
 

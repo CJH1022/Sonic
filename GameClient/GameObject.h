@@ -39,6 +39,7 @@ public:
 public:
     void AddComponent(Ptr<Component> _Com);
     Ptr<Component> GetComponent(COMPONENT_TYPE _Type) { return m_Com[(UINT)_Type]; }
+    const vector<Ptr<CScript>>& GetScripts() const { return m_vecScripts; }
     template<typename T>
     Ptr<T> GetScript();
 
@@ -67,6 +68,10 @@ public:
     GET_COMPONENT(Collider2D, COLLIDER2D);
 
     Ptr<CRenderComponent> GetRenderCom() { return m_RenderCom; }
+
+public:
+    void SaveToLevelFile(FILE* _File);
+    void LoadFromLevelFile(FILE* _File);
 
 private:
     void RegisterLayer();

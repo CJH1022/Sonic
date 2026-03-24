@@ -8,3 +8,4 @@
 #include "ASprite.h"
 #include "AFlipbook.h"
 #include "ATileMap.h"
+#include "APrefab.h"

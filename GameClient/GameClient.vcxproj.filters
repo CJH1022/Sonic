@@ -145,6 +145,9 @@
     <ClInclude Include="ATileMap.h">
       <Filter>GameEngine\04. Asset\08. TileMap</Filter>
     </ClInclude>
+    <ClInclude Include="APrefab.h">
+      <Filter>GameEngine\04. Asset\09. Prefab</Filter>
+    </ClInclude>
     <ClInclude Include="CTileRender.h">
       <Filter>GameEngine\06. Component\RenderComponent\05. TileRender</Filter>
     </ClInclude>
@@ -268,6 +271,9 @@
     <ClInclude Include="PrefabUI.h">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI</Filter>
     </ClInclude>
+    <ClInclude Include="ScriptUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\ScriptUI</Filter>
+    </ClInclude>
     <ClInclude Include="CEditorCamMoveScript.h">
       <Filter>GameEngine\03. Manager\09. EditorMgr</Filter>
     </ClInclude>
@@ -293,6 +299,9 @@
       <Filter>Source\Scripts</Filter>
     </ClInclude>
     <ClInclude Include="ImageEditor.h">
+      <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
+    </ClInclude>
+    <ClInclude Include="TileScriptEditor.h">
       <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
     </ClInclude>
     <ClInclude Include="Source\Scripts\CBlockScript.h">
@@ -440,6 +449,9 @@
     <Filter Include="GameEngine\04. Asset\08. TileMap">
       <UniqueIdentifier>{4df9f117-b44b-4190-94d8-52bbeced1d3d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="GameEngine\04. Asset\09. Prefab">
+      <UniqueIdentifier>{574a8581-a626-433d-a4c8-f2caa767dce7}</UniqueIdentifier>
+    </Filter>
     <Filter Include="GameEngine\06. Component\RenderComponent\05. TileRender">
       <UniqueIdentifier>{dc22e4e1-6714-4626-82a6-d9d28b7db742}</UniqueIdentifier>
     </Filter>
@@ -541,6 +553,9 @@
     </Filter>
     <Filter Include="GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI">
       <UniqueIdentifier>{01de38b3-f7ab-444f-a9a3-023494e04400}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\ScriptUI">
+      <UniqueIdentifier>{5653a66e-cab6-4464-873c-21db327e0ab4}</UniqueIdentifier>
     </Filter>
     <Filter Include="Source">
       <UniqueIdentifier>{56a5ff93-338b-46c8-bee8-4a2a64b6b0bc}</UniqueIdentifier>
@@ -675,6 +690,9 @@
     <ClCompile Include="ATileMap.cpp">
       <Filter>GameEngine\04. Asset\08. TileMap</Filter>
     </ClCompile>
+    <ClCompile Include="APrefab.cpp">
+      <Filter>GameEngine\04. Asset\09. Prefab</Filter>
+    </ClCompile>
     <ClCompile Include="CTileRender.cpp">
       <Filter>GameEngine\06. Component\RenderComponent\05. TileRender</Filter>
     </ClCompile>
@@ -796,6 +814,9 @@
     <ClCompile Include="PrefabUI.cpp">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI</Filter>
     </ClCompile>
+    <ClCompile Include="ScriptUI.cpp">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\ScriptUI</Filter>
+    </ClCompile>
     <ClCompile Include="CEditorCamMoveScript.cpp">
       <Filter>GameEngine\03. Manager\09. EditorMgr</Filter>
     </ClCompile>
@@ -821,6 +842,9 @@
       <Filter>Source\Scripts</Filter>
     </ClCompile>
     <ClCompile Include="ImageEditor.cpp">
+      <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
+    </ClCompile>
+    <ClCompile Include="TileScriptEditor.cpp">
       <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
     </ClCompile>
     <ClCompile Include="Source\Scripts\CBlockScript.cpp">

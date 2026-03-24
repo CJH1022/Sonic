@@ -21,3 +21,13 @@ void CLight2D::FinalTick()
 
 	RenderMgr::GetInst()->RegisterLight2D(this);
 }
+
+void CLight2D::SaveToLevelFile(FILE* _File)
+{
+	fwrite(&m_Info, sizeof(Light2DInfo), 1, _File);
+}
+
+void CLight2D::LoadFromLevelFile(FILE* _File)
+{
+	fread(&m_Info, sizeof(Light2DInfo), 1, _File);
+}

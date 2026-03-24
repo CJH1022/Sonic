@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "CRenderComponent.h"
 #include "LevelMgr.h"
+#include "AssetMgr.h"
 
 CRenderComponent::CRenderComponent(COMPONENT_TYPE _Type)
 	: Component(_Type)
@@ -61,4 +62,18 @@ Ptr<AMaterial> CRenderComponent::CreateDynamicMaterial()
 		m_Mtrl = m_DynamicMtrl = m_SharedMtrl->Clone();
 		return m_DynamicMtrl;
 	}	
+}
+
+void CRenderComponent::SaveToLevelFile(FILE* _File)
+{
+	SaveAssetRef(_File, m_Mesh.Get());
+	SaveAssetRef(_File, m_Mtrl.Get());
+	SaveAssetRef(_File, m_SharedMtrl.Get());
+}
+
+void CRenderComponent::LoadFromLevelFile(FILE* _File)
+{
+	m_Mesh = LoadAssetRef<AMesh>(_File);
+	m_Mtrl = LoadAssetRef<AMaterial>(_File);
+	m_SharedMtrl = LoadAssetRef<AMaterial>(_File);
 }

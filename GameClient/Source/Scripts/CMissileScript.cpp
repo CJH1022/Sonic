@@ -65,3 +65,13 @@ void CMissileScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColli
 void CMissileScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
 }
+
+void CMissileScript::SaveToLevelFile(FILE* _File)
+{
+	fwrite(&m_Dir, sizeof(Vec3), 1, _File);
+}
+
+void CMissileScript::LoadFromLevelFile(FILE* _File)
+{
+	fread(&m_Dir, sizeof(Vec3), 1, _File);
+}

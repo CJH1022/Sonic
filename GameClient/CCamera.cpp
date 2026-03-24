@@ -169,3 +169,25 @@ void CCamera::LayerCheck(int _Idx)
 {
 	m_LayerCheck ^= (1 << _Idx);
 }
+
+void CCamera::SaveToLevelFile(FILE* _File)
+{
+	fwrite(&m_LayerCheck, sizeof(UINT), 1, _File);
+	fwrite(&m_ProjType, sizeof(PROJ_TYPE), 1, _File);
+	fwrite(&m_Far, sizeof(float), 1, _File);
+	fwrite(&m_Width, sizeof(float), 1, _File);
+	fwrite(&m_AspectRatio, sizeof(float), 1, _File);
+	fwrite(&m_FOV, sizeof(float), 1, _File);
+	fwrite(&m_OrthoScale, sizeof(float), 1, _File);
+}
+
+void CCamera::LoadFromLevelFile(FILE* _File)
+{
+	fread(&m_LayerCheck, sizeof(UINT), 1, _File);
+	fread(&m_ProjType, sizeof(PROJ_TYPE), 1, _File);
+	fread(&m_Far, sizeof(float), 1, _File);
+	fread(&m_Width, sizeof(float), 1, _File);
+	fread(&m_AspectRatio, sizeof(float), 1, _File);
+	fread(&m_FOV, sizeof(float), 1, _File);
+	fread(&m_OrthoScale, sizeof(float), 1, _File);
+}

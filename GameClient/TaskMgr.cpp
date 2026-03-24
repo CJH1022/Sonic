@@ -29,6 +29,9 @@ void TaskMgr::Progress()
 			Ptr<GameObject> pNewObj = (GameObject*)m_vecTask[i].Param_0;
 
 			Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+			if (nullptr == pCurLevel)
+				break;
+
 			pCurLevel->AddObject(m_vecTask[i].Param_1, pNewObj);
 			pCurLevel->SetChanged();
 
@@ -49,7 +52,10 @@ void TaskMgr::Progress()
 				pObj->m_Dead = true;
 				m_Garbage.push_back(pObj);
 				Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
-				pCurLevel->SetChanged();
+				if (nullptr != pCurLevel)
+				{
+					pCurLevel->SetChanged();
+				}
 			}
 			break;
 		}

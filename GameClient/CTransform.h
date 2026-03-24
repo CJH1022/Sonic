@@ -41,6 +41,9 @@ public:
     // 데이터를 GPU 메모리로 전송
     void Binding();
 
+    virtual void SaveToLevelFile(FILE* _File) override;
+    virtual void LoadFromLevelFile(FILE* _File) override;
+
     CLONE(CTransform);
 public:
     CTransform();

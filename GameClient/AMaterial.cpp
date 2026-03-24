@@ -70,6 +70,8 @@ int AMaterial::Save(const wstring& _FilePath)
 	FILE* pFile = nullptr;
 
 	_wfopen_s(&pFile, _FilePath.c_str(), L"wb");
+	if (nullptr == pFile)
+		return E_FAIL;
 		
 	// 재질이 사용하는 쉐이더 파이프라인 정보
 	SaveAssetRef(pFile, m_Shader.Get());
@@ -97,6 +99,8 @@ int AMaterial::Load(const wstring& _FilePath)
 	FILE* pFile = nullptr;
 
 	_wfopen_s(&pFile, _FilePath.c_str(), L"rb");
+	if (nullptr == pFile)
+		return E_FAIL;
 
 	// 재질이 사용하는 쉐이더 파이프라인 정보
 	m_Shader = LoadAssetRef<AGraphicShader>(pFile);

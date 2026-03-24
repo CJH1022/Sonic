@@ -16,6 +16,7 @@ public:
     void RegisterObject(Ptr<GameObject> _Object) { m_vecAllObjects.push_back(_Object); }
     void DeregisterObject() {  m_vecAllObjects.clear(); }
     void DeregisterAsParent(Ptr<GameObject> _Object);
+    void Clear() { m_vecParents.clear(); m_vecAllObjects.clear(); }
 
     const vector<Ptr<GameObject>>& GetParentObjects() { return m_vecParents; }
     const vector<Ptr<GameObject>>& GetAllObjects() { return m_vecAllObjects; }

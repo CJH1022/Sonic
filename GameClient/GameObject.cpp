@@ -3,6 +3,7 @@
 
 #include "LevelMgr.h"
 #include "TaskMgr.h"
+#include "Source/ScriptMgr.h"
 
 
 GameObject::GameObject()
@@ -127,7 +128,12 @@ void GameObject::FinalTick_Editor()
 
 void GameObject::RegisterLayer()
 {
+	if (-1 == m_LayerIdx)
+		return;
+
 	Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pCurLevel)
+		return;
 
 	Layer* pLayer = pCurLevel->GetLayer(m_LayerIdx);
 
@@ -219,8 +225,12 @@ void GameObject::AddChild(Ptr<GameObject> _Child)
 	// 부모 오브젝트가 레벨 소속이면
 	if (m_LayerIdx != -1)
 	{
-		// 현재 레벨에 변경이 발생했음을 알림
-		LevelMgr::GetInst()->GetCurLevel()->SetChanged();
+		Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+		if (nullptr != pCurLevel)
+		{
+			// 현재 레벨에 변경이 발생했음을 알림
+			pCurLevel->SetChanged();
+		}
 	}
 }
 
@@ -230,7 +240,13 @@ void GameObject::DisconnectWithParent()
 		return;
 
 	if (m_LayerIdx != -1)
-		LevelMgr::GetInst()->GetCurLevel()->SetChanged();
+	{
+		Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+		if (nullptr != pCurLevel)
+		{
+			pCurLevel->SetChanged();
+		}
+	}
 
 	vector<Ptr<GameObject>>::iterator iter = m_Parent->m_vecChild.begin();
 
@@ -275,4 +291,114 @@ void GameObject::Destroy()
 	info.Param_0 = (DWORD_PTR)this;
 
 	TaskMgr::GetInst()->AddTask(info);
+}
+
+void GameObject::SaveToLevelFile(FILE* _File)
+{
+	SaveWString(_File, GetName());
+
+	for (UINT i = 0; i < (UINT)COMPONENT_TYPE::END; ++i)
+	{
+		if (nullptr == m_Com[i])
+			continue;
+
+		fwrite(&i, sizeof(UINT), 1, _File);
+		m_Com[i]->SaveToLevelFile(_File);
+	}
+
+	UINT ComEnd = (UINT)COMPONENT_TYPE::END;
+	fwrite(&ComEnd, sizeof(UINT), 1, _File);
+
+	size_t ScriptCount = m_vecScripts.size();
+	fwrite(&ScriptCount, sizeof(size_t), 1, _File);
+
+	for (const auto& Script : m_vecScripts)
+	{
+		wstring ScriptName = ScriptMgr::GetScriptName(Script.Get());
+		SaveWString(_File, ScriptName);
+		Script->SaveToLevelFile(_File);
+	}
+
+	size_t ChildCount = m_vecChild.size();
+	fwrite(&ChildCount, sizeof(size_t), 1, _File);
+
+	for (const auto& Child : m_vecChild)
+	{
+		Child->SaveToLevelFile(_File);
+	}
+}
+
+void GameObject::LoadFromLevelFile(FILE* _File)
+{
+	SetName(LoadWString(_File));
+
+	UINT ComType = 0;
+
+	while (true)
+	{
+		fread(&ComType, sizeof(UINT), 1, _File);
+		if (ComType == (UINT)COMPONENT_TYPE::END)
+			break;
+
+		Ptr<Component> pComponent = nullptr;
+
+		switch ((COMPONENT_TYPE)ComType)
+		{
+		case COMPONENT_TYPE::TRANSFORM:
+			pComponent = new CTransform;
+			break;
+		case COMPONENT_TYPE::CAMERA:
+			pComponent = new CCamera;
+			break;
+		case COMPONENT_TYPE::COLLIDER2D:
+			pComponent = new CCollider2D;
+			break;
+		case COMPONENT_TYPE::LIGHT2D:
+			pComponent = new CLight2D;
+			break;
+		case COMPONENT_TYPE::MESHRENDER:
+			pComponent = new CMeshRender;
+			break;
+		case COMPONENT_TYPE::BILLBOARD_RENDER:
+			pComponent = new CBillboardRender;
+			break;
+		case COMPONENT_TYPE::SPRITE_RENDER:
+			pComponent = new CSpriteRender;
+			break;
+		case COMPONENT_TYPE::FLIPBOOK_RENDER:
+			pComponent = new CFlipbookRender;
+			break;
+		case COMPONENT_TYPE::TILE_RENDER:
+			pComponent = new CTileRender;
+			break;
+		default:
+			break;
+		}
+
+		assert(nullptr != pComponent);
+		AddComponent(pComponent);
+		pComponent->LoadFromLevelFile(_File);
+	}
+
+	size_t ScriptCount = 0;
+	fread(&ScriptCount, sizeof(size_t), 1, _File);
+
+	for (size_t i = 0; i < ScriptCount; ++i)
+	{
+		wstring ScriptName = LoadWString(_File);
+		Ptr<CScript> pScript = ScriptMgr::GetScript(ScriptName);
+		assert(nullptr != pScript);
+		AddComponent(pScript.Get());
+		pScript->LoadFromLevelFile(_File);
+	}
+
+	size_t ChildCount = 0;
+	fread(&ChildCount, sizeof(size_t), 1, _File);
+
+	for (size_t i = 0; i < ChildCount; ++i)
+	{
+		Ptr<GameObject> ChildObject = new GameObject;
+		AddChild(ChildObject);
+		ChildObject->LoadFromLevelFile(_File);
+	}
 }
