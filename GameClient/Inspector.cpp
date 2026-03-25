@@ -101,7 +101,16 @@ void Inspector::SetTargetAsset(Ptr<Asset> _Asset)
 void Inspector::Tick_UI()
 {
 	if (nullptr == m_TargetObject)
+	{
+		if (nullptr == m_TargetAsset)
+		{
+			ImGui::TextWrapped("Select an object in Outliner or an asset in Content.");
+			ImGui::Spacing();
+			ImGui::TextWrapped("Tile editing tools live on the scene object that owns CTileRender, usually named TileMapRender.");
+		}
+
 		return;
+	}
 
 	wstring Name = m_TargetObject->GetName();
 	string strName = string(Name.begin(), Name.end());

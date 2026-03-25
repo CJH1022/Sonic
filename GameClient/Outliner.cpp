@@ -33,9 +33,25 @@ void Outliner::Tick_UI()
 	{
 		if (pCurLevel->IsChanged())
 		{
-			Renew();
 			Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
-			pInspector->SetTargetObject(nullptr);
+			Ptr<GameObject> pPrevTarget = nullptr;
+			if (nullptr != pInspector)
+			{
+				pPrevTarget = pInspector->GetTargetObject();
+			}
+
+			Renew();
+
+			// 타일 편집처럼 레벨이 자주 dirty 되는 작업에서도 Inspector 선택이
+			// 매번 날아가면 기능이 없는 것처럼 보인다.
+			// 아직 살아 있는 오브젝트면 선택을 유지하고, 정말 사라졌을 때만 해제한다.
+			if (nullptr != pInspector)
+			{
+				if (nullptr != pPrevTarget && !pPrevTarget->IsDead())
+					pInspector->SetTargetObject(pPrevTarget);
+				else
+					pInspector->SetTargetObject(nullptr);
+			}
 		}
 	}
 }
@@ -94,6 +110,9 @@ void Outliner::AddChild(DWORD_PTR _Src, DWORD_PTR _Dest)
 	Ptr<TreeNode> pDragNode = (TreeNode*)_Src;
 	Ptr<TreeNode> pDropNode = (TreeNode*)_Dest;
 
+	if (nullptr == pDragNode)
+		return;
+
 	Ptr<GameObject> SrcObj = (GameObject*)pDragNode->Data;
 	Ptr<GameObject> DestObj = nullptr;
 
@@ -116,6 +135,12 @@ void Outliner::AddChild(DWORD_PTR _Src, DWORD_PTR _Dest)
 	else
 	{
 		// SrcObj 가 DestObj 의 Ancetor 이면 안된다.
+		if (SrcObj == DestObj)
+			return;
+
+		if (DestObj->IsDescendantOf(SrcObj))
+			return;
+
 		DestObj->AddChild(SrcObj);
 	}	
 }
