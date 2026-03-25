@@ -82,3 +82,13 @@ struct GlobalData
 	float	EngineTime;		// 누적 시간값
 };
 extern GlobalData g_Global;
+
+struct FunctionConst
+{
+	Vec4 contourColor;
+	Vec4 normalColor;
+	float lineThickness;
+	float normalLength;
+	float normalThickness;
+	float showOverlay;
+};

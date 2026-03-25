@@ -6,7 +6,7 @@ enum class CB_TYPE
 	TRANSFORM,	// b0
 	MATERIAL,	// b1
 	GLOBAL,		// b2
-
+	FUNCTION,	// b3
 	END,
 };
 

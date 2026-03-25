@@ -167,6 +167,81 @@ float Saturate(float _Data)
 #include "Source/Scripts/CTileScript.h"
 #include <Source/Scripts/CBlockPushingScript.h>
 
+void RebuildTileCollision(GameObject* _TileMapObject)
+{
+	if (nullptr == _TileMapObject || nullptr == _TileMapObject->TileRender())
+		return;
+
+	Ptr<ATileMap> pTileMapAsset = _TileMapObject->TileRender()->GetTileMap();
+	if (nullptr == pTileMapAsset)
+		return;
+
+	// 기존 자식 중 Tile collision 오브젝트만 제거한다.
+	// TileRender 밑에 다른 편집용 자식이 생겨도 건드리지 않기 위해
+	// CTileScript가 붙은 오브젝트만 골라낸다.
+	const vector<Ptr<GameObject>>& vecChild = _TileMapObject->GetChild();
+	for (size_t i = 0; i < vecChild.size(); ++i)
+	{
+		if (vecChild[i] == nullptr)
+			continue;
+
+		if (vecChild[i]->GetScript<CTileScript>() != nullptr)
+		{
+			vecChild[i]->Destroy();
+		}
+	}
+
+	UINT Col = pTileMapAsset->GetCol();
+	UINT Row = pTileMapAsset->GetRow();
+	Vec2 tileSize = pTileMapAsset->GetTileSize();
+	const float tileW = tileSize.x;
+	const float tileH = tileSize.y;
+	const vector<UINT>& tileTypes = pTileMapAsset->GetTileTypes();
+
+	Vec3 mapPos = _TileMapObject->Transform()->GetRelativePos();
+	const float collisionLocalZ = 10.f - mapPos.z;
+
+	for (UINT row = 0; row < Row; ++row)
+	{
+		for (UINT col = 0; col < Col; ++col)
+		{
+			const UINT idx = row * Col + col;
+			if (idx >= tileTypes.size())
+				continue;
+
+			const UINT typeIdx = tileTypes[idx];
+			const TileTypeDesc* pDesc = pTileMapAsset->GetTileTypeDesc(typeIdx);
+			if (nullptr == pDesc)
+				continue;
+
+			if ((pDesc->Flags & TILE_FLAG_SOLID) == 0)
+				continue;
+
+			GameObject* pTileObj = new GameObject;
+			pTileObj->SetName(L"Tile");
+
+			pTileObj->AddComponent(new CTransform);
+			pTileObj->AddComponent(new CCollider2D);
+			pTileObj->Transform()->SetIndependentScale(true);
+
+			float x = ((float)col + 0.5f) * tileW;
+			float y = -((float)row + 0.5f) * tileH;
+
+			pTileObj->Transform()->SetRelativePos(Vec3(x, y, collisionLocalZ));
+			pTileObj->Transform()->SetRelativeScale(Vec3(tileW, tileH, 1.f));
+
+			pTileObj->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+			pTileObj->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+			CTileScript* pTileScript = new CTileScript;
+			pTileObj->AddComponent(pTileScript);
+			pTileScript->SetTileDesc(*pDesc, typeIdx);
+
+			_TileMapObject->AddChild(pTileObj);
+		}
+	}
+}
+
 void CreateTestLevel()
 {
 	// Level 생성
@@ -351,119 +426,21 @@ void CreateTestLevel()
 
 		UINT Col = pTileMapAsset->GetCol();
 		UINT Row = pTileMapAsset->GetRow();
-		vector<int> tileTypeValues;
-
-		const wstring presetPath = wstring(CONTENT_PATH) + L"TileMap\\TileScriptPreset.txt";
-		if (!CTileScript::LoadTileScriptPreset(presetPath, Row, Col, tileTypeValues, true))
-		{
-			CTileScript::GetDefaultTileMap(Row, Col, tileTypeValues);
-		}
-
-		if (tileTypeValues.size() != (size_t)Row * (size_t)Col)
-		{
-			CTileScript::GetDefaultTileMap(Row, Col, tileTypeValues);
-		}
-
-		if (pTileMapAsset->GetRow() != Row || pTileMapAsset->GetCol() != Col)
-		{
-			pTileMapAsset->SetRowCol(Row, Col);
-		}
-
-		for (UINT row = 0; row < Row; ++row)
-		{
-			for (UINT col = 0; col < Col; ++col)
-			{
-				int tileTypeValue = tileTypeValues[(size_t)row * Col + col];
-				if (!CTileScript::IsValidTileTypeValue(tileTypeValue))
-					tileTypeValue = (int)TILETYPE::EMPTY_BLOCK;
-
-				int tileIdx = tileTypeValue - 1;
-				if (tileIdx < 0)
-					tileIdx = 0;
-
-				wchar_t szKey[50] = {};
-				wchar_t szRelativePath[100] = {};
-				swprintf_s(szKey, L"MapTest_%d", tileIdx);
-				swprintf_s(szRelativePath, L"Sprite\\MapTest_%d.sprite", tileIdx);
-
-				Ptr<ASprite> pSprite = AssetMgr::GetInst()->Load<ASprite>(szKey, szRelativePath);
-				if (nullptr == pSprite && tileTypeValue != (int)TILETYPE::EMPTY_BLOCK)
-				{
-					if (CTileScript::IsLineTileTypeValue(tileTypeValue))
-						tileIdx = (int)TILETYPE::LINE_BLOCK_3 - 1;
-					else if (CTileScript::IsCircleTileTypeValue(tileTypeValue))
-						tileIdx = (int)TILETYPE::CIRCLE_BLOCK_1 - 1;
-					else
-						tileIdx = 0;
-
-					swprintf_s(szKey, L"MapTest_%d", tileIdx);
-					swprintf_s(szRelativePath, L"Sprite\\MapTest_%d.sprite", tileIdx);
-					pSprite = AssetMgr::GetInst()->Load<ASprite>(szKey, szRelativePath);
-				}
-
-				if (nullptr != pSprite)
-				{
-					pTileMapAsset->SetSprite(row, col, pSprite);
-				}
-			}
-		}
-
 		Vec2 TileSize = pTileMapAsset->GetTileSize();
 
 		// 가로 = Col, 세로 = Row
 
 		pTileMapObj->Transform()->SetRelativeScale(Vec3(TileSize.x * (float)Col, TileSize.y * (float)Row, 1.f));
 
-		CTileScript::TILE_MAP_PLACEMENT placement = {};
-		CTileScript::GetTileMapPlacement(placement);
-		pTileMapObj->Transform()->SetRelativePos(Vec3(placement.map_pos_x, placement.map_pos_y, placement.map_pos_z));
+		// 원하는 맵 위치
+
+		pTileMapObj->Transform()->SetRelativePos(Vec3(0.f, 0.f, 500.f));
 
 		pTileMapObj->TileRender()->SetTileMap(pTileMapAsset);
-		pTileMapObj->TileRender()->SetOpacity(0.5f);
+		pTileMapObj->TileRender()->SetOpacity(0.9f);
 
 		pLevel->AddObject(2, pTileMapObj);
-
-		Vec2 tileSize = pTileMapAsset->GetTileSize();
-		const float tileW = tileSize.x;
-		const float tileH = tileSize.y;
-
-		const float startLocalX = tileW * 0.5f + placement.collision_offset_x;
-		const float startLocalY = -tileH * 0.5f + placement.collision_offset_y;
-		const float localZ = 10.f - placement.map_pos_z;
-
-		for (UINT row = 0; row < Row; ++row)
-		{
-			for (UINT col = 0; col < Col; ++col)
-			{
-				const int tileTypeValue = tileTypeValues[(size_t)row * Col + col];
-				if (!CTileScript::IsValidTileTypeValue(tileTypeValue))
-					continue;
-				if (tileTypeValue == (int)TILETYPE::EMPTY_BLOCK)
-					continue;
-
-				GameObject* pTileObj = new GameObject;
-				pTileObj->SetName(L"Tile");
-
-				pTileObj->AddComponent(new CTransform);
-				pTileObj->AddComponent(new CCollider2D);
-				pTileObj->Transform()->SetIndependentScale(true);
-
-				float x = startLocalX + col * tileW;
-				float y = startLocalY - row * tileH;
-
-				pTileObj->Transform()->SetRelativePos(Vec3(x, y, localZ));
-				pTileObj->Transform()->SetRelativeScale(Vec3(tileW, tileH, 1.f));
-
-				pTileObj->Collider2D()->SetOffset(Vec2(0.f, 0.f));
-				pTileObj->Collider2D()->SetScale(Vec2(1.f, 1.f));
-
-				CTileScript* pTileScript = new CTileScript;
-				pTileObj->AddComponent(pTileScript);
-				pTileScript->TileMapSetting(tileTypeValue);
-
-				pTileMapObj->AddChild(pTileObj);
-			}
-		}
+		RebuildTileCollision(pTileMapObj.Get());
 	}
 
 	//// 스프링
@@ -485,24 +462,24 @@ void CreateTestLevel()
 
 	//pLevel->AddObject(5, pObject);
 
-	//// 스프링2
+	////// 스프링2
 	//pObject = new GameObject;
-	//pObject->SetName(L"Spring");
+	//pObject->SetName(L"Spring3");
 
 	//pObject->AddComponent(new CTransform);
 	//pObject->AddComponent(new CCollider2D);
 	//pObject->AddComponent(new CFlipbookRender);
 	//pObject->AddComponent(new CSpringScript);
 
-	//pObject->Collider2D()->SetOffset(Vec2(-0.3f, 0.0f));
-	//pObject->Collider2D()->SetScale(Vec2(0.5f, 1.f));
+	////pObject->Collider2D()->SetOffset(Vec2(-0.3f, 0.0f));
+	////pObject->Collider2D()->SetScale(Vec2(0.5f, 1.f));
 
-	//pObject->Transform()->SetRelativePos(Vec3(-50.f, 320.f, 9.f));
-	//pObject->Transform()->SetRelativeScale(Vec3(80.f, 80.f, 0.f));
-	//pObject->Transform()->SetRelativeRot(Vec3(0.f, 0.f, 0.f));
-	//pObject->FlipbookRender()->AddFlipbook(FIND(AFlipbook, L"Spring"));
+	//// pObject->Transform()->SetRelativePos(Vec3(-50.f, 320.f, 9.f));
+	////pObject->Transform()->SetRelativeScale(Vec3(80.f, 80.f, 0.f));
+	////pObject->Transform()->SetRelativeRot(Vec3(0.f, 0.f, 0.f));
+	//// pObject->FlipbookRender()->AddFlipbook(FIND(AFlipbook, L"Spring"));
 
-	//pLevel->AddObject(5, pObject);
+	pLevel->AddObject(5, pObject);
 
 	// =========================
 	// 바닥 타일 부근 테스트용 스프링 / 공중 블록

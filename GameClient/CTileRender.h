@@ -9,6 +9,7 @@ struct TileInfo
 {
     Vec4 FuncParam0; // a, b, c, r
     Vec4 FuncParam1; // center_x, center_y, mode, tileType
+    Vec4 FuncParam2; // customNormal.x, customNormal.y, flags, reserved
 };
 
 class CTileRender :
@@ -36,7 +37,6 @@ public:
             m_fOpacity = _Opacity;
     }
     float GetOpacity() const { return m_fOpacity; }
-
 
 public:
     virtual void Init() override;
