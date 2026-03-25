@@ -5,10 +5,10 @@
 #include "StructuredBuffer.h"
 
 
-struct SpriteInfo
+struct TileInfo
 {
-    Vec2 LeftTop;
-    Vec2 Slice;
+    Vec4 FuncParam0; // a, b, c, r
+    Vec4 FuncParam1; // center_x, center_y, mode, tileType
 };
 
 class CTileRender :
@@ -17,10 +17,14 @@ class CTileRender :
 private:
     Ptr<ATileMap>           m_TileMap;    
     float                   m_fOpacity;
-    vector<SpriteInfo>      m_vecSpriteInfo;
+    vector<TileInfo>        m_vecTileInfo;
     Ptr<StructuredBuffer>   m_Buffer;
 
+private:
+    void UpdateTileInfoBuffer();
+
 public:
+    Ptr<ATileMap> GetTileMap() const { return m_TileMap; }
     void SetTileMap(Ptr<ATileMap> _TileMap);
     void SetOpacity(float _Opacity)
     {

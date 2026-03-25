@@ -20,6 +20,24 @@ private:
 public:
 
     bool IsFinish() const { return m_Finish; }
+    UINT GetFlipbookCount() const { return (UINT)m_vecFlipbook.size(); }
+    int GetCurFlipbookIdx() const { return m_CurFlipbook; }
+    int GetCurSpriteIdx() const { return m_CurSprite; }
+    int GetRepeatCount() const { return m_RepeatCount; }
+    float GetFPS() const { return m_FPS; }
+
+    Ptr<AFlipbook> GetFlipbook(int _Idx) const
+    {
+        if (_Idx < 0 || m_vecFlipbook.size() <= (size_t)_Idx)
+            return nullptr;
+
+        return m_vecFlipbook[_Idx];
+    }
+
+    Ptr<AFlipbook> GetCurFlipbook() const
+    {
+        return GetFlipbook(m_CurFlipbook);
+    }
 
     void SetFlipbook(int _Idx, Ptr<AFlipbook> _Flipbook)
     {

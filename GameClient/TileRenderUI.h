@@ -6,6 +6,9 @@ class TileRenderUI :
 public:
     virtual void Tick_UI() override;
 
+private:
+    void SelectTileMap(DWORD_PTR _ListUI);
+
 public:
     TileRenderUI();
     virtual ~TileRenderUI();
