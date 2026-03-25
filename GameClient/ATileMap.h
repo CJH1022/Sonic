@@ -14,6 +14,12 @@ enum class TILE_DRAW_MODE
     VERTICAL = 3,
 };
 
+enum class TILEMAP_LAYOUT_MODE
+{
+    GRID = 0,
+    PLACEMENT = 1,
+};
+
 // 일부 원형 타일은 플레이어의 진행 방향에 따라 "보정용 기울기"를 써야 한다.
 // 기존 half-checker 동작을 일반화한 값이다.
 enum class TILE_CORRECTION_TRIGGER
@@ -62,16 +68,27 @@ struct TileTypeDesc
     Vec2 CustomNormal = Vec2(0.f, 1.f);
 };
 
+struct TilePlacement
+{
+    UINT TypeIdx = 1;
+    Vec2 LocalPos = Vec2(0.f, 0.f);
+    Vec2 Size = Vec2(96.f, 96.f);
+    float Rotation = 0.f;
+    float LocalZ = 0.f;
+};
+
 class ATileMap :
     public Asset
 {
 private:
+    TILEMAP_LAYOUT_MODE     m_LayoutMode;
     UINT                    m_Row;              // 타일맵의 행 개수
     UINT                    m_Col;              // 타일맵의 열 개수
     Vec2                    m_TileSize;         // 타일맵을 구성하는 타일 1개의 크기
     vector<UINT>            m_vecTileType;      // 각 셀이 참조하는 타일 정의 인덱스
     vector<Vec2>            m_vecTileScale;     // 각 셀의 개별 크기 배율(셀 중심 기준)
     vector<TileTypeDesc>    m_vecTileDefs;      // TileRenderUI에서 편집하는 실제 타일 정의 목록
+    vector<TilePlacement>   m_vecPlacements;    // 배치형 타일 에디터용 개별 타일 목록
 
 private:
     void ResetToDefaultTileDefs();
@@ -89,6 +106,14 @@ public:
     int DuplicateTileType(UINT _Idx);
     void RemoveTileType(UINT _Idx);
 
+    int AddPlacement(const TilePlacement& _Placement);
+    int DuplicatePlacement(UINT _Idx);
+    void RemovePlacement(UINT _Idx);
+    TilePlacement* GetPlacement(UINT _Idx);
+    const TilePlacement* GetPlacement(UINT _Idx) const;
+    const vector<TilePlacement>& GetPlacements() const { return m_vecPlacements; }
+    void ConvertGridToPlacements();
+
     TileTypeDesc* GetTileTypeDesc(UINT _Idx);
     const TileTypeDesc* GetTileTypeDesc(UINT _Idx) const;
     const vector<TileTypeDesc>& GetTileTypeDescs() const { return m_vecTileDefs; }
@@ -100,6 +125,7 @@ public:
     const vector<Vec2>& GetTileScales() const { return m_vecTileScale; }
 
     GET_SET(Vec2, TileSize);
+    GET_SET(TILEMAP_LAYOUT_MODE, LayoutMode);
 
     virtual int Load(const wstring& _FilePath) override;
     virtual int Save(const wstring& _FilePath) override;

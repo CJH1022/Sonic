@@ -198,9 +198,45 @@ void RebuildTileCollision(GameObject* _TileMapObject)
 	const float tileH = tileSize.y;
 	const vector<UINT>& tileTypes = pTileMapAsset->GetTileTypes();
 	const vector<Vec2>& tileScales = pTileMapAsset->GetTileScales();
+	const vector<TilePlacement>& placements = pTileMapAsset->GetPlacements();
 
 	Vec3 mapPos = _TileMapObject->Transform()->GetRelativePos();
 	const float collisionLocalZ = 10.f - mapPos.z;
+
+	if (pTileMapAsset->GetLayoutMode() == TILEMAP_LAYOUT_MODE::PLACEMENT)
+	{
+		for (size_t i = 0; i < placements.size(); ++i)
+		{
+			const TilePlacement& placement = placements[i];
+			const TileTypeDesc* pDesc = pTileMapAsset->GetTileTypeDesc(placement.TypeIdx);
+			if (nullptr == pDesc)
+				continue;
+
+			if ((pDesc->Flags & TILE_FLAG_SOLID) == 0)
+				continue;
+
+			GameObject* pTileObj = new GameObject;
+			pTileObj->SetName(L"Tile");
+
+			pTileObj->AddComponent(new CTransform);
+			pTileObj->AddComponent(new CCollider2D);
+			pTileObj->Transform()->SetIndependentScale(true);
+			pTileObj->Transform()->SetRelativePos(Vec3(placement.LocalPos.x, placement.LocalPos.y, collisionLocalZ + placement.LocalZ));
+			pTileObj->Transform()->SetRelativeScale(Vec3(placement.Size.x, placement.Size.y, 1.f));
+			pTileObj->Transform()->SetRelativeRot(Vec3(0.f, 0.f, placement.Rotation));
+
+			pTileObj->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+			pTileObj->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+			CTileScript* pTileScript = new CTileScript;
+			pTileObj->AddComponent(pTileScript);
+			pTileScript->SetTileDesc(*pDesc, placement.TypeIdx);
+
+			_TileMapObject->AddChild(pTileObj);
+		}
+
+		return;
+	}
 
 	for (UINT row = 0; row < Row; ++row)
 	{

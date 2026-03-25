@@ -11,10 +11,15 @@ private:
     int     m_EditRow;
     int     m_EditCol;
     Vec2    m_EditTileSize;
+    float   m_DefaultPlacementSize;
+    float   m_PlacementSnapStep;
+    bool    m_EnablePlacementSnap;
+    bool    m_LockPlacementSquare;
 
     char    m_TileTypeName[128];
     int     m_SelectedCellRow;
     int     m_SelectedCellCol;
+    int     m_SelectedPlacementIdx;
 
     class ATileMap* m_LastTileMap;
     int             m_LastSyncedTypeIdx;

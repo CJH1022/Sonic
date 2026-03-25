@@ -43,6 +43,27 @@ namespace
 		shape.c = _C;
 		return shape;
 	}
+
+	Vec2 GetColliderHorizontalEdgeWorldPos(CCollider2D* _Collider, float _NormalX)
+	{
+		if (_Collider == nullptr)
+			return Vec2(0.f, 0.f);
+
+		const Matrix& matWorld = _Collider->GetWorldMat();
+		const Vec3 vLeftEdge = XMVector3TransformCoord(Vec3(-0.5f, 0.f, 0.f), matWorld);
+		const Vec3 vRightEdge = XMVector3TransformCoord(Vec3(0.5f, 0.f, 0.f), matWorld);
+
+		// 수직벽은 발바닥이 아니라 벽을 향하고 있는 몸통의 좌/우 끝점으로 샘플해야
+		// 실제 보이는 충돌면과 판정이 일치한다.
+		if (_NormalX < -0.001f)
+			return Vec2(vRightEdge.x, vRightEdge.y);
+
+		if (_NormalX > 0.001f)
+			return Vec2(vLeftEdge.x, vLeftEdge.y);
+
+		const Vec3 vCenter = XMVector3TransformCoord(Vec3(0.f, 0.f, 0.f), matWorld);
+		return Vec2(vCenter.x, vCenter.y);
+	}
 }
 
 CTileScript::CTileScript()
@@ -396,8 +417,17 @@ void CTileScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider
 	Vec3 vTileScale = Transform()->GetRelativeScale();
 
 	Vec2 vFootPos = Vec2(vPlayerPos.x, vPlayerPos.y);
+	const bool bVerticalTile = ((TILE_DRAW_MODE)m_ResolvedInfo.mode == TILE_DRAW_MODE::VERTICAL);
 
-	if (wasGround)
+	if (bVerticalTile)
+	{
+		float sampleNormalX = m_ResolvedInfo.customNormal.x;
+		if (fabsf(sampleNormalX) <= 0.001f)
+			sampleNormalX = c;
+
+		vFootPos = GetColliderHorizontalEdgeWorldPos(_OtherCollider, sampleNormalX);
+	}
+	else if (wasGround)
 	{
 		float fRotZ = _OtherCollider->GetOwner()->Transform()->GetRelativeRot().z;
 		Vec2 vLocalDown = Vec2(sinf(fRotZ), -cosf(fRotZ));

@@ -177,6 +177,44 @@ namespace
         }
     }
 
+    float SnapValue(float _Value, float _Step)
+    {
+        if (_Step <= 0.001f)
+            return _Value;
+
+        return roundf(_Value / _Step) * _Step;
+    }
+
+    void ApplyPlacementSnap(TilePlacement& _Placement, float _Step, bool _LockSquare)
+    {
+        if (_Placement.Size.x < 1.f) _Placement.Size.x = 1.f;
+        if (_Placement.Size.y < 1.f) _Placement.Size.y = 1.f;
+
+        if (_LockSquare)
+        {
+            const float size = (_Placement.Size.x > _Placement.Size.y) ? _Placement.Size.x : _Placement.Size.y;
+            _Placement.Size.x = size;
+            _Placement.Size.y = size;
+        }
+
+        if (_Step <= 0.001f)
+            return;
+
+        _Placement.Size.x = SnapValue(_Placement.Size.x, _Step);
+        _Placement.Size.y = SnapValue(_Placement.Size.y, _Step);
+        if (_Placement.Size.x < _Step) _Placement.Size.x = _Step;
+        if (_Placement.Size.y < _Step) _Placement.Size.y = _Step;
+
+        // 위치는 중심이 아니라 좌상단 기준으로 스냅해야 크기가 달라도 모서리가 예쁘게 맞는다.
+        const float left = _Placement.LocalPos.x - _Placement.Size.x * 0.5f;
+        const float top = _Placement.LocalPos.y + _Placement.Size.y * 0.5f;
+        const float snappedLeft = SnapValue(left, _Step);
+        const float snappedTop = SnapValue(top, _Step);
+
+        _Placement.LocalPos.x = snappedLeft + _Placement.Size.x * 0.5f;
+        _Placement.LocalPos.y = snappedTop - _Placement.Size.y * 0.5f;
+    }
+
     void MarkCurrentLevelChanged()
     {
         Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
@@ -334,8 +372,13 @@ TileRenderUI::TileRenderUI()
     , m_EditRow(0)
     , m_EditCol(0)
     , m_EditTileSize(Vec2(0.f, 0.f))
+    , m_DefaultPlacementSize(96.f)
+    , m_PlacementSnapStep(16.f)
+    , m_EnablePlacementSnap(true)
+    , m_LockPlacementSquare(true)
     , m_SelectedCellRow(-1)
     , m_SelectedCellCol(-1)
+    , m_SelectedPlacementIdx(-1)
     , m_LastTileMap(nullptr)
     , m_LastSyncedTypeIdx(-1)
     , m_RequestCollisionRebuild(false)
@@ -359,8 +402,10 @@ void TileRenderUI::SyncUIState(ATileMap* _TileMap)
             m_EditRow = (int)_TileMap->GetRow();
             m_EditCol = (int)_TileMap->GetCol();
             m_EditTileSize = _TileMap->GetTileSize();
+            m_DefaultPlacementSize = (_TileMap->GetTileSize().x > 1.f) ? _TileMap->GetTileSize().x : 96.f;
             m_SelectedCellRow = -1;
             m_SelectedCellCol = -1;
+            m_SelectedPlacementIdx = _TileMap->GetPlacements().empty() ? -1 : 0;
         }
     }
 
@@ -381,6 +426,16 @@ void TileRenderUI::SyncUIState(ATileMap* _TileMap)
     {
         CopyNameToBuffer(defs[m_SelectedTypeIdx].Name, m_TileTypeName, sizeof(m_TileTypeName));
         m_LastSyncedTypeIdx = m_SelectedTypeIdx;
+    }
+
+    const vector<TilePlacement>& placements = _TileMap->GetPlacements();
+    if (placements.empty())
+    {
+        m_SelectedPlacementIdx = -1;
+    }
+    else if (m_SelectedPlacementIdx < 0 || placements.size() <= (size_t)m_SelectedPlacementIdx)
+    {
+        m_SelectedPlacementIdx = 0;
     }
 }
 
@@ -797,8 +852,9 @@ void TileRenderUI::SaveTileMapAsset(ATileMap* _TileMap)
 Ptr<ATileMap> TileRenderUI::CreateTileMapAsset()
 {
     Ptr<ATileMap> pTileMap = new ATileMap;
-    pTileMap->SetRowCol(8, 16);
+    pTileMap->SetRowCol(1, 1);
     pTileMap->SetTileSize(Vec2(96.f, 96.f));
+    pTileMap->SetLayoutMode(TILEMAP_LAYOUT_MODE::PLACEMENT);
 
     wstring key = BuildUniqueTileMapKey();
     AssetMgr::GetInst()->AddAsset(key, pTileMap.Get());
@@ -886,30 +942,15 @@ void TileRenderUI::Tick_UI()
     SyncUIState(pTileMap.Get());
 
     ImGui::Separator();
-    ImGui::Text("Grid Setup");
-
-    if (ImGui::InputInt("Row", &m_EditRow))
+    ImGui::Text("Layout");
+    const char* layoutLabels[] = { "Grid", "Placement" };
+    int layoutMode = (int)pTileMap->GetLayoutMode();
+    if (ImGui::Combo("##TileLayoutMode", &layoutMode, layoutLabels, IM_ARRAYSIZE(layoutLabels)))
     {
-        if (m_EditRow < 1) m_EditRow = 1;
-    }
-
-    if (ImGui::InputInt("Col", &m_EditCol))
-    {
-        if (m_EditCol < 1) m_EditCol = 1;
-    }
-
-    ImGui::DragFloat2("Tile Size", (float*)&m_EditTileSize, 1.f, 1.f, 4096.f);
-    if (m_EditTileSize.x < 1.f) m_EditTileSize.x = 1.f;
-    if (m_EditTileSize.y < 1.f) m_EditTileSize.y = 1.f;
-
-    if (ImGui::Button("Apply Grid"))
-    {
-        pTileMap->Resize((UINT)m_EditRow, (UINT)m_EditCol);
-        pTileMap->SetTileSize(m_EditTileSize);
+        pTileMap->SetLayoutMode((TILEMAP_LAYOUT_MODE)layoutMode);
         RequestTileMapRefresh(true, true);
     }
 
-    ImGui::SameLine();
     if (ImGui::Button("Save TileMap"))
     {
         SaveTileMapAsset(pTileMap.Get());
@@ -919,6 +960,45 @@ void TileRenderUI::Tick_UI()
     if (ImGui::Button("Rebuild Collision"))
     {
         m_RequestCollisionRebuild = true;
+    }
+
+    if (pTileMap->GetLayoutMode() == TILEMAP_LAYOUT_MODE::GRID)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Convert Grid -> Placement"))
+        {
+            pTileMap->ConvertGridToPlacements();
+            pTileMap->SetLayoutMode(TILEMAP_LAYOUT_MODE::PLACEMENT);
+            m_SelectedPlacementIdx = pTileMap->GetPlacements().empty() ? -1 : 0;
+            RequestTileMapRefresh(true, true);
+        }
+    }
+
+    if (pTileMap->GetLayoutMode() == TILEMAP_LAYOUT_MODE::GRID)
+    {
+        ImGui::Separator();
+        ImGui::Text("Grid Setup");
+
+        if (ImGui::InputInt("Row", &m_EditRow))
+        {
+            if (m_EditRow < 1) m_EditRow = 1;
+        }
+
+        if (ImGui::InputInt("Col", &m_EditCol))
+        {
+            if (m_EditCol < 1) m_EditCol = 1;
+        }
+
+        ImGui::DragFloat2("Tile Size", (float*)&m_EditTileSize, 1.f, 1.f, 4096.f);
+        if (m_EditTileSize.x < 1.f) m_EditTileSize.x = 1.f;
+        if (m_EditTileSize.y < 1.f) m_EditTileSize.y = 1.f;
+
+        if (ImGui::Button("Apply Grid"))
+        {
+            pTileMap->Resize((UINT)m_EditRow, (UINT)m_EditCol);
+            pTileMap->SetTileSize(m_EditTileSize);
+            RequestTileMapRefresh(true, true);
+        }
     }
 
     ImGui::Separator();
@@ -1004,78 +1084,265 @@ void TileRenderUI::Tick_UI()
         RequestTileMapRefresh(false, true);
     }
 
-    ImGui::Separator();
-    ImGui::Text("Paint Grid");
-    ImGui::TextWrapped("Left drag paints the current brush. Right drag erases back to the empty tile. Ctrl + Left Click only selects a cell for per-cell size editing.");
-    DrawTilePaintCanvas(pTileMap.Get());
-
-    ImGui::Separator();
-    ImGui::Text("Selected Cell Size");
-
-    if (m_SelectedCellRow >= 0 && m_SelectedCellCol >= 0 &&
-        m_SelectedCellRow < (int)pTileMap->GetRow() &&
-        m_SelectedCellCol < (int)pTileMap->GetCol())
+    if (pTileMap->GetLayoutMode() == TILEMAP_LAYOUT_MODE::GRID)
     {
-        Vec2 cellScale = pTileMap->GetTileScale((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol);
-        const UINT cellType = pTileMap->GetTileType((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol);
-        const TileTypeDesc* pCellDesc = pTileMap->GetTileTypeDesc(cellType);
+        ImGui::Separator();
+        ImGui::Text("Paint Grid");
+        ImGui::TextWrapped("Left drag paints the current brush. Right drag erases back to the empty tile. Ctrl + Left Click only selects a cell for per-cell size editing.");
+        DrawTilePaintCanvas(pTileMap.Get());
 
-        ImGui::Text("Cell");
-        ImGui::SameLine(120);
-        ImGui::Text("Row %d  Col %d", m_SelectedCellRow, m_SelectedCellCol);
+        ImGui::Separator();
+        ImGui::Text("Selected Cell Size");
 
-        ImGui::Text("Type");
-        ImGui::SameLine(120);
-        ImGui::Text("%s", (nullptr == pCellDesc) ? "None" : ToStringA(pCellDesc->Name).c_str());
+        if (m_SelectedCellRow >= 0 && m_SelectedCellCol >= 0 &&
+            m_SelectedCellRow < (int)pTileMap->GetRow() &&
+            m_SelectedCellCol < (int)pTileMap->GetCol())
+        {
+            Vec2 cellScale = pTileMap->GetTileScale((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol);
+            const UINT cellType = pTileMap->GetTileType((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol);
+            const TileTypeDesc* pCellDesc = pTileMap->GetTileTypeDesc(cellType);
 
-        bool changedScale = false;
-        changedScale |= ImGui::DragFloat2("Cell Scale", (float*)&cellScale, 0.01f, 0.1f, 1.f);
+            ImGui::Text("Cell");
+            ImGui::SameLine(120);
+            ImGui::Text("Row %d  Col %d", m_SelectedCellRow, m_SelectedCellCol);
 
-        if (ImGui::Button("50%"))
-        {
-            cellScale = Vec2(0.5f, 0.5f);
-            changedScale = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("75%"))
-        {
-            cellScale = Vec2(0.75f, 0.75f);
-            changedScale = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("100%"))
-        {
-            cellScale = Vec2(1.f, 1.f);
-            changedScale = true;
-        }
+            ImGui::Text("Type");
+            ImGui::SameLine(120);
+            ImGui::Text("%s", (nullptr == pCellDesc) ? "None" : ToStringA(pCellDesc->Name).c_str());
 
-        if (ImGui::Button("Wide"))
-        {
-            cellScale = Vec2(1.f, 0.5f);
-            changedScale = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Tall"))
-        {
-            cellScale = Vec2(0.5f, 1.f);
-            changedScale = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Reset Cell Size"))
-        {
-            cellScale = Vec2(1.f, 1.f);
-            changedScale = true;
-        }
+            bool changedScale = false;
+            changedScale |= ImGui::DragFloat2("Cell Scale", (float*)&cellScale, 0.01f, 0.1f, 1.f);
 
-        if (changedScale)
+            if (ImGui::Button("50%"))
+            {
+                cellScale = Vec2(0.5f, 0.5f);
+                changedScale = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("75%"))
+            {
+                cellScale = Vec2(0.75f, 0.75f);
+                changedScale = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("100%"))
+            {
+                cellScale = Vec2(1.f, 1.f);
+                changedScale = true;
+            }
+
+            if (ImGui::Button("Wide"))
+            {
+                cellScale = Vec2(1.f, 0.5f);
+                changedScale = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Tall"))
+            {
+                cellScale = Vec2(0.5f, 1.f);
+                changedScale = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Reset Cell Size"))
+            {
+                cellScale = Vec2(1.f, 1.f);
+                changedScale = true;
+            }
+
+            if (changedScale)
+            {
+                pTileMap->SetTileScale((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol, cellScale);
+                RequestTileMapRefresh(false, true);
+            }
+        }
+        else
         {
-            pTileMap->SetTileScale((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol, cellScale);
-            RequestTileMapRefresh(false, true);
+            ImGui::TextWrapped("No cell selected yet. Use Ctrl + Left Click on the paint grid to pick one cell without repainting it.");
         }
     }
     else
     {
-        ImGui::TextWrapped("No cell selected yet. Use Ctrl + Left Click on the paint grid to pick one cell without repainting it.");
+        ImGui::Separator();
+        ImGui::Text("Placed Tiles");
+        ImGui::TextWrapped("Placement mode stores each tile as an independent local rect, so every tile can have a different size and position.");
+        ImGui::TextWrapped("Snap is applied from each tile's top-left corner, which keeps edges aligned even when tile sizes differ.");
+
+        ImGui::Checkbox("Enable Snap", &m_EnablePlacementSnap);
+        ImGui::SameLine();
+        ImGui::Checkbox("Keep Square", &m_LockPlacementSquare);
+        ImGui::DragFloat("Snap Step", &m_PlacementSnapStep, 1.f, 1.f, 1024.f);
+        if (m_PlacementSnapStep < 1.f) m_PlacementSnapStep = 1.f;
+        ImGui::DragFloat("Default Tile Size", &m_DefaultPlacementSize, 1.f, 1.f, 4096.f);
+        if (m_DefaultPlacementSize < 1.f) m_DefaultPlacementSize = 1.f;
+
+        if (ImGui::Button("Add Placement"))
+        {
+            TilePlacement placement = {};
+            placement.TypeIdx = (UINT)m_BrushTypeIdx;
+            placement.Size = Vec2(m_DefaultPlacementSize, m_DefaultPlacementSize);
+
+            if (m_SelectedPlacementIdx >= 0)
+            {
+                const TilePlacement* pSelectedPlacement = pTileMap->GetPlacement((UINT)m_SelectedPlacementIdx);
+                if (nullptr != pSelectedPlacement)
+                {
+                    placement.LocalPos = pSelectedPlacement->LocalPos + Vec2(20.f, -20.f);
+                }
+            }
+
+            if (m_EnablePlacementSnap)
+            {
+                ApplyPlacementSnap(placement, m_PlacementSnapStep, m_LockPlacementSquare);
+            }
+
+            m_SelectedPlacementIdx = pTileMap->AddPlacement(placement);
+            RequestTileMapRefresh(true, true);
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Duplicate Placement"))
+        {
+            int duplicatedIdx = pTileMap->DuplicatePlacement((UINT)m_SelectedPlacementIdx);
+            if (duplicatedIdx >= 0)
+            {
+                m_SelectedPlacementIdx = duplicatedIdx;
+                RequestTileMapRefresh(true, true);
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Delete Placement"))
+        {
+            if (m_SelectedPlacementIdx >= 0)
+            {
+                pTileMap->RemovePlacement((UINT)m_SelectedPlacementIdx);
+                const vector<TilePlacement>& placements = pTileMap->GetPlacements();
+                m_SelectedPlacementIdx = placements.empty() ? -1 : (int)placements.size() - 1;
+                RequestTileMapRefresh(true, true);
+            }
+        }
+
+        const vector<TilePlacement>& placements = pTileMap->GetPlacements();
+        if (ImGui::BeginListBox("##PlacementList", Vec2(0.f, 180.f)))
+        {
+            for (size_t i = 0; i < placements.size(); ++i)
+            {
+                const TilePlacement& placement = placements[i];
+                const TileTypeDesc* pPlacementDesc = pTileMap->GetTileTypeDesc(placement.TypeIdx);
+                string typeName = (nullptr == pPlacementDesc) ? "None" : ToStringA(pPlacementDesc->Name);
+
+                char label[256] = {};
+                sprintf_s(label, "%d : %s  (%.0f x %.0f)", (int)i, typeName.c_str(), placement.Size.x, placement.Size.y);
+
+                if (ImGui::Selectable(label, m_SelectedPlacementIdx == (int)i))
+                {
+                    m_SelectedPlacementIdx = (int)i;
+                }
+            }
+
+            ImGui::EndListBox();
+        }
+
+        if (m_SelectedPlacementIdx >= 0)
+        {
+            TilePlacement* pPlacement = pTileMap->GetPlacement((UINT)m_SelectedPlacementIdx);
+            if (nullptr != pPlacement)
+            {
+                ImGui::Text("Placement %d", m_SelectedPlacementIdx);
+
+                if (ImGui::Button("Set Type = Brush"))
+                {
+                    pPlacement->TypeIdx = (UINT)m_BrushTypeIdx;
+                    RequestTileMapRefresh(true, true);
+                }
+
+                if (ImGui::BeginCombo("Placement Type", (pTileMap->GetTileTypeDesc(pPlacement->TypeIdx) == nullptr) ? "None" : ToStringA(pTileMap->GetTileTypeDesc(pPlacement->TypeIdx)->Name).c_str()))
+                {
+                    const vector<TileTypeDesc>& defs = pTileMap->GetTileTypeDescs();
+                    for (size_t i = 0; i < defs.size(); ++i)
+                    {
+                        const string label = ToStringA(defs[i].Name);
+                        if (ImGui::Selectable(label.c_str(), pPlacement->TypeIdx == i))
+                        {
+                            pPlacement->TypeIdx = (UINT)i;
+                            RequestTileMapRefresh(true, true);
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
+                bool changedPlacement = false;
+                changedPlacement |= ImGui::DragFloat2("Local Pos", (float*)&pPlacement->LocalPos, 1.f);
+                float tileSide = pPlacement->Size.x;
+                changedPlacement |= ImGui::DragFloat("Tile Size", &tileSide, 1.f, 1.f, 4096.f);
+                changedPlacement |= ImGui::DragFloat("Rotation (rad)", &pPlacement->Rotation, 0.01f, -XM_PI, XM_PI);
+                changedPlacement |= ImGui::DragFloat("Local Z", &pPlacement->LocalZ, 0.1f);
+
+                pPlacement->Size.x = tileSide;
+                pPlacement->Size.y = m_LockPlacementSquare ? tileSide : pPlacement->Size.y;
+
+                if (ImGui::Button("Use TileSize"))
+                {
+                    pPlacement->Size = Vec2(m_DefaultPlacementSize, m_DefaultPlacementSize);
+                    changedPlacement = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Half Size"))
+                {
+                    pPlacement->Size.x *= 0.5f;
+                    pPlacement->Size.y *= 0.5f;
+                    changedPlacement = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Double Size"))
+                {
+                    pPlacement->Size.x *= 2.f;
+                    pPlacement->Size.y *= 2.f;
+                    changedPlacement = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Snap Selected"))
+                {
+                    ApplyPlacementSnap(*pPlacement, m_PlacementSnapStep, m_LockPlacementSquare);
+                    changedPlacement = true;
+                }
+
+                if (pPlacement->Size.x < 1.f) pPlacement->Size.x = 1.f;
+                if (pPlacement->Size.y < 1.f) pPlacement->Size.y = 1.f;
+                if (m_LockPlacementSquare)
+                {
+                    const float maxSize = (pPlacement->Size.x > pPlacement->Size.y) ? pPlacement->Size.x : pPlacement->Size.y;
+                    pPlacement->Size.x = maxSize;
+                    pPlacement->Size.y = maxSize;
+                }
+                if (m_EnablePlacementSnap)
+                {
+                    ApplyPlacementSnap(*pPlacement, m_PlacementSnapStep, m_LockPlacementSquare);
+                }
+
+                if (changedPlacement)
+                {
+                    RequestTileMapRefresh(true, true);
+                }
+
+                const TileTypeDesc* pPlacementDesc = pTileMap->GetTileTypeDesc(pPlacement->TypeIdx);
+                TileDrawInfo preview = {};
+                if (nullptr != pPlacementDesc)
+                {
+                    CTileScript::ResolveTileTypeDesc(*pPlacementDesc, CTileScript::GetHalfCheckerState(), preview);
+                }
+
+                ImGui::Text("Placement Preview");
+                ImVec2 previewMin = ImGui::GetCursorScreenPos();
+                ImGui::InvisibleButton("##PlacementPreview", ImVec2(120.f, 120.f));
+                ImVec2 previewMax = ImGui::GetItemRectMax();
+                DrawTilePreview(ImGui::GetWindowDrawList(), previewMin, previewMax, preview, Vec2(1.f, 1.f), true);
+            }
+        }
+        else
+        {
+            ImGui::TextWrapped("No placement selected yet. Add one from the current brush to start building a free-form tile layout.");
+        }
     }
 
     if (m_RequestCollisionRebuild && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseDown(ImGuiMouseButton_Right))

@@ -8,7 +8,7 @@
 namespace
 {
 	constexpr UINT TILEMAP_FILE_MAGIC = 0x50414D54; // TMAP
-	constexpr UINT TILEMAP_FILE_VERSION = 4;
+	constexpr UINT TILEMAP_FILE_VERSION = 5;
 	constexpr UINT EMPTY_TILE_DEF_INDEX = 1;
 
 	bool TryParseTileType(Ptr<ASprite> _Sprite, UINT& _OutType)
@@ -89,10 +89,32 @@ namespace
 		fread(&_Shape.centerX, sizeof(float), 1, _File);
 		fread(&_Shape.centerY, sizeof(float), 1, _File);
 	}
+
+	void SaveTilePlacement(FILE* _File, const TilePlacement& _Placement)
+	{
+		fwrite(&_Placement.TypeIdx, sizeof(UINT), 1, _File);
+		fwrite(&_Placement.LocalPos, sizeof(Vec2), 1, _File);
+		fwrite(&_Placement.Size, sizeof(Vec2), 1, _File);
+		fwrite(&_Placement.Rotation, sizeof(float), 1, _File);
+		fwrite(&_Placement.LocalZ, sizeof(float), 1, _File);
+	}
+
+	void LoadTilePlacement(FILE* _File, TilePlacement& _Placement)
+	{
+		fread(&_Placement.TypeIdx, sizeof(UINT), 1, _File);
+		fread(&_Placement.LocalPos, sizeof(Vec2), 1, _File);
+		fread(&_Placement.Size, sizeof(Vec2), 1, _File);
+		fread(&_Placement.Rotation, sizeof(float), 1, _File);
+		fread(&_Placement.LocalZ, sizeof(float), 1, _File);
+
+		if (_Placement.Size.x < 1.f) _Placement.Size.x = 1.f;
+		if (_Placement.Size.y < 1.f) _Placement.Size.y = 1.f;
+	}
 }
 
 ATileMap::ATileMap()
 	: Asset(ASSET_TYPE::TILEMAP)
+	, m_LayoutMode(TILEMAP_LAYOUT_MODE::GRID)
 	, m_Row(0)
 	, m_Col(0)
 {
@@ -327,6 +349,99 @@ void ATileMap::RemoveTileType(UINT _Idx)
 		else if (m_vecTileType[i] > _Idx)
 			--m_vecTileType[i];
 	}
+
+	for (size_t i = 0; i < m_vecPlacements.size(); ++i)
+	{
+		if (m_vecPlacements[i].TypeIdx == _Idx)
+			m_vecPlacements[i].TypeIdx = EMPTY_TILE_DEF_INDEX;
+		else if (m_vecPlacements[i].TypeIdx > _Idx)
+			--m_vecPlacements[i].TypeIdx;
+	}
+}
+
+int ATileMap::AddPlacement(const TilePlacement& _Placement)
+{
+	TilePlacement placement = _Placement;
+
+	if (placement.TypeIdx >= m_vecTileDefs.size())
+		placement.TypeIdx = EMPTY_TILE_DEF_INDEX;
+
+	if (placement.Size.x < 1.f) placement.Size.x = 1.f;
+	if (placement.Size.y < 1.f) placement.Size.y = 1.f;
+
+	m_vecPlacements.push_back(placement);
+	return (int)m_vecPlacements.size() - 1;
+}
+
+int ATileMap::DuplicatePlacement(UINT _Idx)
+{
+	if (_Idx >= m_vecPlacements.size())
+		return -1;
+
+	TilePlacement placement = m_vecPlacements[_Idx];
+	placement.LocalPos.x += 20.f;
+	placement.LocalPos.y -= 20.f;
+	m_vecPlacements.push_back(placement);
+	return (int)m_vecPlacements.size() - 1;
+}
+
+void ATileMap::RemovePlacement(UINT _Idx)
+{
+	if (_Idx >= m_vecPlacements.size())
+		return;
+
+	m_vecPlacements.erase(m_vecPlacements.begin() + _Idx);
+}
+
+TilePlacement* ATileMap::GetPlacement(UINT _Idx)
+{
+	if (_Idx >= m_vecPlacements.size())
+		return nullptr;
+
+	return &m_vecPlacements[_Idx];
+}
+
+const TilePlacement* ATileMap::GetPlacement(UINT _Idx) const
+{
+	if (_Idx >= m_vecPlacements.size())
+		return nullptr;
+
+	return &m_vecPlacements[_Idx];
+}
+
+void ATileMap::ConvertGridToPlacements()
+{
+	m_vecPlacements.clear();
+
+	const float tileW = m_TileSize.x;
+	const float tileH = m_TileSize.y;
+
+	for (UINT row = 0; row < m_Row; ++row)
+	{
+		for (UINT col = 0; col < m_Col; ++col)
+		{
+			const UINT idx = row * m_Col + col;
+			if (idx >= m_vecTileType.size())
+				continue;
+
+			const UINT typeIdx = m_vecTileType[idx];
+			if (typeIdx <= EMPTY_TILE_DEF_INDEX)
+				continue;
+
+			TilePlacement placement = {};
+			placement.TypeIdx = typeIdx;
+			placement.LocalPos = Vec2(((float)col + 0.5f) * tileW, -((float)row + 0.5f) * tileH);
+
+			Vec2 cellScale = Vec2(1.f, 1.f);
+			if (idx < m_vecTileScale.size())
+				cellScale = m_vecTileScale[idx];
+
+			placement.Size = Vec2(tileW * cellScale.x, tileH * cellScale.y);
+			placement.Rotation = 0.f;
+			placement.LocalZ = 0.f;
+			m_vecPlacements.push_back(placement);
+		}
+	}
 }
 
 TileTypeDesc* ATileMap::GetTileTypeDesc(UINT _Idx)
@@ -354,6 +469,8 @@ int ATileMap::Save(const wstring& _FilePath)
 
 	fwrite(&TILEMAP_FILE_MAGIC, sizeof(UINT), 1, pFile);
 	fwrite(&TILEMAP_FILE_VERSION, sizeof(UINT), 1, pFile);
+	UINT layoutMode = (UINT)m_LayoutMode;
+	fwrite(&layoutMode, sizeof(UINT), 1, pFile);
 	fwrite(&m_Row, sizeof(UINT), 1, pFile);
 	fwrite(&m_Col, sizeof(UINT), 1, pFile);
 	fwrite(&m_TileSize, sizeof(Vec2), 1, pFile);
@@ -387,6 +504,13 @@ int ATileMap::Save(const wstring& _FilePath)
 		fwrite(&tileScale, sizeof(Vec2), 1, pFile);
 	}
 
+	UINT placementCount = (UINT)m_vecPlacements.size();
+	fwrite(&placementCount, sizeof(UINT), 1, pFile);
+	for (const TilePlacement& placement : m_vecPlacements)
+	{
+		SaveTilePlacement(pFile, placement);
+	}
+
 	fclose(pFile);
 	return 0;
 }
@@ -405,6 +529,17 @@ int ATileMap::Load(const wstring& _FilePath)
 	{
 		UINT version = 0;
 		fread(&version, sizeof(UINT), 1, pFile);
+
+		if (version >= 5)
+		{
+			UINT layoutMode = 0;
+			fread(&layoutMode, sizeof(UINT), 1, pFile);
+			m_LayoutMode = (TILEMAP_LAYOUT_MODE)layoutMode;
+		}
+		else
+		{
+			m_LayoutMode = TILEMAP_LAYOUT_MODE::GRID;
+		}
 
 		UINT row = 0;
 		UINT col = 0;
@@ -490,6 +625,21 @@ int ATileMap::Load(const wstring& _FilePath)
 				fread(&dummy, sizeof(Vec2), 1, pFile);
 			}
 		}
+
+		m_vecPlacements.clear();
+		if (version >= 5)
+		{
+			UINT placementCount = 0;
+			fread(&placementCount, sizeof(UINT), 1, pFile);
+			m_vecPlacements.resize(placementCount);
+
+			for (UINT i = 0; i < placementCount; ++i)
+			{
+				LoadTilePlacement(pFile, m_vecPlacements[i]);
+				if (m_vecPlacements[i].TypeIdx >= m_vecTileDefs.size())
+					m_vecPlacements[i].TypeIdx = EMPTY_TILE_DEF_INDEX;
+			}
+		}
 	}
 	else
 	{
@@ -525,6 +675,8 @@ int ATileMap::Load(const wstring& _FilePath)
 		}
 
 		m_vecTileScale.assign(m_Row * m_Col, Vec2(1.f, 1.f));
+		m_vecPlacements.clear();
+		m_LayoutMode = TILEMAP_LAYOUT_MODE::GRID;
 	}
 
 	fclose(pFile);

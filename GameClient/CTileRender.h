@@ -24,6 +24,7 @@ private:
 
 private:
     void UpdateTileInfoBuffer();
+    void RenderPlacementTiles();
 
 public:
     Ptr<ATileMap> GetTileMap() const { return m_TileMap; }
