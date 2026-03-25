@@ -14,6 +14,35 @@ namespace
 {
     constexpr UINT EMPTY_TILE_TYPE_INDEX = (UINT)TILETYPE::EMPTY_BLOCK;
 
+    TileShapeDesc MakeLineShape(float _A, float _B, float _C)
+    {
+        TileShapeDesc shape = {};
+        shape.Mode = TILE_DRAW_MODE::LINE;
+        shape.a = _A;
+        shape.b = _B;
+        shape.c = _C;
+        return shape;
+    }
+
+    TileShapeDesc MakeCircleShape(float _Radius, float _CenterX, float _CenterY)
+    {
+        TileShapeDesc shape = {};
+        shape.Mode = TILE_DRAW_MODE::CIRCLE;
+        shape.r = _Radius;
+        shape.centerX = _CenterX;
+        shape.centerY = _CenterY;
+        return shape;
+    }
+
+    TileShapeDesc MakeVerticalShape(float _X, float _C)
+    {
+        TileShapeDesc shape = {};
+        shape.Mode = TILE_DRAW_MODE::VERTICAL;
+        shape.a = _X;
+        shape.c = _C;
+        return shape;
+    }
+
     string ToStringA(const wstring& _Text)
     {
         if (_Text.empty())
@@ -48,14 +77,6 @@ namespace
     {
         string text = ToStringA(_Name);
         strncpy_s(_Buffer, _BufferCount, text.c_str(), _TRUNCATE);
-    }
-
-    bool HasExtension(const wstring& _Path, const wstring& _Ext)
-    {
-        if (_Path.length() < _Ext.length())
-            return false;
-
-        return _Path.substr(_Path.length() - _Ext.length()) == _Ext;
     }
 
     wstring ExtractFileStem(const wstring& _Path)
@@ -105,6 +126,57 @@ namespace
         return L"TileMap\\" + stem + L".tile";
     }
 
+    void ClampShapeForEditor(TileShapeDesc& _Shape)
+    {
+        if (_Shape.Mode == TILE_DRAW_MODE::LINE)
+        {
+            if (_Shape.a < -1.f) _Shape.a = -1.f;
+            if (_Shape.a > 2.f) _Shape.a = 2.f;
+            if (_Shape.b < -1.f) _Shape.b = -1.f;
+            if (_Shape.b > 2.f) _Shape.b = 2.f;
+
+            if (_Shape.c > -0.001f && _Shape.c < 0.001f)
+            {
+                _Shape.c = -1.f;
+            }
+            else if (_Shape.c > 2.f)
+            {
+                _Shape.c = 2.f;
+            }
+            else if (_Shape.c < -2.f)
+            {
+                _Shape.c = -2.f;
+            }
+        }
+        else if (_Shape.Mode == TILE_DRAW_MODE::CIRCLE)
+        {
+            if (_Shape.r < 0.f) _Shape.r = 0.f;
+            if (_Shape.r > 2.f) _Shape.r = 2.f;
+            if (_Shape.centerX < -1.f) _Shape.centerX = -1.f;
+            if (_Shape.centerX > 2.f) _Shape.centerX = 2.f;
+            if (_Shape.centerY < -1.f) _Shape.centerY = -1.f;
+            if (_Shape.centerY > 2.f) _Shape.centerY = 2.f;
+        }
+        else if (_Shape.Mode == TILE_DRAW_MODE::VERTICAL)
+        {
+            if (_Shape.a < -1.f) _Shape.a = -1.f;
+            if (_Shape.a > 2.f) _Shape.a = 2.f;
+
+            if (_Shape.c > -0.001f && _Shape.c < 0.001f)
+            {
+                _Shape.c = 1.f;
+            }
+            else if (_Shape.c > 2.f)
+            {
+                _Shape.c = 2.f;
+            }
+            else if (_Shape.c < -2.f)
+            {
+                _Shape.c = -2.f;
+            }
+        }
+    }
+
     void MarkCurrentLevelChanged()
     {
         Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
@@ -152,10 +224,23 @@ namespace
         }
     }
 
-    void DrawTilePreview(ImDrawList* _DrawList, const ImVec2& _Min, const ImVec2& _Max, const TileDrawInfo& _Info, bool _Selected)
+    void DrawTilePreview(ImDrawList* _DrawList, const ImVec2& _Min, const ImVec2& _Max, const TileDrawInfo& _Info, const Vec2& _Scale, bool _Selected)
     {
-        const float width = _Max.x - _Min.x;
-        const float height = _Max.y - _Min.y;
+        const float cellWidth = _Max.x - _Min.x;
+        const float cellHeight = _Max.y - _Min.y;
+
+        Vec2 tileScale = _Scale;
+        if (tileScale.x < 0.1f) tileScale.x = 0.1f;
+        else if (tileScale.x > 1.f) tileScale.x = 1.f;
+        if (tileScale.y < 0.1f) tileScale.y = 0.1f;
+        else if (tileScale.y > 1.f) tileScale.y = 1.f;
+
+        const float width = cellWidth * tileScale.x;
+        const float height = cellHeight * tileScale.y;
+        const float centerX = (_Min.x + _Max.x) * 0.5f;
+        const float centerY = (_Min.y + _Max.y) * 0.5f;
+        const ImVec2 shapeMin(centerX - width * 0.5f, centerY - height * 0.5f);
+        const ImVec2 shapeMax(centerX + width * 0.5f, centerY + height * 0.5f);
 
         const ImU32 emptyColor = IM_COL32(28, 31, 37, 255);
         const ImU32 fillColor = GetTileFillColor(_Info);
@@ -168,19 +253,19 @@ namespace
         {
         case TILE_DRAW_MODE::LINE:
         {
-            const float y0 = _Min.y + _Info.a * height;
-            const float y1 = _Min.y + _Info.b * height;
-            ImVec2 p0(_Min.x, y0);
-            ImVec2 p1(_Max.x, y1);
+            const float y0 = shapeMin.y + _Info.a * height;
+            const float y1 = shapeMin.y + _Info.b * height;
+            ImVec2 p0(shapeMin.x, y0);
+            ImVec2 p1(shapeMax.x, y1);
 
             if (_Info.c < 0.f)
             {
-                const ImVec2 poly[4] = { p0, p1, ImVec2(_Max.x, _Max.y), ImVec2(_Min.x, _Max.y) };
+                const ImVec2 poly[4] = { p0, p1, ImVec2(shapeMax.x, shapeMax.y), ImVec2(shapeMin.x, shapeMax.y) };
                 _DrawList->AddConvexPolyFilled(poly, 4, fillColor);
             }
             else
             {
-                const ImVec2 poly[4] = { ImVec2(_Min.x, _Min.y), ImVec2(_Max.x, _Min.y), p1, p0 };
+                const ImVec2 poly[4] = { ImVec2(shapeMin.x, shapeMin.y), ImVec2(shapeMax.x, shapeMin.y), p1, p0 };
                 _DrawList->AddConvexPolyFilled(poly, 4, fillColor);
             }
 
@@ -189,11 +274,11 @@ namespace
         }
         case TILE_DRAW_MODE::CIRCLE:
         {
-            _DrawList->AddRectFilled(_Min, _Max, fillColor, 2.f);
+            _DrawList->AddRectFilled(shapeMin, shapeMax, fillColor, 2.f);
 
             const ImVec2 center(
-                _Min.x + _Info.center_x * width,
-                _Min.y + _Info.center_y * height
+                shapeMin.x + _Info.center_x * width,
+                shapeMin.y + _Info.center_y * height
             );
             const float radius = _Info.r * ((width < height) ? width : height);
             _DrawList->AddCircleFilled(center, radius, emptyColor, 28);
@@ -202,18 +287,18 @@ namespace
         }
         case TILE_DRAW_MODE::VERTICAL:
         {
-            const float x = _Min.x + _Info.a * width;
+            const float x = shapeMin.x + _Info.a * width;
 
             if (_Info.c >= 0.f)
             {
-                _DrawList->AddRectFilled(_Min, ImVec2(x, _Max.y), fillColor, 2.f);
+                _DrawList->AddRectFilled(shapeMin, ImVec2(x, shapeMax.y), fillColor, 2.f);
             }
             else
             {
-                _DrawList->AddRectFilled(ImVec2(x, _Min.y), _Max, fillColor, 2.f);
+                _DrawList->AddRectFilled(ImVec2(x, shapeMin.y), shapeMax, fillColor, 2.f);
             }
 
-            _DrawList->AddLine(ImVec2(x, _Min.y), ImVec2(x, _Max.y), contourColor, 2.f);
+            _DrawList->AddLine(ImVec2(x, shapeMin.y), ImVec2(x, shapeMax.y), contourColor, 2.f);
             break;
         }
         default:
@@ -238,6 +323,7 @@ namespace
         }
 
         _DrawList->AddRect(_Min, _Max, borderColor, 2.f, 0, _Selected ? 2.f : 1.f);
+        _DrawList->AddRect(shapeMin, shapeMax, IM_COL32(180, 188, 198, 120), 2.f, 0, 1.f);
     }
 }
 
@@ -248,6 +334,8 @@ TileRenderUI::TileRenderUI()
     , m_EditRow(0)
     , m_EditCol(0)
     , m_EditTileSize(Vec2(0.f, 0.f))
+    , m_SelectedCellRow(-1)
+    , m_SelectedCellCol(-1)
     , m_LastTileMap(nullptr)
     , m_LastSyncedTypeIdx(-1)
     , m_RequestCollisionRebuild(false)
@@ -271,6 +359,8 @@ void TileRenderUI::SyncUIState(ATileMap* _TileMap)
             m_EditRow = (int)_TileMap->GetRow();
             m_EditCol = (int)_TileMap->GetCol();
             m_EditTileSize = _TileMap->GetTileSize();
+            m_SelectedCellRow = -1;
+            m_SelectedCellCol = -1;
         }
     }
 
@@ -320,6 +410,8 @@ bool TileRenderUI::DrawShapeEditor(const char* _Label, TileShapeDesc& _Shape)
 
     if (ImGui::TreeNode(_Label))
     {
+        ImGui::PushID(_Label);
+
         const char* modeLabels[] = { "Empty", "Line", "Circle", "Vertical" };
         int mode = (int)_Shape.Mode;
         if (ImGui::Combo("Mode", &mode, modeLabels, IM_ARRAYSIZE(modeLabels)))
@@ -332,18 +424,73 @@ bool TileRenderUI::DrawShapeEditor(const char* _Label, TileShapeDesc& _Shape)
         {
         case TILE_DRAW_MODE::LINE:
             ImGui::TextWrapped("Line mode uses f(x, y) = c * (y - (b - a) * x - a).");
+            ImGui::TextWrapped("Preset buttons help you start from the stock Sonic slopes, then refine a/b/c for custom ones.");
+
+            if (ImGui::Button("Line 1")) { _Shape = MakeLineShape(0.1f, 0.4f, -1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Line 2")) { _Shape = MakeLineShape(0.4f, 0.8f, -1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Line 3")) { _Shape = MakeLineShape(0.8f, 0.8f, -1.f); changed = true; }
+
+            if (ImGui::Button("Line 4")) { _Shape = MakeLineShape(0.8f, 0.4f, -1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Line 5")) { _Shape = MakeLineShape(0.4f, 0.1f, -1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Line 6")) { _Shape = MakeLineShape(0.1f, 0.1f, -1.f); changed = true; }
+
+            if (ImGui::Button("Swap Ends"))
+            {
+                float temp = _Shape.a;
+                _Shape.a = _Shape.b;
+                _Shape.b = temp;
+                changed = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Flip Solid Side"))
+            {
+                _Shape.c = -_Shape.c;
+                if (_Shape.c > -0.001f && _Shape.c < 0.001f)
+                    _Shape.c = -1.f;
+                changed = true;
+            }
+
             changed |= ImGui::DragFloat("a", &_Shape.a, 0.01f, -1.f, 2.f);
             changed |= ImGui::DragFloat("b", &_Shape.b, 0.01f, -1.f, 2.f);
             changed |= ImGui::DragFloat("c", &_Shape.c, 0.01f, -2.f, 2.f);
             break;
         case TILE_DRAW_MODE::CIRCLE:
             ImGui::TextWrapped("Circle mode keeps the outside of the circle solid, so corner arcs are easy to build.");
+            ImGui::TextWrapped("Corner presets place quarter-circle tiles fast, and you can still refine radius/center for custom arcs.");
+
+            if (ImGui::Button("Top Left")) { _Shape = MakeCircleShape((_Shape.r <= 0.f) ? 0.8f : _Shape.r, 0.f, 0.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Top Right")) { _Shape = MakeCircleShape((_Shape.r <= 0.f) ? 0.8f : _Shape.r, 1.f, 0.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Bottom Left")) { _Shape = MakeCircleShape((_Shape.r <= 0.f) ? 0.8f : _Shape.r, 0.f, 1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Bottom Right")) { _Shape = MakeCircleShape((_Shape.r <= 0.f) ? 0.8f : _Shape.r, 1.f, 1.f); changed = true; }
+
+            if (ImGui::Button("R 0.50")) { _Shape.r = 0.5f; changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("R 0.80")) { _Shape.r = 0.8f; changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("R 1.00")) { _Shape.r = 1.f; changed = true; }
+
             changed |= ImGui::DragFloat("radius", &_Shape.r, 0.01f, 0.f, 2.f);
             changed |= ImGui::DragFloat("centerX", &_Shape.centerX, 0.01f, -1.f, 2.f);
             changed |= ImGui::DragFloat("centerY", &_Shape.centerY, 0.01f, -1.f, 2.f);
             break;
         case TILE_DRAW_MODE::VERTICAL:
             ImGui::TextWrapped("Vertical mode uses f(x, y) = c * (x - a). a is the wall position, c picks the solid side.");
+
+            if (ImGui::Button("Left Wall")) { _Shape = MakeVerticalShape(0.15f, 1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Center Wall")) { _Shape = MakeVerticalShape(0.5f, 1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Right Wall")) { _Shape = MakeVerticalShape(0.85f, 1.f); changed = true; }
+            ImGui::SameLine();
+            if (ImGui::Button("Flip Solid Side")) { _Shape.c = -_Shape.c; changed = true; }
+
             changed |= ImGui::DragFloat("wallX", &_Shape.a, 0.01f, -1.f, 2.f);
             changed |= ImGui::DragFloat("c", &_Shape.c, 0.01f, -2.f, 2.f);
             break;
@@ -352,6 +499,30 @@ bool TileRenderUI::DrawShapeEditor(const char* _Label, TileShapeDesc& _Shape)
             break;
         }
 
+        ClampShapeForEditor(_Shape);
+
+        ImGui::Spacing();
+        ImGui::Text("Shape Preview");
+        {
+            TileDrawInfo preview = {};
+            preview.a = _Shape.a;
+            preview.b = _Shape.b;
+            preview.c = _Shape.c;
+            preview.r = _Shape.r;
+            preview.center_x = _Shape.centerX;
+            preview.center_y = _Shape.centerY;
+            preview.mode = (int)_Shape.Mode;
+            preview.flags = TILE_FLAG_SOLID;
+
+            const ImVec2 previewSize(92.f, 92.f);
+            const ImVec2 previewMin = ImGui::GetCursorScreenPos();
+            ImGui::InvisibleButton("##ShapePreview", previewSize);
+            const ImVec2 previewMax = ImGui::GetItemRectMax();
+
+            DrawTilePreview(ImGui::GetWindowDrawList(), previewMin, previewMax, preview, Vec2(1.f, 1.f), true);
+        }
+
+        ImGui::PopID();
         ImGui::TreePop();
     }
 
@@ -408,6 +579,13 @@ bool TileRenderUI::DrawTileTypeEditor(ATileMap* _TileMap)
     if (useCustomNormal)
     {
         ImGui::TextWrapped("Custom normal is authored in world-like axes: (0, 1) means upward, (-1, 0) means left wall.");
+        if (ImGui::Button("Up")) { pDesc->CustomNormal = Vec2(0.f, 1.f); changed = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Down")) { pDesc->CustomNormal = Vec2(0.f, -1.f); changed = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Left")) { pDesc->CustomNormal = Vec2(-1.f, 0.f); changed = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Right")) { pDesc->CustomNormal = Vec2(1.f, 0.f); changed = true; }
         changed |= ImGui::DragFloat2("Custom Normal", (float*)&pDesc->CustomNormal, 0.01f, -1.f, 1.f);
     }
 
@@ -431,6 +609,28 @@ bool TileRenderUI::DrawTileTypeEditor(ATileMap* _TileMap)
 
     if (pDesc->CorrectionTrigger != TILE_CORRECTION_TRIGGER::NONE)
     {
+        ImGui::TextWrapped("Circle tiles often use a correction slope when half-checker changes, but this correction shape can also be fully custom.");
+
+        if (ImGui::Button("Copy Main -> Correction"))
+        {
+            pDesc->CorrectionShape = pDesc->MainShape;
+            changed = true;
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Correction = Flat"))
+        {
+            pDesc->CorrectionShape = MakeLineShape(0.8f, 0.8f, -1.f);
+            changed = true;
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Correction = Diag"))
+        {
+            pDesc->CorrectionShape = MakeLineShape(0.2f, 0.8f, -1.f);
+            changed = true;
+        }
+
         ImGui::TextWrapped("Correction Shape is the backup slope/curve used when the global half-checker flips.");
         changed |= DrawShapeEditor("Correction Shape", pDesc->CorrectionShape);
     }
@@ -446,6 +646,7 @@ void TileRenderUI::DrawTilePaintCanvas(ATileMap* _TileMap)
     const UINT row = _TileMap->GetRow();
     const UINT col = _TileMap->GetCol();
     const vector<UINT>& tileTypes = _TileMap->GetTileTypes();
+    const vector<Vec2>& tileScales = _TileMap->GetTileScales();
     const vector<TileTypeDesc>& tileDefs = _TileMap->GetTileTypeDescs();
 
     if (0 == row || 0 == col)
@@ -502,8 +703,15 @@ void TileRenderUI::DrawTilePaintCanvas(ATileMap* _TileMap)
                     CTileScript::ResolveTileTypeDesc(tileDefs[typeIdx], halfChecker, preview);
                 }
 
-                const bool selectedCell = ((int)y == hoveredRow && (int)x == hoveredCol);
-                DrawTilePreview(pDrawList, cellMin, cellMax, preview, selectedCell);
+                Vec2 cellScale = Vec2(1.f, 1.f);
+                if (idx < tileScales.size())
+                {
+                    cellScale = tileScales[idx];
+                }
+
+                const bool hoveredCell = ((int)y == hoveredRow && (int)x == hoveredCol);
+                const bool selectedCell = ((int)y == m_SelectedCellRow && (int)x == m_SelectedCellCol);
+                DrawTilePreview(pDrawList, cellMin, cellMax, preview, cellScale, hoveredCell || selectedCell);
 
                 if (cellSize >= 30.f)
                 {
@@ -516,10 +724,18 @@ void TileRenderUI::DrawTilePaintCanvas(ATileMap* _TileMap)
 
         if (hoveredRow >= 0 && hoveredCol >= 0)
         {
+            const bool selectOnly = ImGui::GetIO().KeyCtrl && ImGui::IsMouseDown(ImGuiMouseButton_Left);
             UINT desiredType = (UINT)m_BrushTypeIdx;
 
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            if (selectOnly)
             {
+                m_SelectedCellRow = hoveredRow;
+                m_SelectedCellCol = hoveredCol;
+            }
+            else if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                m_SelectedCellRow = hoveredRow;
+                m_SelectedCellCol = hoveredCol;
                 const UINT currentType = _TileMap->GetTileType((UINT)hoveredRow, (UINT)hoveredCol);
                 if (currentType != desiredType)
                 {
@@ -529,6 +745,8 @@ void TileRenderUI::DrawTilePaintCanvas(ATileMap* _TileMap)
             }
             else if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
             {
+                m_SelectedCellRow = hoveredRow;
+                m_SelectedCellCol = hoveredCol;
                 const UINT currentType = _TileMap->GetTileType((UINT)hoveredRow, (UINT)hoveredCol);
                 if (currentType != EMPTY_TILE_TYPE_INDEX)
                 {
@@ -788,8 +1006,77 @@ void TileRenderUI::Tick_UI()
 
     ImGui::Separator();
     ImGui::Text("Paint Grid");
-    ImGui::TextWrapped("Left drag paints the current brush. Right drag erases back to the empty tile. This modifies the TileMap asset data directly.");
+    ImGui::TextWrapped("Left drag paints the current brush. Right drag erases back to the empty tile. Ctrl + Left Click only selects a cell for per-cell size editing.");
     DrawTilePaintCanvas(pTileMap.Get());
+
+    ImGui::Separator();
+    ImGui::Text("Selected Cell Size");
+
+    if (m_SelectedCellRow >= 0 && m_SelectedCellCol >= 0 &&
+        m_SelectedCellRow < (int)pTileMap->GetRow() &&
+        m_SelectedCellCol < (int)pTileMap->GetCol())
+    {
+        Vec2 cellScale = pTileMap->GetTileScale((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol);
+        const UINT cellType = pTileMap->GetTileType((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol);
+        const TileTypeDesc* pCellDesc = pTileMap->GetTileTypeDesc(cellType);
+
+        ImGui::Text("Cell");
+        ImGui::SameLine(120);
+        ImGui::Text("Row %d  Col %d", m_SelectedCellRow, m_SelectedCellCol);
+
+        ImGui::Text("Type");
+        ImGui::SameLine(120);
+        ImGui::Text("%s", (nullptr == pCellDesc) ? "None" : ToStringA(pCellDesc->Name).c_str());
+
+        bool changedScale = false;
+        changedScale |= ImGui::DragFloat2("Cell Scale", (float*)&cellScale, 0.01f, 0.1f, 1.f);
+
+        if (ImGui::Button("50%"))
+        {
+            cellScale = Vec2(0.5f, 0.5f);
+            changedScale = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("75%"))
+        {
+            cellScale = Vec2(0.75f, 0.75f);
+            changedScale = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("100%"))
+        {
+            cellScale = Vec2(1.f, 1.f);
+            changedScale = true;
+        }
+
+        if (ImGui::Button("Wide"))
+        {
+            cellScale = Vec2(1.f, 0.5f);
+            changedScale = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Tall"))
+        {
+            cellScale = Vec2(0.5f, 1.f);
+            changedScale = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset Cell Size"))
+        {
+            cellScale = Vec2(1.f, 1.f);
+            changedScale = true;
+        }
+
+        if (changedScale)
+        {
+            pTileMap->SetTileScale((UINT)m_SelectedCellRow, (UINT)m_SelectedCellCol, cellScale);
+            RequestTileMapRefresh(false, true);
+        }
+    }
+    else
+    {
+        ImGui::TextWrapped("No cell selected yet. Use Ctrl + Left Click on the paint grid to pick one cell without repainting it.");
+    }
 
     if (m_RequestCollisionRebuild && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseDown(ImGuiMouseButton_Right))
     {
@@ -799,7 +1086,7 @@ void TileRenderUI::Tick_UI()
 }
 
 void TileRenderUI::SelectTileMap(DWORD_PTR _ListUI)
-{
+{ 
     Ptr<ListUI> pListUI = ((ListUI*)_ListUI);
     wstring key = wstring(pListUI->GetSelectedString().begin(), pListUI->GetSelectedString().end());
 

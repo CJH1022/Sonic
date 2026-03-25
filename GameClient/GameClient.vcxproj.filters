@@ -217,9 +217,6 @@
     <ClInclude Include="MeshRenderUI.h">
       <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\01. MeshRenderUI</Filter>
     </ClInclude>
-    <ClInclude Include="SpriteRenderUI.h">
-      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\02. SpriteRenderUI</Filter>
-    </ClInclude>
     <ClInclude Include="TileRenderUI.h">
       <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\04. TileRender</Filter>
     </ClInclude>
@@ -301,9 +298,6 @@
     <ClInclude Include="ImageEditor.h">
       <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
     </ClInclude>
-    <ClInclude Include="TileScriptEditor.h">
-      <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
-    </ClInclude>
     <ClInclude Include="Source\Scripts\CBlockScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
@@ -312,6 +306,9 @@
     </ClInclude>
     <ClInclude Include="Source\Scripts\CBlockPushingScript.h">
       <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteRenderUI.h">
+      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\02. SpriteRenderUI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -842,9 +839,6 @@
       <Filter>Source\Scripts</Filter>
     </ClCompile>
     <ClCompile Include="ImageEditor.cpp">
-      <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
-    </ClCompile>
-    <ClCompile Include="TileScriptEditor.cpp">
       <Filter>GameEngine\07. EditorUI\09. ImageEditorUI</Filter>
     </ClCompile>
     <ClCompile Include="Source\Scripts\CBlockScript.cpp">

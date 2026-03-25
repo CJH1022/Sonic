@@ -197,6 +197,7 @@ void RebuildTileCollision(GameObject* _TileMapObject)
 	const float tileW = tileSize.x;
 	const float tileH = tileSize.y;
 	const vector<UINT>& tileTypes = pTileMapAsset->GetTileTypes();
+	const vector<Vec2>& tileScales = pTileMapAsset->GetTileScales();
 
 	Vec3 mapPos = _TileMapObject->Transform()->GetRelativePos();
 	const float collisionLocalZ = 10.f - mapPos.z;
@@ -226,9 +227,14 @@ void RebuildTileCollision(GameObject* _TileMapObject)
 
 			float x = ((float)col + 0.5f) * tileW;
 			float y = -((float)row + 0.5f) * tileH;
+			Vec2 cellScale = Vec2(1.f, 1.f);
+			if (idx < tileScales.size())
+			{
+				cellScale = tileScales[idx];
+			}
 
 			pTileObj->Transform()->SetRelativePos(Vec3(x, y, collisionLocalZ));
-			pTileObj->Transform()->SetRelativeScale(Vec3(tileW, tileH, 1.f));
+			pTileObj->Transform()->SetRelativeScale(Vec3(tileW * cellScale.x, tileH * cellScale.y, 1.f));
 
 			pTileObj->Collider2D()->SetOffset(Vec2(0.f, 0.f));
 			pTileObj->Collider2D()->SetScale(Vec2(1.f, 1.f));
@@ -479,7 +485,7 @@ void CreateTestLevel()
 	////pObject->Transform()->SetRelativeRot(Vec3(0.f, 0.f, 0.f));
 	//// pObject->FlipbookRender()->AddFlipbook(FIND(AFlipbook, L"Spring"));
 
-	pLevel->AddObject(5, pObject);
+	//pLevel->AddObject(5, pObject);
 
 	// =========================
 	// 바닥 타일 부근 테스트용 스프링 / 공중 블록

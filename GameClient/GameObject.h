@@ -42,6 +42,7 @@ public:
     const vector<Ptr<CScript>>& GetScripts() const { return m_vecScripts; }
     template<typename T>
     Ptr<T> GetScript();
+    bool IsDescendantOf(Ptr<GameObject> _Object) const;
 
     void AddChild(Ptr<GameObject> _Child);
     void DisconnectWithParent();

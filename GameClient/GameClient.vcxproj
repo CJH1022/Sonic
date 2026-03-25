@@ -224,7 +224,6 @@ call CodeGen.exe</Command>
     <ClInclude Include="AGraphicShader.h" />
     <ClInclude Include="GraphicShaderUI.h" />
     <ClInclude Include="ImageEditor.h" />
-    <ClInclude Include="TileScriptEditor.h" />
     <ClInclude Include="ImGui\imconfig.h" />
     <ClInclude Include="ImGui\imgui.h" />
     <ClInclude Include="ImGui\imgui_impl_dx11.h" />
@@ -325,7 +324,6 @@ call CodeGen.exe</Command>
     <ClCompile Include="GameObject.cpp" />
     <ClCompile Include="GraphicShaderUI.cpp" />
     <ClCompile Include="ImageEditor.cpp" />
-    <ClCompile Include="TileScriptEditor.cpp" />
     <ClCompile Include="ImGui\imgui.cpp" />
     <ClCompile Include="ImGui\imgui_demo.cpp" />
     <ClCompile Include="ImGui\imgui_draw.cpp" />

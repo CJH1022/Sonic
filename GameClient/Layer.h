@@ -12,6 +12,7 @@ private:
     int                         m_LayerIdx;     // Layer 본인의 인덱스(0 ~ 31)
 
 public:
+    bool ContainsParent(Ptr<GameObject> _Object) const;
     void AddObject(Ptr<GameObject> _Object);
     void RegisterObject(Ptr<GameObject> _Object) { m_vecAllObjects.push_back(_Object); }
     void DeregisterObject() {  m_vecAllObjects.clear(); }

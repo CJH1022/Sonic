@@ -8,7 +8,7 @@
 namespace
 {
 	constexpr UINT TILEMAP_FILE_MAGIC = 0x50414D54; // TMAP
-	constexpr UINT TILEMAP_FILE_VERSION = 3;
+	constexpr UINT TILEMAP_FILE_VERSION = 4;
 	constexpr UINT EMPTY_TILE_DEF_INDEX = 1;
 
 	bool TryParseTileType(Ptr<ASprite> _Sprite, UINT& _OutType)
@@ -201,17 +201,20 @@ void ATileMap::SetRowCol(UINT _Row, UINT _Col)
 	m_Row = _Row;
 	m_Col = _Col;
 	m_vecTileType.assign(m_Row * m_Col, EMPTY_TILE_DEF_INDEX);
+	m_vecTileScale.assign(m_Row * m_Col, Vec2(1.f, 1.f));
 }
 
 void ATileMap::Resize(UINT _Row, UINT _Col)
 {
 	vector<UINT> oldTiles = m_vecTileType;
+	vector<Vec2> oldScales = m_vecTileScale;
 	const UINT oldRow = m_Row;
 	const UINT oldCol = m_Col;
 
 	m_Row = _Row;
 	m_Col = _Col;
 	m_vecTileType.assign(m_Row * m_Col, EMPTY_TILE_DEF_INDEX);
+	m_vecTileScale.assign(m_Row * m_Col, Vec2(1.f, 1.f));
 
 	const UINT copyRow = (oldRow < m_Row) ? oldRow : m_Row;
 	const UINT copyCol = (oldCol < m_Col) ? oldCol : m_Col;
@@ -221,6 +224,7 @@ void ATileMap::Resize(UINT _Row, UINT _Col)
 		for (UINT col = 0; col < copyCol; ++col)
 		{
 			m_vecTileType[row * m_Col + col] = oldTiles[row * oldCol + col];
+			m_vecTileScale[row * m_Col + col] = oldScales[row * oldCol + col];
 		}
 	}
 }
@@ -244,6 +248,35 @@ UINT ATileMap::GetTileType(UINT _Row, UINT _Col) const
 
 	const UINT idx = _Row * m_Col + _Col;
 	return m_vecTileType[idx];
+}
+
+void ATileMap::SetTileScale(UINT _Row, UINT _Col, const Vec2& _Scale)
+{
+	if (_Row >= m_Row || _Col >= m_Col)
+		return;
+
+	Vec2 scale = _Scale;
+
+	if (scale.x < 0.1f) scale.x = 0.1f;
+	else if (scale.x > 1.f) scale.x = 1.f;
+
+	if (scale.y < 0.1f) scale.y = 0.1f;
+	else if (scale.y > 1.f) scale.y = 1.f;
+
+	const UINT idx = _Row * m_Col + _Col;
+	m_vecTileScale[idx] = scale;
+}
+
+Vec2 ATileMap::GetTileScale(UINT _Row, UINT _Col) const
+{
+	if (_Row >= m_Row || _Col >= m_Col)
+		return Vec2(1.f, 1.f);
+
+	const UINT idx = _Row * m_Col + _Col;
+	if (idx >= m_vecTileScale.size())
+		return Vec2(1.f, 1.f);
+
+	return m_vecTileScale[idx];
 }
 
 void ATileMap::SetSprite(UINT _Row, UINT _Col, Ptr<ASprite> _Sprite)
@@ -347,6 +380,13 @@ int ATileMap::Save(const wstring& _FilePath)
 		fwrite(&tileType, sizeof(UINT), 1, pFile);
 	}
 
+	UINT scaleCount = (UINT)m_vecTileScale.size();
+	fwrite(&scaleCount, sizeof(UINT), 1, pFile);
+	for (const Vec2& tileScale : m_vecTileScale)
+	{
+		fwrite(&tileScale, sizeof(Vec2), 1, pFile);
+	}
+
 	fclose(pFile);
 	return 0;
 }
@@ -424,6 +464,32 @@ int ATileMap::Load(const wstring& _FilePath)
 			UINT dummy = 0;
 			fread(&dummy, sizeof(UINT), 1, pFile);
 		}
+
+		m_vecTileScale.assign(m_Row * m_Col, Vec2(1.f, 1.f));
+
+		if (version >= 4)
+		{
+			UINT scaleCount = 0;
+			fread(&scaleCount, sizeof(UINT), 1, pFile);
+
+			const UINT maxScaleCount = (UINT)m_vecTileScale.size();
+			const UINT readScaleCount = (scaleCount < maxScaleCount) ? scaleCount : maxScaleCount;
+
+			for (UINT i = 0; i < readScaleCount; ++i)
+			{
+				fread(&m_vecTileScale[i], sizeof(Vec2), 1, pFile);
+				if (m_vecTileScale[i].x < 0.1f) m_vecTileScale[i].x = 0.1f;
+				else if (m_vecTileScale[i].x > 1.f) m_vecTileScale[i].x = 1.f;
+				if (m_vecTileScale[i].y < 0.1f) m_vecTileScale[i].y = 0.1f;
+				else if (m_vecTileScale[i].y > 1.f) m_vecTileScale[i].y = 1.f;
+			}
+
+			for (UINT i = readScaleCount; i < scaleCount; ++i)
+			{
+				Vec2 dummy = Vec2(1.f, 1.f);
+				fread(&dummy, sizeof(Vec2), 1, pFile);
+			}
+		}
 	}
 	else
 	{
@@ -457,6 +523,8 @@ int ATileMap::Load(const wstring& _FilePath)
 				m_vecTileType[i] = tileType;
 			}
 		}
+
+		m_vecTileScale.assign(m_Row * m_Col, Vec2(1.f, 1.f));
 	}
 
 	fclose(pFile);

@@ -60,6 +60,7 @@ void Outliner::Renew()
 {
 	// 트리에 표기된 오브젝트 정보를 전부 삭제
 	m_Tree->Clear();
+	m_vecAddedObject.clear();
 
 	// 현재 레벨을 가져옴
 	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
@@ -75,13 +76,45 @@ void Outliner::Renew()
 		// 최상위 부모 오브젝트들을 트리에 추가한다.
 		for (const auto& Object : vecParents)
 		{
+			if (nullptr == Object || Object->IsDead())
+				continue;
+
+			// Layer 쪽 루트 목록이 잠깐 꼬여도, 실제 부모가 있는 오브젝트는
+			// 루트로 다시 그리지 않는다.
+			if (nullptr != Object->GetParent())
+				continue;
+
 			AddGameObject(nullptr, Object);
 		}
 	}	
 }
 
+bool Outliner::HasAddedObject(GameObject* _Object) const
+{
+	if (nullptr == _Object)
+		return false;
+
+	for (size_t i = 0; i < m_vecAddedObject.size(); ++i)
+	{
+		if (m_vecAddedObject[i] == _Object)
+			return true;
+	}
+
+	return false;
+}
+
 void Outliner::AddGameObject(Ptr<TreeNode> _ParentNode, Ptr<GameObject> _Object)
 {
+	if (nullptr == _Object || _Object->IsDead())
+		return;
+
+	// 동일한 GameObject 포인터는 트리에 한 번만 추가한다.
+	// 부모/레이어 등록이 꼬여도 Outliner 에서는 중복 노드가 생기지 않게 막는다.
+	if (HasAddedObject(_Object.Get()))
+		return;
+
+	m_vecAddedObject.push_back(_Object.Get());
+
 	string ObjectName = string(_Object->GetName().begin(), _Object->GetName().end());
 
 	if (ObjectName.empty())

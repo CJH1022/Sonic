@@ -3,6 +3,35 @@
 
 #include "PathMgr.h"
 #include "Source/Scripts/CMissileScript.h"
+#include <filesystem>
+
+namespace
+{
+	void LoadTileMapAssetsFromContent()
+	{
+		const std::filesystem::path tileMapDir = std::filesystem::path(CONTENT_PATH) / L"TileMap";
+
+		if (!std::filesystem::exists(tileMapDir))
+		{
+			std::filesystem::create_directories(tileMapDir);
+			return;
+		}
+
+		for (const auto& entry : std::filesystem::directory_iterator(tileMapDir))
+		{
+			if (!entry.is_regular_file())
+				continue;
+
+			const std::filesystem::path path = entry.path();
+			if (path.extension() != L".tile")
+				continue;
+
+			const wstring key = path.stem().wstring();
+			const wstring relativePath = L"TileMap\\" + path.filename().wstring();
+			AssetMgr::GetInst()->Load<ATileMap>(key, relativePath);
+		}
+	}
+}
 
 void AssetMgr::Init()
 {
@@ -15,6 +44,7 @@ void AssetMgr::Init()
 	CreateEngineMaterial();
 
 	CreateEngineSprite();
+	LoadTileMapAssetsFromContent();
 
 	CreateEnginePrefab();
 }
@@ -814,41 +844,26 @@ void AssetMgr::CreateEngineSprite()
 			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		};
 
-		Ptr<ATileMap> pTileMap = new ATileMap;
-		pTileMap->SetName(L"TestTileMap");
-
-		// 1. 데이터 크기에 맞게 정확히 설정 (중요!)
-		pTileMap->SetRowCol(6, 25);
-		pTileMap->SetTileSize(Vec2(378.f, 378.f));
-		pTileMap->SetAtlas(FIND(ATexture, L"MapTest"));
-
-		for (int i = 0; i < 6; ++i)
+		Ptr<ATileMap> pTileMap = Find<ATileMap>(L"TestTileMap");
+		if (nullptr == pTileMap)
 		{
-			for (int j = 0; j < 25; ++j)
+			pTileMap = new ATileMap;
+			pTileMap->SetName(L"TestTileMap");
+
+			pTileMap->SetRowCol(6, 25);
+			pTileMap->SetTileSize(Vec2(378.f, 378.f));
+
+			for (int i = 0; i < 6; ++i)
 			{
-				int tileIdx = tempMap[i][j] - 1;
-
-				// 2. 인덱스 유효성 검사
-				if (tileIdx < 0) continue;
-
-				wchar_t szKey[50] = {};
-				wchar_t szRelativePath[100] = {};
-				swprintf_s(szKey, L"MapTest_%d", tileIdx);
-
-				swprintf_s(szRelativePath, L"Sprite\\MapTest_%d.sprite", tileIdx);
-
-				Ptr<ASprite> pSprite = AssetMgr::GetInst()->Load<ASprite>(szKey, szRelativePath);
-
-				// 3. 스프라이트 존재 여부 확인 후 세팅
-				if (nullptr != pSprite)
+				for (int j = 0; j < 25; ++j)
 				{
-					pTileMap->SetSprite(i, j, pSprite);
+					pTileMap->SetTileType(i, j, (UINT)tempMap[i][j]);
 				}
 			}
-		}
 
-		AddAsset(pTileMap->GetName(), pTileMap.Get());
-		// pTileMap->Save(CONTENT_PATH + pTileMap->GetKey());
+			AddAsset(pTileMap->GetName(), pTileMap.Get());
+			// pTileMap->Save(CONTENT_PATH + pTileMap->GetKey());
+		}
 }
 
 void AssetMgr::CreateEnginePrefab()

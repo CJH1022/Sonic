@@ -217,16 +217,6 @@ void Menu::View()
 			}
 		}
 
-		Ptr<EditorUI> pTileScriptEditor = EditorMgr::GetInst()->FindUI("TILE_SCRIPT_EDITOR");
-		if (pTileScriptEditor != nullptr)
-		{
-			bool TileScriptEditorActive = pTileScriptEditor->IsActive();
-			if (ImGui::MenuItem("Tile Script Editor", nullptr, &TileScriptEditorActive))
-			{
-				pTileScriptEditor->SetActive(TileScriptEditorActive);
-			}
-		}
-
 		ImGui::EndMenu();
 	}
 }

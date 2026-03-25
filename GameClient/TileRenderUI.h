@@ -13,6 +13,8 @@ private:
     Vec2    m_EditTileSize;
 
     char    m_TileTypeName[128];
+    int     m_SelectedCellRow;
+    int     m_SelectedCellCol;
 
     class ATileMap* m_LastTileMap;
     int             m_LastSyncedTypeIdx;
@@ -35,4 +37,3 @@ public:
     TileRenderUI();
     virtual ~TileRenderUI();
 };
-

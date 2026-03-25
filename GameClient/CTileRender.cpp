@@ -98,6 +98,7 @@ void CTileRender::SetTileMap(Ptr<ATileMap> _TileMap)
 		TileInfo info = {};
 		info.FuncParam1.w = (float)vecTileTypes[i];
 		info.FuncParam2 = Vec4(0.f, 1.f, 0.f, 0.f);
+		info.FuncParam3 = Vec4(1.f, 1.f, 0.f, 0.f);
 
 		m_vecTileInfo.push_back(info);
 	}
@@ -119,6 +120,7 @@ void CTileRender::UpdateTileInfoBuffer()
 	const bool halfChecker = CTileScript::GetHalfCheckerState();
 	const vector<UINT>& vecTileTypes = m_TileMap->GetTileTypes();
 	const vector<TileTypeDesc>& vecTileDefs = m_TileMap->GetTileTypeDescs();
+	const vector<Vec2>& vecTileScales = m_TileMap->GetTileScales();
 
 	for (size_t i = 0; i < m_vecTileInfo.size(); ++i)
 	{
@@ -129,6 +131,7 @@ void CTileRender::UpdateTileInfoBuffer()
 		info.FuncParam1.z = 0.f;
 		info.FuncParam1.w = 0.f;
 		info.FuncParam2 = Vec4(0.f, 1.f, 0.f, 0.f);
+		info.FuncParam3 = Vec4(1.f, 1.f, 0.f, 0.f);
 
 		if (vecTileTypes.size() <= i)
 			continue;
@@ -150,6 +153,12 @@ void CTileRender::UpdateTileInfoBuffer()
 		info.FuncParam2.x = drawInfo.customNormal.x;
 		info.FuncParam2.y = drawInfo.customNormal.y;
 		info.FuncParam2.z = (float)drawInfo.flags;
+
+		if (i < vecTileScales.size())
+		{
+			info.FuncParam3.x = vecTileScales[i].x;
+			info.FuncParam3.y = vecTileScales[i].y;
+		}
 	}
 
 	m_Buffer->SetData(m_vecTileInfo.data(), sizeof(TileInfo) * (UINT)m_vecTileInfo.size());

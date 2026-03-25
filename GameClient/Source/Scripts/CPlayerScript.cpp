@@ -19,6 +19,9 @@
 CPlayerScript::CPlayerScript()
     : CScript(SCRIPT_TYPE::PLAYERSCRIPT)
 {
+    AddScriptParam(SCRIPT_PARAM::VEC2, &vAccel, L"Acceleration", false, 10.f);
+    AddScriptParam(SCRIPT_PARAM::VEC2, &vFraction, L"Friction", false, 0.1f);
+
     // 네 기존 초기값 스타일 유지
     m_Limit = 0.f;
     
@@ -941,3 +944,14 @@ void CPlayerScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCol
         IsGround = false;
     }
 }
+
+void CPlayerScript::SaveToLevelFile(FILE* _File)
+{
+    //fwrite(&m_Dir, sizeof(Vec3), 1, _File);
+}
+
+void CPlayerScript::LoadFromLevelFile(FILE* _File)
+{
+    //fread(&m_Dir, sizeof(Vec3), 1, _File);
+}
+

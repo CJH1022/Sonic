@@ -3,6 +3,27 @@
 
 #include "assets.h"
 #include "Source/ScriptMgr.h"
+#include "Source/Scripts/CPlayerScript.h"
+
+namespace
+{
+	const char* GetActionStateName(ActionState _Action)
+	{
+		switch (_Action)
+		{
+		case ActionState::None:        return "None";
+		case ActionState::SkillCharge: return "SkillCharge";
+		case ActionState::SkillDash:   return "SkillDash";
+		case ActionState::Attack:      return "Attack";
+		case ActionState::Roll:        return "Roll";
+		case ActionState::Break:       return "Break";
+		case ActionState::Spring:      return "Spring";
+		case ActionState::Falling:     return "Falling";
+		case ActionState::Pushing:     return "Pushing";
+		default:                       return "Unknown";
+		}
+	}
+}
 
 ScriptUI::ScriptUI()
 	: ComponentUI(COMPONENT_TYPE::SCRIPT, "ScriptUI")
@@ -68,6 +89,38 @@ void ScriptUI::Tick_UI()
 				ImGui::InputFloat(Key.c_str(), (float*)vecParam[i].Data, vecParam[i].Step);
 			else
 				ImGui::DragFloat(Key.c_str(), (float*)vecParam[i].Data, vecParam[i].Step);
+
+			AddItemHeight();
+		}
+			break;
+		case SCRIPT_PARAM::INT:
+		{
+			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
+			ImGui::SameLine(120);
+
+			string Key = "##Int";
+			Key += ID;
+
+			if (vecParam[i].IsInput)
+				ImGui::InputInt(Key.c_str(), (int*)vecParam[i].Data);
+			else
+				ImGui::DragInt(Key.c_str(), (int*)vecParam[i].Data, (float)(int)vecParam[i].Step);
+
+			AddItemHeight();
+		}
+			break;
+		case SCRIPT_PARAM::VEC2:
+		{
+			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
+			ImGui::SameLine(120);
+
+			string Key = "##Vec2";
+			Key += ID;
+
+			if (vecParam[i].IsInput)
+				ImGui::InputFloat2(Key.c_str(), (float*)vecParam[i].Data);
+			else
+				ImGui::DragFloat2(Key.c_str(), (float*)vecParam[i].Data, vecParam[i].Step);
 
 			AddItemHeight();
 		}
@@ -152,6 +205,52 @@ void ScriptUI::Tick_UI()
 		default:
 			break;
 		}
+	}
+
+	CPlayerScript* pPlayerScript = dynamic_cast<CPlayerScript*>(m_TargetScript.Get());
+	if (nullptr != pPlayerScript)
+	{
+		ImGui::Separator();
+		AddItemHeight();
+
+		ImGui::Text("Ground");
+		ImGui::SameLine(120);
+		ImGui::Text("%s", pPlayerScript->GetIsGround() ? "True" : "False");
+		AddItemHeight();
+
+		ImGui::Text("Need Gravity");
+		ImGui::SameLine(120);
+		ImGui::Text("%s", pPlayerScript->GetNeedGravity() ? "True" : "False");
+		AddItemHeight();
+
+		ImGui::Text("Facing");
+		ImGui::SameLine(120);
+		ImGui::Text("%d", pPlayerScript->GetFacing());
+		AddItemHeight();
+
+		ImGui::Text("Action");
+		ImGui::SameLine(120);
+		ImGui::Text("%s", GetActionStateName(pPlayerScript->GetAction()));
+		AddItemHeight();
+
+		Vec2 Velocity = pPlayerScript->GetVelocity();
+		ImGui::Text("Velocity");
+		ImGui::SameLine(120);
+		ImGui::Text("(%.2f, %.2f)", Velocity.x, Velocity.y);
+		AddItemHeight();
+
+		Vec2 Normal = pPlayerScript->GetNormal();
+		ImGui::Text("Normal");
+		ImGui::SameLine(120);
+		ImGui::Text("(%.2f, %.2f)", Normal.x, Normal.y);
+		AddItemHeight();
+
+		ImGui::Text("Break Speed");
+		ImGui::SameLine(120);
+		ImGui::Text("%.2f", pPlayerScript->GetBreakSpeed());
+		AddItemHeight();
+
+
 	}
 
 	SetSizeAsChild(Vec2(0.f, (float)m_ItemHeight));

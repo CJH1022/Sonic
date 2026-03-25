@@ -9,6 +9,7 @@ struct TileInfo
     float4 FuncParam0; // a, b, c, r
     float4 FuncParam1; // center_x, center_y, mode, tileType
     float4 FuncParam2; // customNormal.x, customNormal.y, flags, reserved
+    float4 FuncParam3; // scale.x, scale.y, reserved, reserved
 };
 StructuredBuffer<TileInfo> g_Buffer : register(t20);
 
@@ -97,6 +98,12 @@ float4 PS_Tile(VS_OUT _input) : SV_Target
         discard;
 
     float2 tileUV = frac(_input.vUV);
+    float2 tileScale = max(info.FuncParam3.xy, float2(0.001f, 0.001f));
+    float2 evalUV = (tileUV - 0.5f) / tileScale + 0.5f;
+    float boxDist = max(abs(tileUV.x - 0.5f) - 0.5f * tileScale.x, abs(tileUV.y - 0.5f) - 0.5f * tileScale.y);
+    float aaBox = fwidth(boxDist);
+    float cellMask = 1.f - smoothstep(0.f, aaBox, boxDist);
+    float overlayScale = min(tileScale.x, tileScale.y);
     float mode = info.FuncParam1.z;
     uint flags = (uint)(info.FuncParam2.z + 0.5f);
 
@@ -110,13 +117,13 @@ float4 PS_Tile(VS_OUT _input) : SV_Target
         float b = info.FuncParam0.y;
         float c = info.FuncParam0.z;
 
-        float fValue = c * (tileUV.y - (b - a) * tileUV.x - a);
+        float fValue = c * (evalUV.y - (b - a) * evalUV.x - a);
         float2 grad = float2(c * (a - b), c);
         float gradLen = max(length(grad), 1e-6f);
-        float signedDist = fValue / gradLen;
+        float signedDist = (fValue / gradLen) * overlayScale;
 
         float aaSolid = fwidth(signedDist);
-        solidMask = 1.f - smoothstep(0.f, aaSolid, signedDist);
+        solidMask = (1.f - smoothstep(0.f, aaSolid, signedDist)) * cellMask;
 
         float distContour = abs(signedDist);
         float aaContour = fwidth(distContour);
@@ -124,9 +131,11 @@ float4 PS_Tile(VS_OUT _input) : SV_Target
 
         float2 p0 = float2(0.f, a);
         float2 p1 = float2(1.f, b);
-        float2 mid = 0.5f * (p0 + p1);
+        float2 midLocal = 0.5f * (p0 + p1);
         float2 normalDir = ResolveOverlayNormal(normalize(grad), info.FuncParam2.xy, flags);
-        float2 normalEnd = mid + normalDir * g_NormalLength;
+        float2 normalEndLocal = midLocal + normalDir * g_NormalLength;
+        float2 mid = (midLocal - 0.5f) * tileScale + 0.5f;
+        float2 normalEnd = (normalEndLocal - 0.5f) * tileScale + 0.5f;
         float distNormal = DistToSegment(tileUV, mid, normalEnd);
         float aaNormal = fwidth(distNormal);
         normalMask = 1.f - smoothstep(g_NormalThickness, g_NormalThickness + aaNormal, distNormal);
@@ -135,14 +144,14 @@ float4 PS_Tile(VS_OUT _input) : SV_Target
     {
         float r = info.FuncParam0.w;
         float2 center = info.FuncParam1.xy;
-        float2 delta = tileUV - center;
+        float2 delta = evalUV - center;
         float fValue = r * r - dot(delta, delta);
         float2 grad = -2.f * delta;
         float gradLen = max(length(grad), 1e-6f);
-        float signedDist = fValue / gradLen;
+        float signedDist = (fValue / gradLen) * overlayScale;
 
         float aaSolid = fwidth(signedDist);
-        solidMask = 1.f - smoothstep(0.f, aaSolid, signedDist);
+        solidMask = (1.f - smoothstep(0.f, aaSolid, signedDist)) * cellMask;
 
         float distContour = abs(signedDist);
         float aaContour = fwidth(distContour);
@@ -159,8 +168,8 @@ float4 PS_Tile(VS_OUT _input) : SV_Target
             sampleDir = normalize(sampleDir);
         }
 
-        float2 normalStart = center + sampleDir * r;
-        float2 normalDir = center - normalStart;
+        float2 normalStartLocal = center + sampleDir * r;
+        float2 normalDir = center - normalStartLocal;
         float normalLenSq = dot(normalDir, normalDir);
         if (normalLenSq <= 1e-6f)
         {
@@ -173,7 +182,9 @@ float4 PS_Tile(VS_OUT _input) : SV_Target
 
         normalDir = ResolveOverlayNormal(normalDir, info.FuncParam2.xy, flags);
 
-        float2 normalEnd = normalStart + normalDir * g_NormalLength;
+        float2 normalEndLocal = normalStartLocal + normalDir * g_NormalLength;
+        float2 normalStart = (normalStartLocal - 0.5f) * tileScale + 0.5f;
+        float2 normalEnd = (normalEndLocal - 0.5f) * tileScale + 0.5f;
         float distNormal = DistToSegment(tileUV, normalStart, normalEnd);
         float aaNormal = fwidth(distNormal);
         normalMask = 1.f - smoothstep(g_NormalThickness, g_NormalThickness + aaNormal, distNormal);
@@ -183,20 +194,22 @@ float4 PS_Tile(VS_OUT _input) : SV_Target
         float a = info.FuncParam0.x;
         float c = info.FuncParam0.z;
 
-        float fValue = c * (tileUV.x - a);
+        float fValue = c * (evalUV.x - a);
         float gradLen = max(abs(c), 1e-6f);
-        float signedDist = fValue / gradLen;
+        float signedDist = (fValue / gradLen) * overlayScale;
 
         float aaSolid = fwidth(signedDist);
-        solidMask = 1.f - smoothstep(0.f, aaSolid, signedDist);
+        solidMask = (1.f - smoothstep(0.f, aaSolid, signedDist)) * cellMask;
 
         float distContour = abs(signedDist);
         float aaContour = fwidth(distContour);
         contourMask = 1.f - smoothstep(g_LineThickness, g_LineThickness + aaContour, distContour);
 
-        float2 mid = float2(a, 0.5f);
+        float2 midLocal = float2(a, 0.5f);
         float2 normalDir = ResolveOverlayNormal(float2(sign(c), 0.f), info.FuncParam2.xy, flags);
-        float2 normalEnd = mid + normalDir * g_NormalLength;
+        float2 normalEndLocal = midLocal + normalDir * g_NormalLength;
+        float2 mid = (midLocal - 0.5f) * tileScale + 0.5f;
+        float2 normalEnd = (normalEndLocal - 0.5f) * tileScale + 0.5f;
         float distNormal = DistToSegment(tileUV, mid, normalEnd);
         float aaNormal = fwidth(distNormal);
         normalMask = 1.f - smoothstep(g_NormalThickness, g_NormalThickness + aaNormal, distNormal);

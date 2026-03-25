@@ -70,6 +70,7 @@ private:
     UINT                    m_Col;              // 타일맵의 열 개수
     Vec2                    m_TileSize;         // 타일맵을 구성하는 타일 1개의 크기
     vector<UINT>            m_vecTileType;      // 각 셀이 참조하는 타일 정의 인덱스
+    vector<Vec2>            m_vecTileScale;     // 각 셀의 개별 크기 배율(셀 중심 기준)
     vector<TileTypeDesc>    m_vecTileDefs;      // TileRenderUI에서 편집하는 실제 타일 정의 목록
 
 private:
@@ -80,6 +81,8 @@ public:
     void Resize(UINT _Row, UINT _Col);
     void SetTileType(UINT _Row, UINT _Col, UINT _Type);
     UINT GetTileType(UINT _Row, UINT _Col) const;
+    void SetTileScale(UINT _Row, UINT _Col, const Vec2& _Scale);
+    Vec2 GetTileScale(UINT _Row, UINT _Col) const;
     void SetSprite(UINT _Row, UINT _Col, Ptr<ASprite> _Sprite);
 
     int AddTileType(const TileTypeDesc& _Desc);
@@ -94,6 +97,7 @@ public:
     UINT GetCol() { return m_Col; }
 
     const vector<UINT>& GetTileTypes() const { return m_vecTileType; }
+    const vector<Vec2>& GetTileScales() const { return m_vecTileScale; }
 
     GET_SET(Vec2, TileSize);
 
@@ -104,4 +108,3 @@ public:
     ATileMap();
     virtual ~ATileMap();
 };
-

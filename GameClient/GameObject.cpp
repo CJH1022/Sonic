@@ -185,8 +185,38 @@ void GameObject::AddComponent(Ptr<Component> _Com)
 	_Com->Init();
 }
 
+bool GameObject::IsDescendantOf(Ptr<GameObject> _Object) const
+{
+	if (nullptr == _Object)
+		return false;
+
+	GameObject* pParent = m_Parent;
+
+	while (nullptr != pParent)
+	{
+		if (pParent == _Object.Get())
+			return true;
+
+		pParent = pParent->m_Parent;
+	}
+
+	return false;
+}
+
 void GameObject::AddChild(Ptr<GameObject> _Child)
 {
+	if (nullptr == _Child)
+		return;
+
+	if (_Child.Get() == this)
+		return;
+
+	if (IsDescendantOf(_Child))
+		return;
+
+	if (_Child->GetParent().Get() == this)
+		return;
+
 	// 부모 오브젝트가 있는지 확인
 	if (_Child->GetParent().Get())
 	{
@@ -268,7 +298,18 @@ void GameObject::RegisterAsParent()
 	if (m_LayerIdx == -1)
 		return;
 
-	LevelMgr::GetInst()->GetCurLevel()->GetLayer(m_LayerIdx)->AddObject(this);
+	if (nullptr != m_Parent)
+		return;
+
+	Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pCurLevel)
+		return;
+
+	Layer* pLayer = pCurLevel->GetLayer(m_LayerIdx);
+	if (pLayer->ContainsParent(this))
+		return;
+
+	pLayer->AddObject(this);
 }
 
 void GameObject::DeregisterAsParent()

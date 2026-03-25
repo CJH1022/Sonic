@@ -20,8 +20,28 @@ Layer::~Layer()
 {
 }
 
+bool Layer::ContainsParent(Ptr<GameObject> _Object) const
+{
+	if (nullptr == _Object)
+		return false;
+
+	for (size_t i = 0; i < m_vecParents.size(); ++i)
+	{
+		if (m_vecParents[i] == _Object)
+			return true;
+	}
+
+	return false;
+}
+
 void Layer::AddObject(Ptr<GameObject> _Object)
 {
+	if (nullptr == _Object)
+		return;
+
+	if (ContainsParent(_Object))
+		return;
+
 	m_vecParents.push_back(_Object);
 	
 	list<GameObject*> queue;

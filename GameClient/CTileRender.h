@@ -10,6 +10,7 @@ struct TileInfo
     Vec4 FuncParam0; // a, b, c, r
     Vec4 FuncParam1; // center_x, center_y, mode, tileType
     Vec4 FuncParam2; // customNormal.x, customNormal.y, flags, reserved
+    Vec4 FuncParam3; // scale.x, scale.y, reserved, reserved
 };
 
 class CTileRender :

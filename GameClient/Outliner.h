@@ -8,6 +8,7 @@ class Outliner :
 {
 private:
     Ptr<TreeUI>     m_Tree;
+    vector<GameObject*> m_vecAddedObject;
 
 public:
     virtual void Tick_UI() override;
@@ -16,6 +17,7 @@ public:
     void Renew();
 
 private:
+    bool HasAddedObject(GameObject* _Object) const;
     void AddGameObject(Ptr<TreeNode> _ParentNode, Ptr<GameObject> _Object);
     void SelectGameObject(DWORD_PTR _Object);
 
