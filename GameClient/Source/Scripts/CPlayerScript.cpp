@@ -10,11 +10,123 @@
 #include "CCollider2D.h"
 #include "TaskMgr.h"
 #include "CTileScript.h"
+#include "CSurfaceScript.h"
 #include "CBlockScript.h"
 
 #include <cmath> // fabsf
 #include "CBlockPushingScript.h"
 #include "AssetMgr.h"
+
+namespace
+{
+    constexpr float kGroundRotationLerpSpeed = 14.f;
+    constexpr float kSurfaceResolveFrameEpsilon = 0.0001f;
+    constexpr float kSurfaceResolveScoreEpsilon = 0.01f;
+    constexpr float kSurfaceLineSeamKeepDot = 0.90f;
+    constexpr float kSurfaceLineSeamTransitionDepth = 0.03f;
+    constexpr float kSurfaceLineSeamNormalBlend = 0.55f;
+    constexpr float kSurfaceLineSeamDirectionBias = 0.12f;
+    constexpr float kSurfaceLineSeamMinY = 0.08f;
+    constexpr float kSurfaceLineSeamMoveSpeedGate = 2200.f;
+    constexpr float kSurfaceLineSeamHoldSpeedMin = 70.f;      // 낮은 속도에서 이전 접선 고착을 더 억제
+    constexpr float kSurfaceContactPushBias = 0.015f;         // 미세 침투 복귀량을 더 낮춰 점프/튕김을 완화
+    constexpr float kSurfaceContactMaxPush = 1.5f;
+
+    float WrapAngleRad(float _Angle)
+    {
+        while (_Angle > XM_PI)
+            _Angle -= XM_2PI;
+
+        while (_Angle < -XM_PI)
+            _Angle += XM_2PI;
+
+        return _Angle;
+    }
+
+    float LerpAngleRad(float _Current, float _Target, float _Speed, float _Dt)
+    {
+        float delta = WrapAngleRad(_Target - _Current);
+        float t = _Speed * _Dt;
+        if (t > 1.f)
+            t = 1.f;
+
+        return WrapAngleRad(_Current + delta * t);
+    }
+
+    float Clamp01f(float _Value)
+    {
+        if (_Value < 0.f)
+            return 0.f;
+        if (_Value > 1.f)
+            return 1.f;
+        return _Value;
+    }
+
+    float ComputeLineSeamBlend(float _SeamT, bool _HasValue, bool _IsTransition,
+                              const Vec2& _SeamStart, const Vec2& _SeamEnd, const Vec2& _ContactPoint,
+                              float _MoveVelocityX)
+    {
+        if (!_HasValue || !_IsTransition)
+            return 0.f;
+
+        float blend = Clamp01f(_SeamT);
+        if (_SeamEnd.x != _SeamStart.x || _SeamEnd.y != _SeamStart.y)
+        {
+            const float dx = _SeamEnd.x - _SeamStart.x;
+            const float dy = _SeamEnd.y - _SeamStart.y;
+            if (fabsf(dx) >= fabsf(dy))
+            {
+                if (fabsf(dx) > 0.0001f)
+                    blend = Clamp01f((_ContactPoint.x - _SeamStart.x) / dx);
+            }
+            else if (fabsf(dy) > 0.0001f)
+            {
+                blend = Clamp01f((_ContactPoint.y - _SeamStart.y) / dy);
+            }
+        }
+
+        if (_MoveVelocityX > 0.f)
+            return blend;
+
+        if (_MoveVelocityX < 0.f)
+            return 1.f - blend;
+
+        return 0.f;
+    }
+
+    float ComputeSeamDirectionBias(float _SeamT, bool _HasValue, bool _IsTransition, float _MoveVelocityX)
+    {
+        if (!_HasValue || !_IsTransition)
+            return 0.f;
+
+        if (_MoveVelocityX > 1.f)
+            return Clamp01f(1.f - Clamp01f(_SeamT));
+
+        if (_MoveVelocityX < -1.f)
+            return Clamp01f(_SeamT);
+
+        return 0.f;
+    }
+
+    float DotVec2(const Vec2& _A, const Vec2& _B)
+    {
+        return _A.x * _B.x + _A.y * _B.y;
+    }
+
+    float LengthVec2(const Vec2& _V)
+    {
+        return sqrtf(_V.x * _V.x + _V.y * _V.y);
+    }
+
+    Vec2 NormalizeSafeVec2(const Vec2& _V, const Vec2& _Fallback = Vec2(0.f, 1.f))
+    {
+        float len = LengthVec2(_V);
+        if (len <= 0.0001f)
+            return _Fallback;
+
+        return Vec2(_V.x / len, _V.y / len);
+    }
+}
 
 CPlayerScript::CPlayerScript()
     : CScript(SCRIPT_TYPE::PLAYERSCRIPT)
@@ -83,6 +195,32 @@ CPlayerScript::PlayerInput CPlayerScript::ReadInput() const
 
 void CPlayerScript::Tick()
 {
+    if (m_AttachBlockedTime > 0.f)
+    {
+        m_AttachBlockedTime -= DT;
+        if (m_AttachBlockedTime <= 0.f)
+        {
+            m_AttachBlockedTime = 0.f;
+            m_pAttachBlockedSurface = nullptr;
+        }
+    }
+
+    if (m_SurfaceGroundHoldTime > 0.f)
+    {
+        m_SurfaceGroundHoldTime -= DT;
+        if (m_SurfaceGroundHoldTime < 0.f)
+            m_SurfaceGroundHoldTime = 0.f;
+    }
+    if (IsGround && m_TileOverlapCount == 0 && m_SurfaceGroundHoldTime <= 0.f)
+    {
+        if (fabsf(m_SurfaceResolveFrame - E_Time) > kSurfaceResolveFrameEpsilon)
+        {
+            IsGround = false;
+            vNormal = Vec2(0.f, 1.f);
+            vTangent = Vec2(1.f, 0.f);
+        }
+    }
+
     const float curPosX = Transform()->GetRelativePos().x;
     m_LastFrameDeltaX = curPosX - m_LastTickPosX;
     m_LastTickPosX = curPosX;
@@ -405,6 +543,8 @@ void CPlayerScript::StartJump()
     IsJump = true;
     vVelocity += vNormal * 600.f;
     IsGround = false;
+    m_pAttachBlockedSurface = nullptr;
+    m_AttachBlockedTime = 0.f;
     m_Action = ActionState::None;
     m_BreakUngroundedTime = 0.f;
     m_IdleTime = 0.f;
@@ -756,6 +896,8 @@ void CPlayerScript::UpdateTimers(float dt)
 
 void CPlayerScript::UpdateGroundRotation()
 {
+    float curRotZ = Transform()->GetRelativeRot().z;
+
     if (IsGround)
     {
         if (IsJump)
@@ -766,7 +908,8 @@ void CPlayerScript::UpdateGroundRotation()
         {
             float fAngle = atan2f(vNormal.y, vNormal.x);
             float fTargetRot = fAngle + XM_PIDIV2 + XM_PI;
-            Transform()->SetRelativeRot(Vec3(0.f, 0.f, fTargetRot));
+            float fSmoothedRot = LerpAngleRad(curRotZ, fTargetRot, kGroundRotationLerpSpeed, DT);
+            Transform()->SetRelativeRot(Vec3(0.f, 0.f, fSmoothedRot));
         }
     }
     else
@@ -779,7 +922,8 @@ void CPlayerScript::UpdateGroundRotation()
         {
             float fAngle = atan2f(vNormal.y, vNormal.x);
             float fTargetRot = fAngle + XM_PIDIV2 + XM_PI;
-            Transform()->SetRelativeRot(Vec3(0.f, 0.f, fTargetRot));
+            float fSmoothedRot = LerpAngleRad(curRotZ, fTargetRot, kGroundRotationLerpSpeed, DT);
+            Transform()->SetRelativeRot(Vec3(0.f, 0.f, fSmoothedRot));
         }
     }
 }
@@ -882,6 +1026,267 @@ void CPlayerScript::UpdateAnimation(float dt)
 
 }
 
+void CPlayerScript::SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Normal, float _SignedDistance,
+                                         bool _TransitionSurface, bool _Attachable, bool _WallLike, bool _Circle, float _Score,
+                                         float _SeamBlendT, bool _SeamBlendHasValue, const Vec2& _SeamStart,
+                                         const Vec2& _SeamEnd, const Vec2& _ContactPoint)
+{
+    if (_Surface == nullptr)
+        return;
+
+    float candidateScore = _Score;
+    const float seamDirBias = ComputeSeamDirectionBias(_SeamBlendT, _SeamBlendHasValue, _TransitionSurface, vVelocity.x);
+    if (!_WallLike && !_Circle && seamDirBias > 0.f)
+    {
+        const float moveSpeed = fabsf(vVelocity.x);
+        const float speedRate = Clamp01f(moveSpeed / kSurfaceLineSeamMoveSpeedGate);
+        const float biasScale = 0.5f + 0.5f * speedRate;
+        candidateScore -= kSurfaceLineSeamDirectionBias * seamDirBias * biasScale;
+    }
+
+    if (fabsf(m_SurfaceResolveFrame - E_Time) > kSurfaceResolveFrameEpsilon)
+    {
+        m_SurfaceResolveFrame = E_Time;
+        m_SurfaceResolveScore = 999999.f;
+        m_pResolvedSurface = nullptr;
+    }
+
+    const bool sameSurface = (m_pResolvedSurface == _Surface);
+    bool accept = false;
+
+    if (m_pResolvedSurface == nullptr)
+    {
+        accept = true;
+    }
+    else if (sameSurface)
+    {
+        // Allow the same surface to refresh its final contact inside the same
+        // frame, while still preferring a clearly better competing surface.
+        accept = (candidateScore <= m_SurfaceResolveScore + kSurfaceResolveScoreEpsilon);
+    }
+    else if (candidateScore + kSurfaceResolveScoreEpsilon < m_SurfaceResolveScore)
+    {
+        accept = true;
+    }
+
+    if (!accept)
+        return;
+
+    SurfaceContact contact = {};
+    contact.Surface = _Surface;
+    contact.Normal = _Normal;
+    contact.SignedDistance = _SignedDistance;
+    contact.Score = candidateScore;
+    contact.TransitionSurface = _TransitionSurface;
+    contact.Attachable = _Attachable;
+    contact.WallLike = _WallLike;
+    contact.Circle = _Circle;
+    contact.SeamBlendT = _SeamBlendT;
+    contact.SeamBlendHasValue = _SeamBlendHasValue;
+    contact.SeamStart = _SeamStart;
+    contact.SeamEnd = _SeamEnd;
+    contact.ContactPoint = _ContactPoint;
+
+    m_SurfaceResolveScore = candidateScore;
+    m_pResolvedSurface = _Surface;
+    ApplySurfaceContact(contact);
+}
+
+void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
+{
+    Vec2 normal = NormalizeSafeVec2(_Contact.Normal);
+    const bool wasGround = GetIsGround();
+    const bool jumpPressed = KEY_PRESSED(KEY::SPACE);
+
+    Vec2 oldNormal = vNormal;
+    if (fabsf(oldNormal.x) < 0.0001f && fabsf(oldNormal.y) < 0.0001f)
+        oldNormal = normal;
+    else
+        oldNormal = NormalizeSafeVec2(oldNormal, normal);
+
+    float normalDot = DotVec2(oldNormal, normal);
+    if (normalDot > 1.f) normalDot = 1.f;
+    else if (normalDot < -1.f) normalDot = -1.f;
+
+    float normalBlend = 1.f;
+    if (_Contact.Circle && wasGround)
+        normalBlend = 0.35f;
+
+    if (wasGround && !_Contact.TransitionSurface)
+        normalBlend = 1.f;
+
+    if (_Contact.TransitionSurface)
+        normalBlend = 1.f;
+
+    const bool bLineSeamCandidate =
+        _Contact.TransitionSurface &&
+        !_Contact.WallLike &&
+        !_Contact.Circle;
+
+    Vec2 candidateTangent = Vec2(normal.y, -normal.x);
+    const bool bSlowSeamSpeed = fabsf(DotVec2(vVelocity, candidateTangent)) < kSurfaceLineSeamHoldSpeedMin;
+    float lineTransitionBlend = ComputeLineSeamBlend(
+        _Contact.SeamBlendT,
+        _Contact.SeamBlendHasValue,
+        _Contact.TransitionSurface,
+        _Contact.SeamStart,
+        _Contact.SeamEnd,
+        _Contact.ContactPoint,
+        vVelocity.x);
+    lineTransitionBlend = Clamp01f(lineTransitionBlend * 2.0f);
+    if (bSlowSeamSpeed)
+        lineTransitionBlend *= 0.4f;
+
+    if (fabsf(vVelocity.x) > 20.f)
+        lineTransitionBlend = powf(lineTransitionBlend, 0.85f);
+
+    const bool bLineSeamStick =
+        !jumpPressed &&
+        bLineSeamCandidate &&
+        (wasGround || m_SurfaceGroundHoldTime > 0.f) &&
+        (GetAction() == ActionState::None) &&
+        fabsf(_Contact.SignedDistance) <= kSurfaceLineSeamTransitionDepth &&
+        (normalDot >= kSurfaceLineSeamKeepDot);
+
+    const bool bHoldLineSeam = bLineSeamStick && !bSlowSeamSpeed;
+
+    Vec2 curNormal = NormalizeSafeVec2(
+        oldNormal * (1.f - normalBlend) + normal * normalBlend,
+        normal);
+
+    if (bLineSeamCandidate && _Contact.TransitionSurface && lineTransitionBlend > 0.0001f)
+    {
+        const float blend = Clamp01f(lineTransitionBlend);
+        curNormal = NormalizeSafeVec2(
+            oldNormal * (1.f - blend) + normal * blend,
+            oldNormal);
+    }
+    else if (bHoldLineSeam)
+    {
+        curNormal = NormalizeSafeVec2(
+            oldNormal * (1.f - kSurfaceLineSeamNormalBlend) + normal * kSurfaceLineSeamNormalBlend,
+            oldNormal);
+    }
+
+    SetNormal(curNormal);
+
+    if (_Contact.SignedDistance < 0.f)
+    {
+        float worldPush = -_Contact.SignedDistance + kSurfaceContactPushBias;
+        const float maxPush = kSurfaceContactMaxPush;
+        if (worldPush > maxPush)
+            worldPush = maxPush;
+
+        Vec3 pos = Transform()->GetRelativePos();
+        pos.x += curNormal.x * worldPush;
+        pos.y += curNormal.y * worldPush;
+        Transform()->SetRelativePos(pos);
+    }
+
+    Vec2 tangent = Vec2(curNormal.y, -curNormal.x);
+    float rawVn = DotVec2(vVelocity, curNormal);
+    const float incomingVn = rawVn;
+    float vt = DotVec2(vVelocity, tangent);
+
+    const bool wallLikeSurface = _Contact.WallLike || !_Contact.Attachable;
+    const bool blockedByWallLikeSurface =
+        wallLikeSurface &&
+        IsBreakOrRollAction() &&
+        (fabsf(curNormal.y) < 0.35f) &&
+        (fabsf(incomingVn) > 20.f);
+
+    if (rawVn < 0.f)
+    {
+        vVelocity.x -= curNormal.x * rawVn;
+        vVelocity.y -= curNormal.y * rawVn;
+        rawVn = 0.f;
+    }
+
+    const float stickMinSpeed = 500.f;
+    const float normalEnterY = 0.65f;
+    const float normalKeepY = 0.45f;
+    const float vnEnterTolerance = 5.f;
+    const float vnKeepTolerance = 80.f;
+    const float normalThreshold = wasGround ? normalKeepY : normalEnterY;
+    const float vnTolerance = wasGround ? vnKeepTolerance : vnEnterTolerance;
+
+    bool speedStick = (fabsf(vt) > stickMinSpeed) && (curNormal.y > 0.2f);
+    bool wallAttach = _Contact.Attachable && (fabsf(curNormal.x) > 0.85f);
+    bool canStick =
+        (rawVn <= vnTolerance) &&
+        (curNormal.y > normalThreshold || speedStick || wallAttach);
+
+    if (_Contact.TransitionSurface && curNormal.y < normalThreshold && !wallAttach)
+    {
+        const bool seamCanStick =
+            (fabsf(curNormal.y) >= kSurfaceLineSeamMinY) &&
+            (normalDot >= kSurfaceLineSeamKeepDot) &&
+            (fabsf(vt) <= kSurfaceLineSeamMoveSpeedGate);
+
+        canStick = bHoldLineSeam && seamCanStick;
+    }
+
+    if (blockedByWallLikeSurface)
+    {
+        if (GetAction() == ActionState::Break)
+            RequestBreakWallStop();
+        else
+            StopBlockedAction();
+
+        if (GetAction() == ActionState::Break)
+        {
+            Vec2 blockedVelocity = GetVelocity();
+            blockedVelocity.x = 0.f;
+            SetVelocity(blockedVelocity);
+            return;
+        }
+    }
+
+    if (canStick)
+    {
+        RefreshSurfaceGroundHold();
+        SetIsGround(true);
+        SetNormal(curNormal);
+        SetGroundTangent(tangent);
+
+        if (curNormal.y > 0.f)
+        {
+            float friction = 100.f;
+
+            if (vt > 0.f)
+            {
+                vt -= friction * DT;
+                if (vt < 0.f) vt = 0.f;
+            }
+            else if (vt < 0.f)
+            {
+                vt += friction * DT;
+                if (vt > 0.f) vt = 0.f;
+            }
+        }
+
+        vVelocity = tangent * vt;
+    }
+    else
+    {
+        const bool definiteAirborne =
+            (rawVn > vnKeepTolerance) ||
+            (!wallAttach && curNormal.y < 0.2f && fabsf(vt) < stickMinSpeed);
+
+        if (definiteAirborne)
+            SetIsGround(false);
+
+        SetNormal(curNormal);
+        SetGroundTangent(tangent);
+
+        if (curNormal.y <= 0.65f && fabsf(vt) < stickMinSpeed)
+        {
+            if (vVelocity.y > 0.f)
+                vVelocity.y = 0.f;
+        }
+    }
+}
+
 void CPlayerScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
     Ptr<CBlockPushingScript> pBlock = _OtherCollider->GetOwner()->GetScript<CBlockPushingScript>();
@@ -906,9 +1311,16 @@ void CPlayerScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherC
         return;
 
     auto pTile = _OtherCollider->GetOwner()->GetScript<CTileScript>();
+    auto pSurface = _OtherCollider->GetOwner()->GetScript<CSurfaceScript>();
     auto pBlock = _OtherCollider->GetOwner()->GetScript<CBlockScript>();
     auto pBlockPush = _OtherCollider->GetOwner()->GetScript<CBlockPushingScript>();
-    if (pTile == nullptr && pBlock == nullptr && pBlockPush == nullptr)
+    const bool bCountsAsGroundOverlap =
+        (pTile != nullptr) ||
+        (pBlock != nullptr) ||
+        (pBlockPush != nullptr) ||
+        (pSurface != nullptr && pSurface->IsAttachable());
+
+    if (!bCountsAsGroundOverlap)
         return;
 
     ++m_TileOverlapCount;
@@ -931,8 +1343,15 @@ void CPlayerScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCol
     }
 
     auto pTile = _OtherCollider->GetOwner()->GetScript<CTileScript>();
+    auto pSurface = _OtherCollider->GetOwner()->GetScript<CSurfaceScript>();
     auto pBlock = _OtherCollider->GetOwner()->GetScript<CBlockScript>();
-    if (pTile == nullptr && pBlock == nullptr && pBlockPush == nullptr)
+    const bool bCountsAsGroundOverlap =
+        (pTile != nullptr) ||
+        (pBlock != nullptr) ||
+        (pBlockPush != nullptr) ||
+        (pSurface != nullptr && pSurface->IsAttachable());
+
+    if (!bCountsAsGroundOverlap)
         return;
 
     --m_TileOverlapCount;
@@ -941,7 +1360,12 @@ void CPlayerScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCol
 
     if (m_TileOverlapCount == 0)
     {
-        IsGround = false;
+        if (m_SurfaceGroundHoldTime <= 0.f)
+        {
+            IsGround = false;
+            vNormal = Vec2(0.f, 1.f);
+            vTangent = Vec2(1.f, 0.f);
+        }
     }
 }
 

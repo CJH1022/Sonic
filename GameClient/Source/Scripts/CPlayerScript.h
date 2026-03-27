@@ -6,6 +6,23 @@ class CPlayerScript
     : public CScript
 {
 private:
+    struct SurfaceContact
+    {
+        GameObject* Surface = nullptr;
+        Vec2 Normal = Vec2(0.f, 1.f);
+        float SignedDistance = 0.f;
+        float Score = 999999.f;
+        bool TransitionSurface = false;
+        bool Attachable = false;
+        bool WallLike = false;
+        bool Circle = false;
+        float SeamBlendT = 0.f;
+        bool SeamBlendHasValue = false;
+        Vec2 SeamStart = Vec2(0.f, 0.f);
+        Vec2 SeamEnd = Vec2(0.f, 0.f);
+        Vec2 ContactPoint = Vec2(0.f, 0.f);
+    };
+
     Ptr<GameObject> m_Target;
 
     float m_Limit = 0.f;
@@ -74,6 +91,12 @@ private:
     bool m_bBreakWallLocked = false;
     float m_LastTickPosX = 0.f;
     float m_LastFrameDeltaX = 0.f;
+    GameObject* m_pAttachBlockedSurface = nullptr;
+    float m_AttachBlockedTime = 0.f;
+    float m_SurfaceGroundHoldTime = 0.f;
+    float m_SurfaceResolveFrame = -1.f;
+    float m_SurfaceResolveScore = 999999.f;
+    GameObject* m_pResolvedSurface = nullptr;
 
 public:
     void SetTarget(Ptr<GameObject> _Target) { m_Target = _Target; }
@@ -132,6 +155,25 @@ public:
     bool IsBreakOrRollAction() const { return m_Action == ActionState::Break || m_Action == ActionState::Roll || m_Action == ActionState::SkillDash; }
     void SetIsGround(bool _IsGround){ IsGround = _IsGround; }
     void SetIsJump(bool _IsJump) { IsJump = _IsJump; }
+    void BlockSurfaceAttach(GameObject* _Surface, float _Time)
+    {
+        m_pAttachBlockedSurface = _Surface;
+        m_AttachBlockedTime = _Time;
+    }
+    bool IsSurfaceAttachBlocked(GameObject* _Surface) const
+    {
+        return (m_pAttachBlockedSurface == _Surface && m_AttachBlockedTime > 0.f);
+    }
+    void RefreshSurfaceGroundHold(float _Time = 0.08f)
+    {
+        if (_Time > m_SurfaceGroundHoldTime)
+            m_SurfaceGroundHoldTime = _Time;
+    }
+    void SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Normal, float _SignedDistance,
+                              bool _TransitionSurface, bool _Attachable, bool _WallLike, bool _Circle, float _Score,
+                              float _SeamBlendT = 0.f, bool _SeamBlendHasValue = false,
+                              const Vec2& _SeamStart = Vec2(0.f, 0.f), const Vec2& _SeamEnd = Vec2(0.f, 0.f),
+                              const Vec2& _ContactPoint = Vec2(0.f, 0.f));
 
     void SetNeedGravity(bool _Value) { m_bNeedGravity = _Value; }
     bool GetNeedGravity() const { return m_bNeedGravity; }
@@ -167,6 +209,7 @@ private:
     void ResolveTransitions(const PlayerInput& in, float dt);
     void ResolvePose(const PlayerInput& in, float dt);
     void ResolveAction(const PlayerInput& in, float dt);
+    void ApplySurfaceContact(const SurfaceContact& _Contact);
 
     bool CanStartJump(const PlayerInput& in) const;
     void StartJump();
