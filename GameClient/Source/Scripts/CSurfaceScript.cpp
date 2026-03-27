@@ -23,6 +23,9 @@ namespace
     constexpr float kDetachThresholdGround = 2.f;
     constexpr float kTransitionSnapThresholdAir = 0.5f;
     constexpr float kTransitionSnapThresholdGround = 8.f;
+    // 0.02f: more aggressive depth clamping (less sink-in),
+    // 0.04f: conservative clamp (more permissive penetration).
+    constexpr float kGroundDepthClamp = 0.02f;
     constexpr float kSurfaceEdgeEpsilon = 0.02f;
     constexpr float kSurfaceContactPositiveEpsilon = 0.03f;
     constexpr float kSupportPointInsideMargin = 0.08f;
@@ -210,11 +213,11 @@ void CSurfaceScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColli
     // wall). The role only changes how player control logic treats the hit, not
     // the contact normal/signature itself.
     if (m_Geometry == SURFACE_GEOMETRY::LINE)
-        hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint);
+        hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint, wasGround);
     else if (m_Geometry == SURFACE_GEOMETRY::CIRCLE)
-        hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface);
+        hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, wasGround);
     else if (m_Geometry == SURFACE_GEOMETRY::ARC)
-        hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface);
+        hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, wasGround);
     else
         hit = EvaluateWallProbe(_OtherCollider, normal, signedDistance);
 
@@ -593,7 +596,7 @@ bool CSurfaceScript::GetPlayerSupportPoint(CCollider2D* _OtherCollider, const Ve
     return true;
 }
 
-bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint)
+bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround)
 {
     _OutTransitionSurface = false;
     _OutSeamBlendT = 0.f;
@@ -641,7 +644,14 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
         if (!IsInsideExpandedBox(supportPoint, lineMin, lineMax, kSupportPointInsideMargin))
             return false;
 
-        _OutSignedDistance = Dot(supportPoint - closest, outward);
+        float supportSignedDistance = Dot(supportPoint - closest, outward);
+        if (_WasGround)
+        {
+            const float footSignedDistance = Dot(_FootPos - closest, outward);
+            supportSignedDistance = max(supportSignedDistance, footSignedDistance - kGroundDepthClamp);
+        }
+
+        _OutSignedDistance = supportSignedDistance;
         _OutNormal = outward;
         _OutSeamBlendT = Clamp01(projectionNorm);
         _OutSeamBlendHasValue = true;
@@ -708,9 +718,14 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
     if (supportProjection < -kLineSupportProjectionMargin || supportProjection > 1.f + kLineSupportProjectionMargin)
         return false;
 
+    const float footF = c * (localY - ((localB - localA) * localX + localA));
     float supportLocalX = (supportPoint.x - left) / width;
     float supportLocalY = (top - supportPoint.y) / height;
-    const float f = c * (supportLocalY - ((localB - localA) * supportLocalX + localA));
+    float f = c * (supportLocalY - ((localB - localA) * supportLocalX + localA));
+    if (_WasGround)
+    {
+        f = max(f, footF - kGroundDepthClamp);
+    }
 
     _OutNormal = candidateNormal;
     _OutSignedDistance = f / gradWorldLen;
@@ -727,7 +742,7 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
     return true;
 }
 
-bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface)
+bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, bool _WasGround)
 {
     _OutTransitionSurface = false;
 
@@ -795,9 +810,14 @@ bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _
 
     float supportLocalX = (supportPoint.x - boxMin.x) / width;
     float supportLocalY = (top - supportPoint.y) / height;
+    const float footF = c * (dx * dx + dy * dy - 1.f);
     const float supportDx = supportLocalX - centerX;
     const float supportDy = supportLocalY - centerY;
-    const float supportF = c * (supportDx * supportDx + supportDy * supportDy - 1.f);
+    float supportF = c * (supportDx * supportDx + supportDy * supportDy - 1.f);
+    if (_WasGround)
+    {
+        supportF = max(supportF, footF - kGroundDepthClamp);
+    }
 
     _OutNormal = candidateNormal;
     _OutSignedDistance = supportF / gradWorldLen;
@@ -811,7 +831,7 @@ bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _
     return true;
 }
 
-bool CSurfaceScript::EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface)
+bool CSurfaceScript::EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, bool _WasGround)
 {
     _OutTransitionSurface = false;
 
@@ -832,5 +852,5 @@ bool CSurfaceScript::EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2
         return false;
     }
 
-    return EvaluateArcProbe(_OtherCollider, _FootPos, _OutNormal, _OutSignedDistance, _OutTransitionSurface);
+    return EvaluateArcProbe(_OtherCollider, _FootPos, _OutNormal, _OutSignedDistance, _OutTransitionSurface, _WasGround);
 }

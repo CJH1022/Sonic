@@ -24,6 +24,7 @@ namespace
     constexpr float kSurfaceResolveScoreEpsilon = 0.01f;
     constexpr float kSurfaceLineSeamKeepDot = 0.90f;
     constexpr float kSurfaceLineSeamTransitionDepth = 0.03f;
+    constexpr float kSurfaceLineSeamDownwardDelta = 0.025f;
     constexpr float kSurfaceLineSeamNormalBlend = 0.55f;
     constexpr float kSurfaceLineSeamDirectionBias = 0.20f;
     constexpr float kSurfaceLineSeamEntryBlendFloor = 0.45f;
@@ -33,6 +34,7 @@ namespace
     constexpr float kSurfaceLineSeamHoldSpeedMin = 70.f;      // 낮은 속도에서 이전 접선 고착을 더 억제
     constexpr float kSurfaceContactPushBias = 0.015f;         // 미세 침투 복귀량을 더 낮춰 점프/튕김을 완화
     constexpr float kSurfaceContactMaxPush = 1.5f;
+    constexpr float kSurfaceContactDownTransitionPushLimit = 0.08f;
 
     float WrapAngleRad(float _Angle)
     {
@@ -1143,7 +1145,18 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         lineTransitionBlend = powf(lineTransitionBlend, 0.85f);
 
     const float descendDeltaY = oldNormal.y - normal.y;
-    if (bLineSeamCandidate && fabsf(vVelocity.x) > 20.f && descendDeltaY > 0.04f)
+    const bool bDownwardSlopeTransition = bLineSeamCandidate &&
+        wasGround &&
+        (descendDeltaY > kSurfaceLineSeamDownwardDelta) &&
+        fabsf(_Contact.SignedDistance) <= kSurfaceLineSeamTransitionDepth;
+
+    const bool bSteepDownSlopeTransition = bDownwardSlopeTransition && fabsf(vVelocity.x) > 30.f;
+
+    if (bDownwardSlopeTransition)
+    {
+        lineTransitionBlend = max(lineTransitionBlend, 0.95f);
+    }
+    else if (fabsf(vVelocity.x) > 20.f && descendDeltaY > 0.04f)
     {
         lineTransitionBlend = max(lineTransitionBlend, kSurfaceLineSeamEnterDownGradeBonus * Clamp01f(descendDeltaY * 2.f));
         if (fabsf(vVelocity.x) > 400.f)
@@ -1154,6 +1167,14 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         lineTransitionBlend = max(lineTransitionBlend, kSurfaceLineSeamEntryBlendFloor);
     }
 
+    if (bSteepDownSlopeTransition)
+    {
+        lineTransitionBlend = max(lineTransitionBlend, 0.75f);
+    }
+
+    if (bSlowSeamSpeed && !bSteepDownSlopeTransition)
+        lineTransitionBlend *= 0.4f;
+
     const bool bLineSeamStick =
         !jumpPressed &&
         bLineSeamCandidate &&
@@ -1162,7 +1183,7 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         fabsf(_Contact.SignedDistance) <= kSurfaceLineSeamTransitionDepth &&
         (normalDot >= kSurfaceLineSeamKeepDot);
 
-    const bool bHoldLineSeam = bLineSeamStick && !bSlowSeamSpeed;
+    const bool bHoldLineSeam = bLineSeamStick && !bSlowSeamSpeed && !bDownwardSlopeTransition;
 
     Vec2 curNormal = NormalizeSafeVec2(
         oldNormal * (1.f - normalBlend) + normal * normalBlend,
@@ -1187,7 +1208,9 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     if (_Contact.SignedDistance < 0.f)
     {
         float worldPush = -_Contact.SignedDistance + kSurfaceContactPushBias;
-        const float maxPush = kSurfaceContactMaxPush;
+        float maxPush = kSurfaceContactMaxPush;
+        if (bSteepDownSlopeTransition)
+            maxPush = min(maxPush, kSurfaceContactDownTransitionPushLimit);
         if (worldPush > maxPush)
             worldPush = maxPush;
 
@@ -1237,7 +1260,10 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
             (normalDot >= kSurfaceLineSeamKeepDot) &&
             (fabsf(vt) <= kSurfaceLineSeamMoveSpeedGate);
 
-        canStick = bHoldLineSeam && seamCanStick;
+        if (bDownwardSlopeTransition)
+            canStick = true;
+        else
+            canStick = bHoldLineSeam && seamCanStick;
     }
 
     if (blockedByWallLikeSurface)
