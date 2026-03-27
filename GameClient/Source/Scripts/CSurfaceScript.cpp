@@ -27,7 +27,7 @@ namespace
     // 0.04f: conservative clamp (more permissive penetration).
     constexpr float kGroundDepthClamp = 0.02f;
     constexpr float kSurfaceEdgeEpsilon = 0.02f;
-    constexpr float kSurfaceContactPositiveEpsilon = 0.03f;
+    constexpr float kSurfaceContactPositiveEpsilon = 0.015f;
     constexpr float kSupportPointInsideMargin = 0.08f;
     constexpr float kArcTransitionLocalMargin = 0.04f;
     constexpr float kLineSupportProjectionMargin = 0.08f;
@@ -236,7 +236,7 @@ void CSurfaceScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColli
 
     float candidateScore = fabsf(signedDistance);
     if (transitionSurface)
-        candidateScore -= 0.15f;
+        candidateScore -= 0.22f;
     if (m_Role == SURFACE_ROLE::WALL)
         candidateScore += 0.25f;
 

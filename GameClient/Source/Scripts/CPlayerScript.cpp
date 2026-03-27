@@ -26,7 +26,12 @@ namespace
     constexpr float kSurfaceLineSeamTransitionDepth = 0.03f;
     constexpr float kSurfaceLineSeamDownwardDelta = 0.025f;
     constexpr float kSurfaceLineSeamNormalBlend = 0.55f;
-    constexpr float kSurfaceLineSeamDirectionBias = 0.20f;
+    constexpr float kSurfaceLineSeamDirectionBias = 0.40f;
+    constexpr float kSurfaceLineSeamTransitionScoreFavor = 0.30f;
+    constexpr float kSurfaceLineSeamFlatToSlopePushLimit = 0.02f;
+    constexpr float kSurfaceLineSeamAngleShiftDot = 0.90f;
+    constexpr float kSurfaceLineSeamAngleShiftScorePenalty = 0.28f;
+    constexpr float kSurfaceLineSeamAngleShiftPushLimit = 0.015f;
     constexpr float kSurfaceLineSeamEntryBlendFloor = 0.45f;
     constexpr float kSurfaceLineSeamEnterDownGradeBonus = 0.6f;
     constexpr float kSurfaceLineSeamMinY = 0.08f;
@@ -1038,6 +1043,7 @@ void CPlayerScript::SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Norm
     if (_Surface == nullptr)
         return;
 
+    const bool wasGround = GetIsGround();
     float candidateScore = _Score;
     const float seamDirBias = ComputeSeamDirectionBias(_SeamBlendT, _SeamBlendHasValue, _TransitionSurface, vVelocity.x);
     if (!_WallLike && !_Circle && seamDirBias > 0.f)
@@ -1046,6 +1052,25 @@ void CPlayerScript::SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Norm
         const float speedRate = Clamp01f(moveSpeed / kSurfaceLineSeamMoveSpeedGate);
         const float biasScale = 0.5f + 0.5f * speedRate;
         candidateScore -= kSurfaceLineSeamDirectionBias * seamDirBias * biasScale;
+    }
+
+    if (_TransitionSurface)
+    {
+        const bool canPreferTransition = _SeamBlendHasValue &&
+            (_Score <= kSurfaceLineSeamTransitionDepth * 2.f);
+        if (canPreferTransition && m_pResolvedSurface != _Surface)
+        {
+            candidateScore -= kSurfaceLineSeamTransitionScoreFavor;
+        }
+
+        if (wasGround && _SeamBlendHasValue)
+        {
+            const Vec2 previousNormal = NormalizeSafeVec2(vNormal);
+            const float previousToNextDot = DotVec2(previousNormal, _Normal);
+
+            if (previousToNextDot < kSurfaceLineSeamAngleShiftDot)
+                candidateScore -= kSurfaceLineSeamAngleShiftScorePenalty;
+        }
     }
 
     if (fabsf(m_SurfaceResolveFrame - E_Time) > kSurfaceResolveFrameEpsilon)
@@ -1145,6 +1170,17 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         lineTransitionBlend = powf(lineTransitionBlend, 0.85f);
 
     const float descendDeltaY = oldNormal.y - normal.y;
+    const bool bFlatToSlopeTransition = bLineSeamCandidate &&
+        wasGround &&
+        (oldNormal.y > 0.88f) &&
+        (normal.y < 0.93f) &&
+        (fabsf(_Contact.SignedDistance) <= kSurfaceLineSeamTransitionDepth);
+
+    const bool bSeamAngleShift = bLineSeamCandidate &&
+        wasGround &&
+        (normalDot < kSurfaceLineSeamAngleShiftDot) &&
+        (fabsf(_Contact.SignedDistance) <= kSurfaceLineSeamTransitionDepth);
+
     const bool bDownwardSlopeTransition = bLineSeamCandidate &&
         wasGround &&
         (descendDeltaY > kSurfaceLineSeamDownwardDelta) &&
@@ -1152,7 +1188,11 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
 
     const bool bSteepDownSlopeTransition = bDownwardSlopeTransition && fabsf(vVelocity.x) > 30.f;
 
-    if (bDownwardSlopeTransition)
+    if (bFlatToSlopeTransition || bSeamAngleShift)
+    {
+        lineTransitionBlend = 1.f;
+    }
+    else if (bDownwardSlopeTransition)
     {
         lineTransitionBlend = max(lineTransitionBlend, 0.95f);
     }
@@ -1183,7 +1223,10 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         fabsf(_Contact.SignedDistance) <= kSurfaceLineSeamTransitionDepth &&
         (normalDot >= kSurfaceLineSeamKeepDot);
 
-    const bool bHoldLineSeam = bLineSeamStick && !bSlowSeamSpeed && !bDownwardSlopeTransition;
+    const bool bHoldLineSeam = bLineSeamStick && !bSlowSeamSpeed &&
+        !bDownwardSlopeTransition &&
+        !bFlatToSlopeTransition &&
+        !bSeamAngleShift;
 
     Vec2 curNormal = NormalizeSafeVec2(
         oldNormal * (1.f - normalBlend) + normal * normalBlend,
@@ -1209,6 +1252,10 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     {
         float worldPush = -_Contact.SignedDistance + kSurfaceContactPushBias;
         float maxPush = kSurfaceContactMaxPush;
+        if (bFlatToSlopeTransition)
+            maxPush = min(maxPush, kSurfaceLineSeamFlatToSlopePushLimit);
+        if (bSeamAngleShift)
+            maxPush = min(maxPush, kSurfaceLineSeamAngleShiftPushLimit);
         if (bSteepDownSlopeTransition)
             maxPush = min(maxPush, kSurfaceContactDownTransitionPushLimit);
         if (worldPush > maxPush)
@@ -1260,7 +1307,7 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
             (normalDot >= kSurfaceLineSeamKeepDot) &&
             (fabsf(vt) <= kSurfaceLineSeamMoveSpeedGate);
 
-        if (bDownwardSlopeTransition)
+        if (bFlatToSlopeTransition || bDownwardSlopeTransition || bSeamAngleShift)
             canStick = true;
         else
             canStick = bHoldLineSeam && seamCanStick;
