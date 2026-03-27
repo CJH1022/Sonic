@@ -25,7 +25,9 @@ namespace
     constexpr float kSurfaceLineSeamKeepDot = 0.90f;
     constexpr float kSurfaceLineSeamTransitionDepth = 0.03f;
     constexpr float kSurfaceLineSeamNormalBlend = 0.55f;
-    constexpr float kSurfaceLineSeamDirectionBias = 0.12f;
+    constexpr float kSurfaceLineSeamDirectionBias = 0.20f;
+    constexpr float kSurfaceLineSeamEntryBlendFloor = 0.45f;
+    constexpr float kSurfaceLineSeamEnterDownGradeBonus = 0.6f;
     constexpr float kSurfaceLineSeamMinY = 0.08f;
     constexpr float kSurfaceLineSeamMoveSpeedGate = 2200.f;
     constexpr float kSurfaceLineSeamHoldSpeedMin = 70.f;      // 낮은 속도에서 이전 접선 고착을 더 억제
@@ -1139,6 +1141,18 @@ void CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
 
     if (fabsf(vVelocity.x) > 20.f)
         lineTransitionBlend = powf(lineTransitionBlend, 0.85f);
+
+    const float descendDeltaY = oldNormal.y - normal.y;
+    if (bLineSeamCandidate && fabsf(vVelocity.x) > 20.f && descendDeltaY > 0.04f)
+    {
+        lineTransitionBlend = max(lineTransitionBlend, kSurfaceLineSeamEnterDownGradeBonus * Clamp01f(descendDeltaY * 2.f));
+        if (fabsf(vVelocity.x) > 400.f)
+            lineTransitionBlend = max(lineTransitionBlend, 1.f);
+    }
+    else if (bLineSeamCandidate && _Contact.TransitionSurface && fabsf(vVelocity.x) > 20.f)
+    {
+        lineTransitionBlend = max(lineTransitionBlend, kSurfaceLineSeamEntryBlendFloor);
+    }
 
     const bool bLineSeamStick =
         !jumpPressed &&
