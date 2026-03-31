@@ -9,6 +9,12 @@
 #include <algorithm>
 #include "ListUI.h"
 #include "AFlipbook.h"
+#include "APrefab.h"
+#include "GameObject.h"
+#include "CTransform.h"
+#include "CSpriteRender.h"
+#include "CFlipbookRender.h"
+#include "Inspector.h"
 
 static void DrawSectionTitle(const char* title)
 {
@@ -164,6 +170,154 @@ void ImageEditor::Tick_UI()
 			return false;
 
 		return true;
+	};
+
+	auto GetUniqueRelativePath = [&](const wstring& _Folder, const wstring& _BaseName, const wstring& _Extension) -> wstring
+	{
+		wstring relativePath = _Folder + _BaseName + _Extension;
+		wstring fullPath = wstring(CONTENT_PATH) + relativePath;
+
+		int count = 1;
+		while (std::filesystem::exists(fullPath))
+		{
+			relativePath = _Folder + _BaseName + L"_" + std::to_wstring(count) + _Extension;
+			fullPath = wstring(CONTENT_PATH) + relativePath;
+			++count;
+		}
+
+		return relativePath;
+	};
+
+	auto GetSpriteFrameSize = [&](Ptr<ASprite> _Sprite) -> Vec2
+	{
+		if (_Sprite == nullptr || _Sprite->GetAtlas() == nullptr)
+			return Vec2(64.f, 64.f);
+
+		Vec2 bgUV = _Sprite->GetBackgroundUV();
+		if (bgUV.x <= 0.f || bgUV.y <= 0.f)
+			bgUV = _Sprite->GetSliceUV();
+
+		return Vec2(bgUV.x * (float)_Sprite->GetAtlas()->GetWidth(),
+					bgUV.y * (float)_Sprite->GetAtlas()->GetHeight());
+	};
+
+	auto SaveSpriteAssetFromCell = [&](int _Row, int _Col, const wstring& _BaseName) -> Ptr<ASprite>
+	{
+		Vec2 cellLT = {};
+		Vec2 spriteLT = {};
+		Vec2 bgSize = {};
+		Vec2 offset = {};
+		Vec2 spriteSize = {};
+		if (!BuildSpriteRectFromCell(_Row, _Col, cellLT, spriteLT, bgSize, offset, spriteSize))
+			return nullptr;
+
+		const wstring spriteRelativePath = GetUniqueRelativePath(L"Sprite\\", _BaseName, L".sprite");
+		const wstring spriteFullPath = wstring(CONTENT_PATH) + spriteRelativePath;
+
+		ASprite tempSprite;
+		tempSprite.SetAtlas(pActiveAtlas);
+		tempSprite.SetLeftTopUV(Vec2(spriteLT.x / imgW, spriteLT.y / imgH));
+		tempSprite.SetSliceUV(Vec2(spriteSize.x / imgW, spriteSize.y / imgH));
+		tempSprite.SetBackgroundUV(Vec2(bgSize.x / imgW, bgSize.y / imgH));
+		tempSprite.SetOffsetUV(Vec2(offset.x / imgW, offset.y / imgH));
+		tempSprite.Save(spriteFullPath);
+
+		const wstring spriteKey = std::filesystem::path(spriteRelativePath).stem().wstring();
+		return AssetMgr::GetInst()->Load<ASprite>(spriteKey, spriteRelativePath);
+	};
+
+	auto SaveFlipbookAssetFromSelection = [&](const wstring& _BaseName) -> Ptr<AFlipbook>
+	{
+		Ptr<AFlipbook> pNewFlipbook = new AFlipbook;
+		int savedCount = 0;
+
+		for (size_t i = 0; i < m_vecSelectedIndex.size(); ++i)
+		{
+			const int idx = m_vecSelectedIndex[i];
+			const int r = idx / m_iCols;
+			const int c = idx % m_iCols;
+
+			Ptr<ASprite> pSavedSprite = SaveSpriteAssetFromCell(r, c, _BaseName + L"_frame_" + std::to_wstring((int)i));
+			if (pSavedSprite == nullptr)
+				continue;
+
+			pNewFlipbook->AddSprite(pSavedSprite);
+			++savedCount;
+		}
+
+		if (savedCount <= 0)
+			return nullptr;
+
+		const wstring flipbookRelativePath = GetUniqueRelativePath(L"Flipbook\\", _BaseName, L".flip");
+		const wstring flipbookFullPath = wstring(CONTENT_PATH) + flipbookRelativePath;
+		pNewFlipbook->Save(flipbookFullPath);
+
+		const wstring flipbookKey = std::filesystem::path(flipbookRelativePath).stem().wstring();
+		return AssetMgr::GetInst()->Load<AFlipbook>(flipbookKey, flipbookRelativePath);
+	};
+
+	auto SaveSpritePrefab = [&](Ptr<ASprite> _Sprite, const wstring& _BaseName) -> Ptr<APrefab>
+	{
+		if (_Sprite == nullptr)
+			return nullptr;
+
+		const wstring prefabRelativePath = GetUniqueRelativePath(L"Prefab\\", _BaseName, L".pref");
+		const wstring prefabStem = std::filesystem::path(prefabRelativePath).stem().wstring();
+
+		Ptr<GameObject> pObject = new GameObject;
+		pObject->SetName(prefabStem);
+		pObject->AddComponent(new CTransform);
+		pObject->AddComponent(new CSpriteRender);
+
+		const Vec2 frameSize = GetSpriteFrameSize(_Sprite);
+		pObject->Transform()->SetRelativePos(Vec3(0.f, 0.f, 1.f));
+		pObject->Transform()->SetRelativeScale(Vec3(max(1.f, frameSize.x), max(1.f, frameSize.y), 1.f));
+		pObject->SpriteRender()->SetSprite(_Sprite);
+
+		Ptr<APrefab> pPrefab = new APrefab;
+		pPrefab->SetObject(pObject);
+
+		const wstring prefabFullPath = wstring(CONTENT_PATH) + prefabRelativePath;
+		if (FAILED(pPrefab->Save(prefabFullPath)))
+			return nullptr;
+
+		return AssetMgr::GetInst()->Load<APrefab>(prefabStem, prefabRelativePath);
+	};
+
+	auto SaveFlipbookPrefab = [&](Ptr<AFlipbook> _Flipbook, const wstring& _BaseName) -> Ptr<APrefab>
+	{
+		if (_Flipbook == nullptr || _Flipbook->GetSpriteCount() <= 0)
+			return nullptr;
+
+		const wstring prefabRelativePath = GetUniqueRelativePath(L"Prefab\\", _BaseName, L".pref");
+		const wstring prefabStem = std::filesystem::path(prefabRelativePath).stem().wstring();
+
+		Ptr<GameObject> pObject = new GameObject;
+		pObject->SetName(prefabStem);
+		pObject->AddComponent(new CTransform);
+		pObject->AddComponent(new CFlipbookRender);
+
+		const Vec2 frameSize = GetSpriteFrameSize(_Flipbook->GetSprite(0));
+		pObject->Transform()->SetRelativePos(Vec3(0.f, 0.f, 1.f));
+		pObject->Transform()->SetRelativeScale(Vec3(max(1.f, frameSize.x), max(1.f, frameSize.y), 1.f));
+		pObject->FlipbookRender()->SetFlipbook(0, _Flipbook);
+		pObject->FlipbookRender()->Play(0, max(1.f, m_fPreviewFPS), -1);
+
+		Ptr<APrefab> pPrefab = new APrefab;
+		pPrefab->SetObject(pObject);
+
+		const wstring prefabFullPath = wstring(CONTENT_PATH) + prefabRelativePath;
+		if (FAILED(pPrefab->Save(prefabFullPath)))
+			return nullptr;
+
+		return AssetMgr::GetInst()->Load<APrefab>(prefabStem, prefabRelativePath);
+	};
+
+	auto FocusPrefabInInspector = [&](Ptr<APrefab> _Prefab)
+	{
+		Inspector* pInspector = dynamic_cast<Inspector*>(EditorMgr::GetInst()->FindUI("Inspector").Get());
+		if (pInspector != nullptr && _Prefab != nullptr)
+			pInspector->SetTargetAsset(_Prefab.Get());
 	};
 
 	if (m_vRegionEnd.x <= m_vRegionStart.x || m_vRegionEnd.y <= m_vRegionStart.y)
@@ -350,6 +504,61 @@ void ImageEditor::Tick_UI()
 					MessageBox(nullptr, L"저장 가능한 셀이 없습니다. Region/Background/Offset/SpriteSize를 확인하세요.", L"Save Error", MB_OK);
 				}
 				delete pNewFlipbook;
+			}
+		}
+
+		if (ImGui::Button("Save Selection / Current as Prefab", ImVec2(-1.f, 34.f)))
+		{
+			wstring baseName = ToWString(szFileName);
+			if (baseName.empty())
+			{
+				MessageBox(nullptr, L"파일 이름을 입력해주세요!", L"Save Error", MB_OK);
+			}
+			else
+			{
+				std::filesystem::create_directories(wstring(CONTENT_PATH) + L"Sprite\\");
+				std::filesystem::create_directories(wstring(CONTENT_PATH) + L"Flipbook\\");
+				std::filesystem::create_directories(wstring(CONTENT_PATH) + L"Prefab\\");
+
+				Ptr<APrefab> pSavedPrefab = nullptr;
+
+				if (!m_vecSelectedIndex.empty())
+				{
+					if (m_vecSelectedIndex.size() == 1)
+					{
+						const int idx = m_vecSelectedIndex[0];
+						const int r = idx / m_iCols;
+						const int c = idx % m_iCols;
+
+						Ptr<ASprite> pSavedSprite = SaveSpriteAssetFromCell(r, c, baseName);
+						if (pSavedSprite != nullptr)
+							pSavedPrefab = SaveSpritePrefab(pSavedSprite, baseName);
+					}
+					else
+					{
+						Ptr<AFlipbook> pSavedFlipbook = SaveFlipbookAssetFromSelection(baseName);
+						if (pSavedFlipbook != nullptr)
+							pSavedPrefab = SaveFlipbookPrefab(pSavedFlipbook, baseName);
+					}
+				}
+				else if (m_curState == IMAGE_STATE::SPRITE && m_pTargetSprite != nullptr)
+				{
+					pSavedPrefab = SaveSpritePrefab(m_pTargetSprite, baseName);
+				}
+				else if (m_pLoadedFlipbook != nullptr && m_pLoadedFlipbook->GetSpriteCount() > 0)
+				{
+					pSavedPrefab = SaveFlipbookPrefab(m_pLoadedFlipbook, baseName);
+				}
+
+				if (pSavedPrefab != nullptr)
+				{
+					FocusPrefabInInspector(pSavedPrefab);
+					MessageBox(nullptr, L"프리팹 저장 완료!", L"Success", MB_OK);
+				}
+				else
+				{
+					MessageBox(nullptr, L"프리팹으로 저장할 스프라이트 또는 플립북이 없습니다.", L"Save Error", MB_OK);
+				}
 			}
 		}
 		PopButtonStyle();

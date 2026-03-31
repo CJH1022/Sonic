@@ -217,6 +217,16 @@ void Menu::View()
 			}
 		}
 
+		Ptr<EditorUI> pMapEditor = EditorMgr::GetInst()->FindUI("MapEditor");
+		if (pMapEditor != nullptr)
+		{
+			bool MapEditorActive = pMapEditor->IsActive();
+			if (ImGui::MenuItem("Map Editor", "F10", &MapEditorActive))
+			{
+				pMapEditor->SetActive(MapEditorActive);
+			}
+		}
+
 		ImGui::EndMenu();
 	}
 }
@@ -267,24 +277,51 @@ void Menu::Asset()
 		{
 			if (ImGui::MenuItem("Create Material"))
 			{
+				CreateDirectoryW((wstring(CONTENT_PATH) + L"Material").c_str(), nullptr);
 				Ptr<AMaterial> pMtrl = new AMaterial;
 				wstring Key = GetAssetName(ASSET_TYPE::MATERIAL, L"Material\\Default Material");
-				AssetMgr::GetInst()->AddAsset(Key, pMtrl.Get());				
+				AssetMgr::GetInst()->AddAsset(Key, pMtrl.Get());
+
+				// [추가] 파일 저장 및 인스펙터 포커스
+				pMtrl->Save(wstring(CONTENT_PATH) + Key);
+				if (pInspector != nullptr) pInspector->SetTargetAsset(pMtrl.Get());
 			}
 
 			if (ImGui::MenuItem("Create Sprite"))
 			{
+				CreateDirectoryW((wstring(CONTENT_PATH) + L"Sprite").c_str(), nullptr);
+				Ptr<ASprite> pSprite = new ASprite;
+				wstring Key = GetAssetName(ASSET_TYPE::SPRITE, L"Sprite\\Default Sprite");
+				AssetMgr::GetInst()->AddAsset(Key, pSprite.Get());
 
+				// [추가] 파일 저장 및 인스펙터 포커스
+				pSprite->Save(wstring(CONTENT_PATH) + Key);
+				if (pInspector != nullptr) pInspector->SetTargetAsset(pSprite.Get());
 			}
 
 			if (ImGui::MenuItem("Create Flipbook"))
 			{
+				CreateDirectoryW((wstring(CONTENT_PATH) + L"Flipbook").c_str(), nullptr);
+				Ptr<AFlipbook> pFlipbook = new AFlipbook;
+				wstring Key = GetAssetName(ASSET_TYPE::FLIPBOOK, L"Flipbook\\Default Flipbook");
+				AssetMgr::GetInst()->AddAsset(Key, pFlipbook.Get());
 
+				// [추가] 파일 저장 및 인스펙터 포커스
+				pFlipbook->Save(wstring(CONTENT_PATH) + Key);
+				if (pInspector != nullptr) pInspector->SetTargetAsset(pFlipbook.Get());
 			}
 
 			if (ImGui::MenuItem("Create TileMap"))
 			{
+				CreateDirectoryW((wstring(CONTENT_PATH) + L"TileMap").c_str(), nullptr);
+				Ptr<ATileMap> pTileMap = new ATileMap;
+				// [수정] 오타(pTileMap) 수정
+				wstring Key = GetAssetName(ASSET_TYPE::TILEMAP, L"TileMap\\Default TileMap");
+				AssetMgr::GetInst()->AddAsset(Key, pTileMap.Get());
 
+				// [추가] 파일 저장 및 인스펙터 포커스
+				pTileMap->Save(wstring(CONTENT_PATH) + Key);
+				if (pInspector != nullptr) pInspector->SetTargetAsset(pTileMap.Get());
 			}
 
 			if (ImGui::MenuItem("Create Prefab", nullptr, nullptr, nullptr != pTargetObject))
@@ -300,13 +337,12 @@ void Menu::Asset()
 				wstring FilePath = wstring(CONTENT_PATH) + Key;
 				if (SUCCEEDED(pPrefab->Save(FilePath)))
 				{
-					Ptr<APrefab> pLoadedPrefab = AssetMgr::GetInst()->Load<APrefab>(Key, Key);
-					class Asset* pSelectedAsset = pLoadedPrefab.Get();
-					pInspector->SetTargetAsset(pSelectedAsset);
+					// [수정] 이미 저장 성공했으면 메모리(AssetMgr)에 있으므로, 쓸데없이 Load하지 않고 바로 세팅합니다.
+					if (pInspector != nullptr) pInspector->SetTargetAsset(pPrefab.Get());
 				}
 			}
 			ImGui::EndMenu();
-		}	
+		}
 
 		ImGui::EndMenu();
 	}
@@ -342,6 +378,9 @@ wstring Menu::GetAssetName(ASSET_TYPE _Type, const wstring& _Name)
 		break;
 	case ASSET_TYPE::LEVEL:
 		Ext = L".lv";
+		break;
+	case ASSET_TYPE::TILEMAP:
+		Ext = L".tile"; // 엔진에서 사용하는 타일맵 확장자로 맞춰주세요
 		break;
 	}
 

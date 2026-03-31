@@ -15,21 +15,22 @@ PathMgr::~PathMgr()
 
 void PathMgr::Init()
 {
-	// ContentPath 경로 찾기
-	// 실행파일이 있는 Bin 폴더 경로를 찾아낸다.
-	// 디버깅 모드에서도 똑같이 동작하게 하기 위해서, 
-	// 프로젝트 구성설정, 디버깅 탭에 작업 디렉터리를 실행파일 경로로 설정해준다.
-	GetCurrentDirectory(255, m_ContentPath);
-	//SetWindowText(Engine::GetInst()->GetMainWndHwnd(), m_ContentPath);
+	// 작업 디렉터리가 아니라 실행 파일 위치를 기준으로 Content 경로를 잡는다.
+	// 그래야 외부 실행, 자동 플레이, VS/쉘 실행 방식 차이와 무관하게 동일하게 동작한다.
+	GetModuleFileNameW(nullptr, m_ContentPath, _countof(m_ContentPath));
 
-	int Len = wcslen(m_ContentPath);
+	int Len = (int)wcslen(m_ContentPath);
 
-	for (int i = Len - 1; 0 <= i; --i)
+	for (int pass = 0; pass < 2; ++pass)
 	{
-		if ('\\' == m_ContentPath[i])
+		for (int i = Len - 1; 0 <= i; --i)
 		{
-			m_ContentPath[i] = '\0';
-			break;
+			if (L'\\' == m_ContentPath[i] || L'/' == m_ContentPath[i])
+			{
+				m_ContentPath[i] = L'\0';
+				Len = i;
+				break;
+			}
 		}
 	}
 

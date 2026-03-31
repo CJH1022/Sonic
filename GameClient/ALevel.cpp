@@ -1,6 +1,48 @@
 #include "pch.h"
 #include "ALevel.h"
 
+namespace
+{
+	bool IsAutoplayTraceEnabled()
+	{
+		static const bool enabled = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay"));
+		return enabled;
+	}
+
+	wstring GetAutoplayTracePath()
+	{
+		wchar_t modulePath[MAX_PATH] = {};
+		GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
+
+		wstring fullPath = modulePath;
+		const size_t slashPos = fullPath.find_last_of(L"\\/");
+		if (slashPos != wstring::npos)
+			fullPath.erase(slashPos + 1);
+
+		fullPath += L"autoplay_load_trace.txt";
+		return fullPath;
+	}
+
+	void AppendAutoplayTrace(const wchar_t* _Format, ...)
+	{
+		if (!IsAutoplayTraceEnabled())
+			return;
+
+		FILE* pTrace = nullptr;
+		const wstring tracePath = GetAutoplayTracePath();
+		_wfopen_s(&pTrace, tracePath.c_str(), L"a, ccs=UTF-8");
+		if (nullptr == pTrace)
+			return;
+
+		va_list args;
+		va_start(args, _Format);
+		vfwprintf(pTrace, _Format, args);
+		va_end(args);
+		fwprintf(pTrace, L"\n");
+		fclose(pTrace);
+	}
+}
+
 
 
 ALevel::ALevel()
@@ -140,6 +182,8 @@ int ALevel::Save(const wstring& _FilePath)
 
 int ALevel::Load(const wstring& _FilePath)
 {
+	AppendAutoplayTrace(L"level_load_begin file=%ls", _FilePath.c_str());
+
 	FILE* pFile = nullptr;
 	_wfopen_s(&pFile, _FilePath.c_str(), L"rb");
 	if (nullptr == pFile)
@@ -152,6 +196,7 @@ int ALevel::Load(const wstring& _FilePath)
 	}
 
 	SetName(LoadWString(pFile));
+	AppendAutoplayTrace(L"level_name=%ls", GetName().c_str());
 	fread(m_Matrix, sizeof(UINT), MAX_LAYER, pFile);
 
 	for (UINT i = 0; i < MAX_LAYER; ++i)
@@ -161,16 +206,20 @@ int ALevel::Load(const wstring& _FilePath)
 
 		size_t ParentCount = 0;
 		fread(&ParentCount, sizeof(size_t), 1, pFile);
+		AppendAutoplayTrace(L"layer=%u name=%ls parents=%zu", i, LayerName.c_str(), ParentCount);
 
 		for (size_t j = 0; j < ParentCount; ++j)
 		{
+			AppendAutoplayTrace(L"layer=%u parent_index=%zu begin", i, j);
 			Ptr<GameObject> pObject = new GameObject;
 			pObject->LoadFromLevelFile(pFile);
 			AddObject(i, pObject);
+			AppendAutoplayTrace(L"layer=%u parent_index=%zu end object=%ls", i, j, pObject->GetName().c_str());
 		}
 	}
 
 	fclose(pFile);
 	m_Changed = false;
+	AppendAutoplayTrace(L"level_load_end");
 	return S_OK;
 }

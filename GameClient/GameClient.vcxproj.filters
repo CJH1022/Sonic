@@ -217,11 +217,11 @@
     <ClInclude Include="MeshRenderUI.h">
       <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\01. MeshRenderUI</Filter>
     </ClInclude>
-    <ClInclude Include="TileRenderUI.h">
-      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\04. TileRender</Filter>
-    </ClInclude>
     <ClInclude Include="ListUI.h">
       <Filter>GameEngine\07. EditorUI\07. ListUI</Filter>
+    </ClInclude>
+    <ClInclude Include="MapEditorUI.h">
+      <Filter>GameEngine\07. EditorUI\10. MapEditorUI</Filter>
     </ClInclude>
     <ClInclude Include="ContentUI.h">
       <Filter>GameEngine\07. EditorUI\05. Content</Filter>
@@ -253,9 +253,6 @@
     <ClInclude Include="TextureUI.h">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\3. TextureUI</Filter>
     </ClInclude>
-    <ClInclude Include="TileMapUI.h">
-      <Filter>GameEngine\07. EditorUI\03. AssetUI\10. TileMapUI</Filter>
-    </ClInclude>
     <ClInclude Include="SoundUI.h">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\4. SoundUI</Filter>
     </ClInclude>
@@ -286,6 +283,9 @@
     <ClInclude Include="Source\Scripts\CPlayerScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Scripts\CSurfaceScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
     <ClInclude Include="Source\ScriptMgr.h">
       <Filter>Source\ScriptMgr</Filter>
     </ClInclude>
@@ -307,8 +307,17 @@
     <ClInclude Include="Source\Scripts\CBlockPushingScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Scripts\CDestroyBlockScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
     <ClInclude Include="SpriteRenderUI.h">
       <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\02. SpriteRenderUI</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CBackgroundScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CKnockbackScript.h">
+      <Filter>Source\Scripts</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -517,6 +526,9 @@
     </Filter>
     <Filter Include="GameEngine\07. EditorUI\08. TreeUI">
       <UniqueIdentifier>{48abb8a1-53fd-4ee9-9574-85252a5585a7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\10. MapEditorUI">
+      <UniqueIdentifier>{5d5c4b0e-0ef1-4e11-97e8-4eb4a2e0d302}</UniqueIdentifier>
     </Filter>
     <Filter Include="GameEngine\07. EditorUI\03. AssetUI\1. MeshUI">
       <UniqueIdentifier>{55566617-f354-470d-b5f4-e8aca9c499c4}</UniqueIdentifier>
@@ -759,9 +771,6 @@
     <ClCompile Include="SpriteRenderUI.cpp">
       <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\02. SpriteRenderUI</Filter>
     </ClCompile>
-    <ClCompile Include="TileRenderUI.cpp">
-      <Filter>GameEngine\07. EditorUI\02. ComponentUI\RenderComponent\04. TileRender</Filter>
-    </ClCompile>
     <ClCompile Include="Inspector_Init.cpp">
       <Filter>GameEngine\07. EditorUI\01. Inspector</Filter>
     </ClCompile>
@@ -795,10 +804,10 @@
     <ClCompile Include="TextureUI.cpp">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\3. TextureUI</Filter>
     </ClCompile>
-    <ClCompile Include="TileMapUI.cpp">
-      <Filter>GameEngine\07. EditorUI\03. AssetUI\10. TileMapUI</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MapEditorUI.cpp">
+      <Filter>GameEngine\07. EditorUI\10. MapEditorUI</Filter>
+    </ClCompile>
     <ClCompile Include="SoundUI.cpp">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\4. SoundUI</Filter>
     </ClCompile>
@@ -829,6 +838,9 @@
     <ClCompile Include="Source\Scripts\CPlayerScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Scripts\CSurfaceScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
     <ClCompile Include="Source\ScriptMgr.cpp">
       <Filter>Source\ScriptMgr</Filter>
     </ClCompile>
@@ -849,6 +861,15 @@
     </ClCompile>
     <ClCompile Include="Source\Scripts\CBlockPushingScript.cpp">
       <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CDestroyBlockScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CBackgroundScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CKnockbackScript.cpp">
+      <Filter>Source</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

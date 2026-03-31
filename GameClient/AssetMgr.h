@@ -4,6 +4,48 @@
 #include "PathMgr.h"
 #include "ALevel.h"
 
+namespace
+{
+	inline bool IsAutoplayAssetTraceEnabled()
+	{
+		static const bool enabled = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay"));
+		return enabled;
+	}
+
+	inline wstring GetAutoplayAssetTracePath()
+	{
+		wchar_t modulePath[MAX_PATH] = {};
+		GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
+
+		wstring fullPath = modulePath;
+		const size_t slashPos = fullPath.find_last_of(L"\\/");
+		if (slashPos != wstring::npos)
+			fullPath.erase(slashPos + 1);
+
+		fullPath += L"autoplay_load_trace.txt";
+		return fullPath;
+	}
+
+	inline void AppendAutoplayAssetTrace(const wchar_t* _Format, ...)
+	{
+		if (!IsAutoplayAssetTraceEnabled())
+			return;
+
+		FILE* pTrace = nullptr;
+		const wstring tracePath = GetAutoplayAssetTracePath();
+		_wfopen_s(&pTrace, tracePath.c_str(), L"a, ccs=UTF-8");
+		if (nullptr == pTrace)
+			return;
+
+		va_list args;
+		va_start(args, _Format);
+		vfwprintf(pTrace, _Format, args);
+		va_end(args);
+		fwprintf(pTrace, L"\n");
+		fclose(pTrace);
+	}
+}
+
 class AssetMgr
 	: public singleton<AssetMgr>
 {
@@ -84,28 +126,37 @@ Ptr<T> AssetMgr::Find(const wstring& _Key)
 template<typename T>
 Ptr<T> AssetMgr::Load(const wstring& _Key, const wstring& _RelativePath)
 {
+	AppendAutoplayAssetTrace(L"asset_load_begin key=%ls rel=%ls", _Key.c_str(), _RelativePath.c_str());
+
 	// 동일키로 먼저 등록된 에셋이 있는지 확인
 	Ptr<T> pAsset = Find<T>(_Key);
 	
 	// 동일키로 먼저 등록된 에셋이 있으면, 그걸 반환
 	if (nullptr != pAsset)
 	{
+		AppendAutoplayAssetTrace(L"asset_load_reuse key=%ls", _Key.c_str());
 		if (!_RelativePath.empty())
 		{
+			AppendAutoplayAssetTrace(L"asset_load_reuse_call key=%ls path=%ls", _Key.c_str(), (CONTENT_PATH + _RelativePath).c_str());
 			pAsset->Load(CONTENT_PATH + _RelativePath);
+			AppendAutoplayAssetTrace(L"asset_load_reuse_return key=%ls", _Key.c_str());
 			pAsset->SetRelativePath(_RelativePath);
 		}
 
 		pAsset->SetKey(_Key);
 		m_Changed = true;
+		AppendAutoplayAssetTrace(L"asset_load_end key=%ls reused=1", _Key.c_str());
 		return pAsset;
 	}
 
 	// 에셋 객체 생성
 	pAsset = new T;
+	AppendAutoplayAssetTrace(L"asset_load_new key=%ls", _Key.c_str());
 
 	// 입력된 경로로부터 에셋 로딩작업 진행	
+	AppendAutoplayAssetTrace(L"asset_load_call key=%ls path=%ls", _Key.c_str(), (CONTENT_PATH + _RelativePath).c_str());
 	pAsset->Load(CONTENT_PATH + _RelativePath);
+	AppendAutoplayAssetTrace(L"asset_load_return key=%ls", _Key.c_str());
 
 	// T 타입에 해당하는 실제 AssetType 확인
 	ASSET_TYPE type = GetAssetType<T>();
@@ -119,6 +170,7 @@ Ptr<T> AssetMgr::Load(const wstring& _Key, const wstring& _RelativePath)
 	pAsset->SetRelativePath(_RelativePath);
 
 	m_Changed = true;
+	AppendAutoplayAssetTrace(L"asset_load_end key=%ls reused=0", _Key.c_str());
 
 	return pAsset;
 }

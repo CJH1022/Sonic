@@ -6,7 +6,7 @@ enum class CB_TYPE
 	TRANSFORM,	// b0
 	MATERIAL,	// b1
 	GLOBAL,		// b2
-	FUNCTION,	// b3
+
 	END,
 };
 
@@ -187,4 +187,4 @@ enum class LEVEL_STATE
 
 // ✅ "불가능한 조합"을 막기 위한 레이어 상태
 enum class PoseState { None, LookUp, LookDown };
-enum class ActionState { None, SkillCharge, SkillDash, Attack, Roll, Break, Spring, Falling, Pushing};
+enum class ActionState { None, SkillCharge, SkillDash, Attack, Roll, Break, Spring, Falling, Pushing, KnockBack};

@@ -215,9 +215,7 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
         // 플레이어가 박스 위에 있음
         playerPos.y += overlapY + epsilon;
 
-        pPlayer->SetIsGround(true);
-        pPlayer->SetNormal(Vec2(0.f, 1.f));
-        pPlayer->SetGroundTangent(Vec2(1.f, 0.f));
+        pPlayer->ForceFlatGroundContact(0.12f);
 
         if (vVelocity.y < 0.f)
             vVelocity.y = 0.f;

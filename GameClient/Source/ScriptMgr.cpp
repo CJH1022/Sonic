@@ -1,31 +1,43 @@
 #include "pch.h"
 #include "ScriptMgr.h"
 
+#include "Scripts/CBackgroundScript.h"
 #include "Scripts/CBlockMovingScript.h"
 #include "Scripts/CBlockPushingScript.h"
 #include "Scripts/CBlockScript.h"
 #include "Scripts/CCamMoveScript.h"
+#include "Scripts/CDestroyBlockScript.h"
+#include "Scripts/CKnockbackScript.h"
 #include "Scripts/CMissileScript.h"
 #include "Scripts/CMonsterScript.h"
 #include "Scripts/CPlayerScript.h"
 #include "Scripts/CSpringScript.h"
+#include "Scripts/CSurfaceCircleGuideScript.h"
+#include "Scripts/CSurfaceScript.h"
 #include "Scripts/CTileScript.h"
 
 void ScriptMgr::GetScriptInfo(vector<wstring>& _vec)
 {
+	_vec.push_back(L"CBackgroundScript");
 	_vec.push_back(L"CBlockMovingScript");
 	_vec.push_back(L"CBlockPushingScript");
 	_vec.push_back(L"CBlockScript");
 	_vec.push_back(L"CCamMoveScript");
+	_vec.push_back(L"CDestroyBlockScript");
+	_vec.push_back(L"CKnockbackScript");
 	_vec.push_back(L"CMissileScript");
 	_vec.push_back(L"CMonsterScript");
 	_vec.push_back(L"CPlayerScript");
 	_vec.push_back(L"CSpringScript");
+	_vec.push_back(L"CSurfaceCircleGuideScript");
+	_vec.push_back(L"CSurfaceScript");
 	_vec.push_back(L"CTileScript");
 }
 
 CScript * ScriptMgr::GetScript(const wstring& _strScriptName)
 {
+	if (L"CBackgroundScript" == _strScriptName)
+		return new CBackgroundScript;
 	if (L"CBlockMovingScript" == _strScriptName)
 		return new CBlockMovingScript;
 	if (L"CBlockPushingScript" == _strScriptName)
@@ -34,6 +46,10 @@ CScript * ScriptMgr::GetScript(const wstring& _strScriptName)
 		return new CBlockScript;
 	if (L"CCamMoveScript" == _strScriptName)
 		return new CCamMoveScript;
+	if (L"CDestroyBlockScript" == _strScriptName)
+		return new CDestroyBlockScript;
+	if (L"CKnockbackScript" == _strScriptName)
+		return new CKnockbackScript;
 	if (L"CMissileScript" == _strScriptName)
 		return new CMissileScript;
 	if (L"CMonsterScript" == _strScriptName)
@@ -42,6 +58,10 @@ CScript * ScriptMgr::GetScript(const wstring& _strScriptName)
 		return new CPlayerScript;
 	if (L"CSpringScript" == _strScriptName)
 		return new CSpringScript;
+	if (L"CSurfaceCircleGuideScript" == _strScriptName)
+		return new CSurfaceCircleGuideScript;
+	if (L"CSurfaceScript" == _strScriptName)
+		return new CSurfaceScript;
 	if (L"CTileScript" == _strScriptName)
 		return new CTileScript;
 	return nullptr;
@@ -51,6 +71,9 @@ CScript * ScriptMgr::GetScript(UINT _iScriptType)
 {
 	switch (_iScriptType)
 	{
+	case (UINT)SCRIPT_TYPE::BACKGROUNDSCRIPT:
+		return new CBackgroundScript;
+		break;
 	case (UINT)SCRIPT_TYPE::BLOCKMOVINGSCRIPT:
 		return new CBlockMovingScript;
 		break;
@@ -62,6 +85,12 @@ CScript * ScriptMgr::GetScript(UINT _iScriptType)
 		break;
 	case (UINT)SCRIPT_TYPE::CAMMOVESCRIPT:
 		return new CCamMoveScript;
+		break;
+	case (UINT)SCRIPT_TYPE::DESTROYBLOCKSCRIPT:
+		return new CDestroyBlockScript;
+		break;
+	case (UINT)SCRIPT_TYPE::KNOCKBACKSCRIPT:
+		return new CKnockbackScript;
 		break;
 	case (UINT)SCRIPT_TYPE::MISSILESCRIPT:
 		return new CMissileScript;
@@ -75,6 +104,12 @@ CScript * ScriptMgr::GetScript(UINT _iScriptType)
 	case (UINT)SCRIPT_TYPE::SPRINGSCRIPT:
 		return new CSpringScript;
 		break;
+	case (UINT)SCRIPT_TYPE::SURFACECIRCLEGUIDESCRIPT:
+		return new CSurfaceCircleGuideScript;
+		break;
+	case (UINT)SCRIPT_TYPE::SURFACESCRIPT:
+		return new CSurfaceScript;
+		break;
 	case (UINT)SCRIPT_TYPE::TILESCRIPT:
 		return new CTileScript;
 		break;
@@ -86,6 +121,10 @@ const wchar_t * ScriptMgr::GetScriptName(CScript * _pScript)
 {
 	switch ((SCRIPT_TYPE)_pScript->GetScriptType())
 	{
+	case SCRIPT_TYPE::BACKGROUNDSCRIPT:
+		return L"CBackgroundScript";
+		break;
+
 	case SCRIPT_TYPE::BLOCKMOVINGSCRIPT:
 		return L"CBlockMovingScript";
 		break;
@@ -102,6 +141,14 @@ const wchar_t * ScriptMgr::GetScriptName(CScript * _pScript)
 		return L"CCamMoveScript";
 		break;
 
+	case SCRIPT_TYPE::DESTROYBLOCKSCRIPT:
+		return L"CDestroyBlockScript";
+		break;
+
+	case SCRIPT_TYPE::KNOCKBACKSCRIPT:
+		return L"CKnockbackScript";
+		break;
+
 	case SCRIPT_TYPE::MISSILESCRIPT:
 		return L"CMissileScript";
 		break;
@@ -116,6 +163,14 @@ const wchar_t * ScriptMgr::GetScriptName(CScript * _pScript)
 
 	case SCRIPT_TYPE::SPRINGSCRIPT:
 		return L"CSpringScript";
+		break;
+
+	case SCRIPT_TYPE::SURFACECIRCLEGUIDESCRIPT:
+		return L"CSurfaceCircleGuideScript";
+		break;
+
+	case SCRIPT_TYPE::SURFACESCRIPT:
+		return L"CSurfaceScript";
 		break;
 
 	case SCRIPT_TYPE::TILESCRIPT:

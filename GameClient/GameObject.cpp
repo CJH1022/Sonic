@@ -5,6 +5,48 @@
 #include "TaskMgr.h"
 #include "Source/ScriptMgr.h"
 
+namespace
+{
+	bool IsAutoplayTraceEnabled()
+	{
+		static const bool enabled = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay"));
+		return enabled;
+	}
+
+	wstring GetAutoplayTracePath()
+	{
+		wchar_t modulePath[MAX_PATH] = {};
+		GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
+
+		wstring fullPath = modulePath;
+		const size_t slashPos = fullPath.find_last_of(L"\\/");
+		if (slashPos != wstring::npos)
+			fullPath.erase(slashPos + 1);
+
+		fullPath += L"autoplay_load_trace.txt";
+		return fullPath;
+	}
+
+	void AppendAutoplayTrace(const wchar_t* _Format, ...)
+	{
+		if (!IsAutoplayTraceEnabled())
+			return;
+
+		FILE* pTrace = nullptr;
+		const wstring tracePath = GetAutoplayTracePath();
+		_wfopen_s(&pTrace, tracePath.c_str(), L"a, ccs=UTF-8");
+		if (nullptr == pTrace)
+			return;
+
+		va_list args;
+		va_start(args, _Format);
+		vfwprintf(pTrace, _Format, args);
+		va_end(args);
+		fwprintf(pTrace, L"\n");
+		fclose(pTrace);
+	}
+}
+
 
 GameObject::GameObject()
 	: m_Com{}
@@ -372,6 +414,7 @@ void GameObject::SaveToLevelFile(FILE* _File)
 void GameObject::LoadFromLevelFile(FILE* _File)
 {
 	SetName(LoadWString(_File));
+	AppendAutoplayTrace(L"object_begin name=%ls", GetName().c_str());
 
 	UINT ComType = 0;
 
@@ -418,28 +461,38 @@ void GameObject::LoadFromLevelFile(FILE* _File)
 
 		assert(nullptr != pComponent);
 		AddComponent(pComponent);
+		AppendAutoplayTrace(L"object=%ls component=%u begin", GetName().c_str(), ComType);
 		pComponent->LoadFromLevelFile(_File);
+		AppendAutoplayTrace(L"object=%ls component=%u end", GetName().c_str(), ComType);
 	}
 
 	size_t ScriptCount = 0;
 	fread(&ScriptCount, sizeof(size_t), 1, _File);
+	AppendAutoplayTrace(L"object=%ls script_count=%zu", GetName().c_str(), ScriptCount);
 
 	for (size_t i = 0; i < ScriptCount; ++i)
 	{
 		wstring ScriptName = LoadWString(_File);
+		AppendAutoplayTrace(L"object=%ls script=%ls begin", GetName().c_str(), ScriptName.c_str());
 		Ptr<CScript> pScript = ScriptMgr::GetScript(ScriptName);
 		assert(nullptr != pScript);
 		AddComponent(pScript.Get());
 		pScript->LoadFromLevelFile(_File);
+		AppendAutoplayTrace(L"object=%ls script=%ls end", GetName().c_str(), ScriptName.c_str());
 	}
 
 	size_t ChildCount = 0;
 	fread(&ChildCount, sizeof(size_t), 1, _File);
+	AppendAutoplayTrace(L"object=%ls child_count=%zu", GetName().c_str(), ChildCount);
 
 	for (size_t i = 0; i < ChildCount; ++i)
 	{
+		AppendAutoplayTrace(L"object=%ls child_index=%zu begin", GetName().c_str(), i);
 		Ptr<GameObject> ChildObject = new GameObject;
 		AddChild(ChildObject);
 		ChildObject->LoadFromLevelFile(_File);
+		AppendAutoplayTrace(L"object=%ls child_index=%zu end child=%ls", GetName().c_str(), i, ChildObject->GetName().c_str());
 	}
+
+	AppendAutoplayTrace(L"object_end name=%ls", GetName().c_str());
 }

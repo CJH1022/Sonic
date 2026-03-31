@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "CSurfaceScript.h"
 
 #include "CCollider2D.h"
@@ -16,21 +16,27 @@ namespace
     // value caused early exit/edge snapping when the player was still safely on
     // the circular segment.
     constexpr float kCircleHalfCheckMargin = 0.12f;
-    constexpr float kProjectionResolveEpsilon = 0.0001f;
-    constexpr float kCircleHalfCheckBlockTime = 0.12f;
     constexpr float kEndpointTransitionMargin = 0.12f;
-    constexpr float kDetachThresholdAir = 0.5f;
-    constexpr float kDetachThresholdGround = 2.f;
-    constexpr float kTransitionSnapThresholdAir = 0.5f;
+    constexpr float kTransitionSnapThresholdAir = 2.0f;
     constexpr float kTransitionSnapThresholdGround = 8.f;
     // 0.02f: more aggressive depth clamping (less sink-in),
     // 0.04f: conservative clamp (more permissive penetration).
     constexpr float kGroundDepthClamp = 0.02f;
     constexpr float kSurfaceEdgeEpsilon = 0.02f;
     constexpr float kSurfaceContactPositiveEpsilon = 0.015f;
+    // Keep this seam depth aligned with CPlayerScript's
+    // kSurfaceLineSeamTransitionDepth logic (0.03f).
+    constexpr float kSurfaceLineSeamTransitionDepth = 0.03f;
+    constexpr float kSurfaceTransitionScoreFavor = 0.30f;
+    constexpr float kSurfaceWallScorePenalty = 0.25f;
+    constexpr float kSurfaceLineSeamPixelMargin = 2.f;
+    constexpr float kLineSupportDepthTolerance = 0.0015f;
     constexpr float kSupportPointInsideMargin = 0.08f;
     constexpr float kArcTransitionLocalMargin = 0.04f;
+    constexpr float kArcSupportLocalMargin = 0.38f;
     constexpr float kLineSupportProjectionMargin = 0.08f;
+    constexpr float kSurfaceAirAttachMaxPenetration = 24.f;
+    constexpr float kTopHalfInwardCircleLineContextAttachMaxDistance = 48.f;
 
     float Dot(const Vec2& _A, const Vec2& _B)
     {
@@ -64,6 +70,46 @@ namespace
     {
         return (_Point.x >= _Min.x - _Margin && _Point.x <= _Max.x + _Margin
             && _Point.y >= _Min.y - _Margin && _Point.y <= _Max.y + _Margin);
+    }
+
+    bool GetColliderSupportData(CCollider2D* _Collider, const Vec2& _SurfaceNormal,
+                                Vec2& _OutCenter, Vec2& _OutSupportPoint, float& _OutSupportDistance)
+    {
+        if (_Collider == nullptr || _Collider->GetOwner() == nullptr)
+            return false;
+
+        GameObject* pOwner = _Collider->GetOwner();
+        Vec3 ownerPos = pOwner->Transform()->GetRelativePos();
+        Vec3 ownerRot = pOwner->Transform()->GetRelativeRot();
+        Vec3 ownerScale = pOwner->Transform()->GetRelativeScale();
+        Vec2 colliderOffset = _Collider->GetOffset();
+        Vec2 colliderScale = _Collider->GetScale();
+
+        XMMATRIX matOwner =
+            XMMatrixScaling(ownerScale.x, ownerScale.y, ownerScale.z) *
+            XMMatrixRotationX(ownerRot.x) *
+            XMMatrixRotationY(ownerRot.y) *
+            XMMatrixRotationZ(ownerRot.z) *
+            XMMatrixTranslation(ownerPos.x, ownerPos.y, ownerPos.z);
+
+        XMMATRIX matWorld =
+            XMMatrixScaling(colliderScale.x, colliderScale.y, 1.f) *
+            XMMatrixTranslation(colliderOffset.x, colliderOffset.y, 0.f) *
+            matOwner;
+
+        Vec3 center3 = XMVector3TransformCoord(Vec3(0.f, 0.f, 0.f), matWorld);
+        Vec3 halfRight3 = XMVector3TransformNormal(Vec3(0.5f, 0.f, 0.f), matWorld);
+        Vec3 halfUp3 = XMVector3TransformNormal(Vec3(0.f, 0.5f, 0.f), matWorld);
+
+        _OutCenter = Vec2(center3.x, center3.y);
+
+        Vec2 n = NormalizeSafe(_SurfaceNormal);
+        Vec2 halfRight = Vec2(halfRight3.x, halfRight3.y);
+        Vec2 halfUp = Vec2(halfUp3.x, halfUp3.y);
+
+        _OutSupportDistance = fabsf(Dot(n, halfRight)) + fabsf(Dot(n, halfUp));
+        _OutSupportPoint = _OutCenter - n * _OutSupportDistance;
+        return true;
     }
 
     void CanonicalizeLine(Vec2& _A, Vec2& _B)
@@ -104,26 +150,15 @@ namespace
             return false;
 
         GameObject* pOwner = _OtherCollider->GetOwner();
-        Vec3 playerPos = pOwner->Transform()->GetWorldPos();
-        Vec3 playerScale = pOwner->Transform()->GetRelativeScale();
+        auto pPlayer = pOwner->GetScript<CPlayerScript>();
 
-        float halfW = fabsf(playerScale.x) * 0.5f;
-        float halfH = fabsf(playerScale.y) * 0.5f;
+        Vec2 sampleNormal = Vec2(0.f, 1.f);
+        if (_WasGround && pPlayer != nullptr)
+            sampleNormal = pPlayer->GetNormal();
 
-        _OutFootPos = Vec2(playerPos.x, playerPos.y);
-        if (_WasGround)
-        {
-            float rotZ = pOwner->Transform()->GetRelativeRot().z;
-            Vec2 localDown = Vec2(sinf(rotZ), -cosf(rotZ));
-            _OutFootPos += localDown * halfH;
-        }
-        else
-        {
-            float radius = (halfW < halfH) ? halfW : halfH;
-            _OutFootPos.y -= radius;
-        }
-
-        return true;
+        Vec2 center = {};
+        float supportDistance = 0.f;
+        return GetColliderSupportData(_OtherCollider, sampleNormal, center, _OutFootPos, supportDistance);
     }
 
 }
@@ -191,13 +226,40 @@ void CSurfaceScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColli
     if (pPlayer == nullptr)
         return;
 
-    if (pPlayer->IsSurfaceAttachBlocked(GetOwner()))
+    CONTACT_PROBE probe = {};
+    if (!ProbePlayerContact(_OtherCollider, pPlayer->GetIsGround(), probe))
         return;
 
-    const bool wasGround = pPlayer->GetIsGround();
+    pPlayer->SubmitSurfaceContact(GetOwner(), probe.Normal, probe.SignedDistance, probe.TransitionSurface,
+                                  probe.Attachable, probe.WallLike, probe.Circle, probe.InwardCircle,
+                                  probe.CandidateScore,
+                                  probe.SeamBlendT,
+                                  probe.SeamBlendHasValue,
+                                  probe.SeamStart,
+                                  probe.SeamEnd,
+                                  probe.ContactPoint);
+}
+
+bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGround, CONTACT_PROBE& _OutProbe)
+{
+    _OutProbe = CONTACT_PROBE{};
+
+    if (_OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
+        return false;
+
+    if (_OtherCollider->GetOwner()->GetName() != L"Player")
+        return false;
+
+    auto pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
+    if (pPlayer == nullptr)
+        return false;
+
+    if (pPlayer->IsSurfaceAttachBlocked(GetOwner()))
+        return false;
+
     Vec2 footPos = {};
-    if (!GetPlayerFootPos(_OtherCollider, wasGround, footPos))
-        return;
+    if (!GetPlayerFootPos(_OtherCollider, _WasGround, footPos))
+        return false;
 
     Vec2 normal = {};
     float signedDistance = 0.f;
@@ -209,45 +271,88 @@ void CSurfaceScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColli
     Vec2 contactPoint = {};
     bool hit = false;
 
-    // Keep the original geometric solver for all surface roles (surface/correction/
-    // wall). The role only changes how player control logic treats the hit, not
-    // the contact normal/signature itself.
     if (m_Geometry == SURFACE_GEOMETRY::LINE)
-        hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint, wasGround);
+        hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint, _WasGround);
     else if (m_Geometry == SURFACE_GEOMETRY::CIRCLE)
-        hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, wasGround);
+        hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
     else if (m_Geometry == SURFACE_GEOMETRY::ARC)
-        hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, wasGround);
+        hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
     else
         hit = EvaluateWallProbe(_OtherCollider, normal, signedDistance);
 
     if (!hit)
-        return;
+        return false;
 
-    const float detachThreshold = wasGround ? kDetachThresholdGround : kDetachThresholdAir;
-    const float transitionSnapThreshold = wasGround ? kTransitionSnapThresholdGround : kTransitionSnapThresholdAir;
+    bool inwardCircleContact = false;
+    bool topHalfInwardCircleWithLineContext = false;
+    if (m_Geometry == SURFACE_GEOMETRY::CIRCLE)
+    {
+        Vec2 circleCenter = {};
+        float circleRadius = 0.f;
+        Vec2 boxMin = {};
+        Vec2 boxMax = {};
+        GetArcWorldData(circleCenter, circleRadius, boxMin, boxMax);
+
+        const Vec2 radialToContact = contactPoint - circleCenter;
+        inwardCircleContact = (Dot(normal, radialToContact) < 0.f);
+        if (inwardCircleContact && pPlayer->IsInwardCircleAttachBlocked(circleCenter, circleRadius))
+            return false;
+
+        if (inwardCircleContact &&
+            m_FillInside &&
+            (m_ArcCorner == ARC_CORNER::TOP_LEFT || m_ArcCorner == ARC_CORNER::TOP_RIGHT) &&
+            pPlayer->HasInwardCircleLineContext())
+        {
+            topHalfInwardCircleWithLineContext = true;
+        }
+    }
+
+    float transitionSnapThreshold = _WasGround ? kTransitionSnapThresholdGround : kTransitionSnapThresholdAir;
+    if (topHalfInwardCircleWithLineContext)
+        transitionSnapThreshold = max(transitionSnapThreshold, kTopHalfInwardCircleLineContextAttachMaxDistance);
     if (signedDistance > transitionSnapThreshold)
-        return;
+        return false;
 
-    if (signedDistance > kSurfaceContactPositiveEpsilon)
-        return;
+    const bool keepAttachedSurfaceContact =
+        (m_Geometry == SURFACE_GEOMETRY::LINE ||
+         m_Geometry == SURFACE_GEOMETRY::ARC ||
+         m_Geometry == SURFACE_GEOMETRY::CIRCLE) &&
+        m_Attachable;
+    const float positiveContactLimit =
+        keepAttachedSurfaceContact ? transitionSnapThreshold : kSurfaceContactPositiveEpsilon;
 
-    transitionSurface = transitionSurface || (signedDistance > detachThreshold);
+    if (signedDistance > positiveContactLimit)
+        return false;
 
-    float candidateScore = fabsf(signedDistance);
+    if (!_WasGround && signedDistance < -kSurfaceAirAttachMaxPenetration)
+        return false;
+
+    const float absSignedDistance = fabsf(signedDistance);
+    float transitionScoreFavor = 0.f;
     if (transitionSurface)
-        candidateScore -= 0.22f;
-    if (m_Role == SURFACE_ROLE::WALL)
-        candidateScore += 0.25f;
+    {
+        const float depthRatio = Clamp01(absSignedDistance / (kSurfaceLineSeamTransitionDepth * 2.f));
+        transitionScoreFavor = kSurfaceTransitionScoreFavor * (1.f - depthRatio);
+    }
 
-    pPlayer->SubmitSurfaceContact(GetOwner(), normal, signedDistance, transitionSurface,
-                                  m_Attachable, (m_Role == SURFACE_ROLE::WALL), m_Geometry == SURFACE_GEOMETRY::CIRCLE,
-                                  candidateScore,
-                                  seamBlendT,
-                                  seamBlendHasValue,
-                                  seamStart,
-                                  seamEnd,
-                                  contactPoint);
+    float candidateScore = absSignedDistance - transitionScoreFavor;
+    if (m_Role == SURFACE_ROLE::WALL)
+        candidateScore += kSurfaceWallScorePenalty;
+
+    _OutProbe.Normal = normal;
+    _OutProbe.SignedDistance = signedDistance;
+    _OutProbe.CandidateScore = candidateScore;
+    _OutProbe.TransitionSurface = transitionSurface;
+    _OutProbe.Attachable = m_Attachable;
+    _OutProbe.WallLike = (m_Role == SURFACE_ROLE::WALL);
+    _OutProbe.Circle = (m_Geometry == SURFACE_GEOMETRY::CIRCLE);
+    _OutProbe.InwardCircle = inwardCircleContact;
+    _OutProbe.SeamBlendT = seamBlendT;
+    _OutProbe.SeamBlendHasValue = seamBlendHasValue;
+    _OutProbe.SeamStart = seamStart;
+    _OutProbe.SeamEnd = seamEnd;
+    _OutProbe.ContactPoint = contactPoint;
+    return true;
 }
 
 void CSurfaceScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
@@ -581,21 +686,10 @@ bool CSurfaceScript::GetPlayerSupportPoint(CCollider2D* _OtherCollider, const Ve
     if (_OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
         return false;
 
-    Vec3 playerPos = _OtherCollider->GetOwner()->Transform()->GetWorldPos();
-    Vec3 playerScale = _OtherCollider->GetOwner()->Transform()->GetRelativeScale();
-    Vec2 colOffset = _OtherCollider->GetOffset();
-    Vec2 colScale = _OtherCollider->GetScale();
-
-    Vec2 center = Vec2(playerPos.x + colOffset.x, playerPos.y + colOffset.y);
-    float halfW = fabsf(playerScale.x * colScale.x) * 0.5f;
-    float halfH = fabsf(playerScale.y * colScale.y) * 0.5f;
-
-    Vec2 n = NormalizeSafe(_SurfaceNormal);
-    float support = fabsf(n.x) * halfW + fabsf(n.y) * halfH;
-    _OutSupportPoint = center - n * support;
-    return true;
+    Vec2 center = {};
+    float supportDistance = 0.f;
+    return GetColliderSupportData(_OtherCollider, _SurfaceNormal, center, _OutSupportPoint, supportDistance);
 }
-
 bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround)
 {
     _OutTransitionSurface = false;
@@ -610,141 +704,65 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
     GetWorldEndpoints(worldA, worldB);
     CanonicalizeLine(worldA, worldB);
 
-    const float rawWidth = fabsf(worldB.x - worldA.x);
-    const float rawHeight = fabsf(worldB.y - worldA.y);
-    if (rawWidth <= 0.001f && rawHeight <= 0.001f)
-        return false;
-
-    // Very steep "line" segments are effectively x(y) instead of y(x).
-    // Keep a dedicated segment fallback for that case only, and use the
-    // formula-based path for the normal slope/flat cases.
-    if (rawWidth <= kColliderMinThickness)
-    {
-        Vec2 delta = worldB - worldA;
-        float length = Length(delta);
-        if (length <= 0.001f)
-            return false;
-
-        Vec2 tangent = delta / length;
-        Vec2 upNormal = Vec2(-tangent.y, tangent.x);
-        Vec2 outward = m_FillAbove ? -upNormal : upNormal;
-
-        float projection = Dot(_FootPos - worldA, tangent);
-        float projectionNorm = projection / length;
-        if (projectionNorm < -kEndpointTransitionMargin || projectionNorm > 1.f + kEndpointTransitionMargin)
-            return false;
-
-        float clampedProjectionNorm = Clamp01(projectionNorm);
-        Vec2 closest = worldA + tangent * (clampedProjectionNorm * length);
-        Vec2 supportPoint = _FootPos;
-        if (!GetPlayerSupportPoint(_OtherCollider, outward, supportPoint))
-            return false;
-        Vec2 lineMin = Vec2(min(worldA.x, worldB.x), min(worldA.y, worldB.y));
-        Vec2 lineMax = Vec2(max(worldA.x, worldB.x), max(worldA.y, worldB.y));
-        if (!IsInsideExpandedBox(supportPoint, lineMin, lineMax, kSupportPointInsideMargin))
-            return false;
-
-        float supportSignedDistance = Dot(supportPoint - closest, outward);
-        if (_WasGround)
-        {
-            const float footSignedDistance = Dot(_FootPos - closest, outward);
-            supportSignedDistance = max(supportSignedDistance, footSignedDistance - kGroundDepthClamp);
-        }
-
-        _OutSignedDistance = supportSignedDistance;
-        _OutNormal = outward;
-        _OutSeamBlendT = Clamp01(projectionNorm);
-        _OutSeamBlendHasValue = true;
-        _OutSeamStart = worldA;
-        _OutSeamEnd = worldB;
-        _OutContactPoint = _FootPos;
-        _OutTransitionSurface =
-            projectionNorm <= kEndpointTransitionMargin ||
-            projectionNorm >= 1.f - kEndpointTransitionMargin ||
-            fabsf(projectionNorm - clampedProjectionNorm) > kProjectionResolveEpsilon;
-        return true;
-    }
-
     Vec2 ab = worldB - worldA;
-    float len2 = Dot(ab, ab);
-    if (len2 <= 0.0001f)
+    float length = Length(ab);
+    if (length <= 0.001f)
         return false;
 
-    float projection = Dot(_FootPos - worldA, ab) / len2;
-    if (projection < -kEndpointTransitionMargin || projection > 1.f + kEndpointTransitionMargin)
+    Vec2 tangent = ab / length;
+    // 위쪽 채우기 여부에 따라 법선 방향 결정
+    Vec2 outward = m_FillAbove ? Vec2(tangent.y, -tangent.x) : Vec2(-tangent.y, tangent.x);
+
+    // [핵심 1] 선분 위에 있는지 투영(Projection) 검사. 여유값은 float 오차를 막을 아주 작은 값만 줍니다.
+    float projection = Dot(_FootPos - worldA, tangent);
+    const float strictMargin = 0.5f; // 0.5 픽셀 정도의 극소량 마진 (이전 각도 끈적임 해결)
+    if (projection < -strictMargin || projection > length + strictMargin)
         return false;
 
-    float projectionNorm = Clamp01(projection);
-    float clampedFootX = worldA.x + ab.x * projectionNorm;
-    float clampedFootY = worldA.y + ab.y * projectionNorm;
-    Vec2 clampedFootPoint = Vec2(clampedFootX, clampedFootY);
+    const float clampedProjection = Clamp01(projection / length);
+    _OutContactPoint = worldA + tangent * (clampedProjection * length);
+    // [핵심 2] FootPos를 기본으로 깊이/법선을 계산하되, 지원점에서 추가 안정화
+    const float footSignedDistance = Dot(_FootPos - worldA, outward);
+    float supportSignedDistance = footSignedDistance;
+    _OutNormal = outward;
 
-    const float left = min(worldA.x, worldB.x);
-    const float right = max(worldA.x, worldB.x);
-    const float top = max(worldA.y, worldB.y);
-    const float bottom = min(worldA.y, worldB.y);
-    const float width = max(kColliderMinThickness, right - left);
-    const float height = max(kColliderMinThickness, top - bottom);
-
-    float localX = (clampedFootPoint.x - left) / width;
-    float localY = (top - clampedFootPoint.y) / height;
-
-    if (localX < -kSurfaceEdgeEpsilon || localX > 1.f + kSurfaceEdgeEpsilon ||
-        localY < -kSurfaceEdgeEpsilon || localY > 1.f + kSurfaceEdgeEpsilon)
+    Vec2 supportPoint = {};
+    if (!GetPlayerSupportPoint(_OtherCollider, outward, supportPoint))
         return false;
 
-    localX = Clamp01(localX);
-    localY = Clamp01(localY);
-
-    const float localA = Clamp01((top - worldA.y) / height);
-    const float localB = Clamp01((top - worldB.y) / height);
-    const float c = m_FillAbove ? 1.f : -1.f;
-
-    const float dfdx = c * (localA - localB);
-    const float dfdy = c;
-
-    const float gradWorldX = dfdx / width;
-    const float gradWorldY = -dfdy / height;
-    const float gradWorldLen = sqrtf(gradWorldX * gradWorldX + gradWorldY * gradWorldY);
-    if (gradWorldLen <= 0.0001f)
-        return false;
-
-    Vec2 candidateNormal = Vec2(gradWorldX / gradWorldLen, gradWorldY / gradWorldLen);
-    Vec2 supportPoint = _FootPos;
-    if (!GetPlayerSupportPoint(_OtherCollider, candidateNormal, supportPoint))
-        return false;
-
-    float supportProjection = Dot(supportPoint - worldA, ab) / len2;
-    if (supportProjection < -kLineSupportProjectionMargin || supportProjection > 1.f + kLineSupportProjectionMargin)
-        return false;
-
-    const float footF = c * (localY - ((localB - localA) * localX + localA));
-    float supportLocalX = (supportPoint.x - left) / width;
-    float supportLocalY = (top - supportPoint.y) / height;
-    float f = c * (supportLocalY - ((localB - localA) * supportLocalX + localA));
+    supportSignedDistance = Dot(supportPoint - worldA, outward);
     if (_WasGround)
     {
-        f = max(f, footF - kGroundDepthClamp);
+        supportSignedDistance = max(supportSignedDistance, footSignedDistance - kGroundDepthClamp);
     }
 
-    _OutNormal = candidateNormal;
-    _OutSignedDistance = f / gradWorldLen;
-    _OutSeamBlendT = Clamp01(projectionNorm);
+    const float supportProjectionN = Dot(supportPoint - worldA, tangent) / length;
+    if (supportProjectionN < -kLineSupportProjectionMargin || supportProjectionN > 1.f + kLineSupportProjectionMargin)
+        return false;
+
+    if (supportSignedDistance < -kSurfaceContactPositiveEpsilon && Dot(supportPoint - worldA, outward) > kLineSupportDepthTolerance)
+        return false;
+
+    _OutSignedDistance = supportSignedDistance;
+
+    // 플레이어 support point가 접선 방향으로 미리 앞서가기 때문에, seam을 선 끝 2px로만
+    // 보면 다음 surface를 밟고도 기존 slope가 계속 잡고 있게 된다.
+    float seamMargin = kSurfaceLineSeamPixelMargin + fabsf(Dot(supportPoint - _FootPos, tangent));
+    seamMargin = min(seamMargin, length * 0.35f);
+    _OutTransitionSurface = (projection <= seamMargin || projection >= length - seamMargin);
+
+    _OutSeamBlendT = clampedProjection;
     _OutSeamBlendHasValue = true;
     _OutSeamStart = worldA;
     _OutSeamEnd = worldB;
-    _OutContactPoint = _FootPos;
-    _OutTransitionSurface =
-        projection <= kEndpointTransitionMargin ||
-        projection >= 1.f - kEndpointTransitionMargin ||
-        localY <= kArcTransitionLocalMargin ||
-        localY >= 1.f - kArcTransitionLocalMargin;
+
     return true;
 }
 
-bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, bool _WasGround)
+bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, Vec2& _OutContactPoint, bool _WasGround)
 {
     _OutTransitionSurface = false;
+    _OutContactPoint = _FootPos;
 
     Vec2 arcCenter = {};
     float radius = 0.f;
@@ -756,71 +774,60 @@ bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _
     const float height = max(kColliderMinThickness, boxMax.y - boxMin.y);
     const float top = boxMax.y;
 
-    float localX = (_FootPos.x - boxMin.x) / width;
-    float localY = (top - _FootPos.y) / height;
+    Vec2 colliderCenter = {};
+    Vec2 unusedSupportPoint = {};
+    float unusedSupportDistance = 0.f;
+    if (!GetColliderSupportData(_OtherCollider, Vec2(0.f, 1.f), colliderCenter, unusedSupportPoint, unusedSupportDistance))
+        return false;
 
-    if (localX < -kSurfaceEdgeEpsilon || localX > 1.f + kSurfaceEdgeEpsilon ||
-        localY < -kSurfaceEdgeEpsilon || localY > 1.f + kSurfaceEdgeEpsilon)
+    Vec2 centerRadial = colliderCenter - arcCenter;
+    float centerRadialLen = Length(centerRadial);
+    if (centerRadialLen <= 0.0001f)
+    {
+        centerRadial = _FootPos - arcCenter;
+        centerRadialLen = Length(centerRadial);
+        if (centerRadialLen <= 0.0001f)
+            return false;
+    }
+
+    Vec2 centerOutward = Vec2(centerRadial.x / centerRadialLen, centerRadial.y / centerRadialLen);
+    Vec2 candidateNormal = m_FillInside ? Vec2(-centerOutward.x, -centerOutward.y) : centerOutward;
+
+    Vec2 supportPoint = {};
+    float supportDistance = 0.f;
+    if (!GetColliderSupportData(_OtherCollider, candidateNormal, colliderCenter, supportPoint, supportDistance))
+        return false;
+
+    const Vec2 supportRadial = supportPoint - arcCenter;
+    const float supportRadialLen = Length(supportRadial);
+    if (supportRadialLen <= 0.0001f)
+        return false;
+
+    Vec2 supportOutward = Vec2(supportRadial.x / supportRadialLen, supportRadial.y / supportRadialLen);
+    Vec2 surfaceNormal = m_FillInside ? Vec2(-supportOutward.x, -supportOutward.y) : supportOutward;
+    const Vec2 supportContactPoint = arcCenter + supportOutward * radius;
+    _OutContactPoint = supportContactPoint;
+
+    float localX = (_OutContactPoint.x - boxMin.x) / width;
+    float localY = (top - _OutContactPoint.y) / height;
+    const float localEdgeMargin = _WasGround ? kSupportPointInsideMargin : kSurfaceEdgeEpsilon;
+    if (localX < -localEdgeMargin || localX > 1.f + localEdgeMargin ||
+        localY < -localEdgeMargin || localY > 1.f + localEdgeMargin)
         return false;
 
     localX = Clamp01(localX);
     localY = Clamp01(localY);
 
-    float centerX = 0.f;
-    float centerY = 0.f;
-    switch (m_ArcCorner)
-    {
-    case ARC_CORNER::TOP_LEFT:
-        centerX = 0.f;
-        centerY = 0.f;
-        break;
-    case ARC_CORNER::TOP_RIGHT:
-        centerX = 1.f;
-        centerY = 0.f;
-        break;
-    case ARC_CORNER::BOTTOM_LEFT:
-        centerX = 0.f;
-        centerY = 1.f;
-        break;
-    case ARC_CORNER::BOTTOM_RIGHT:
-    default:
-        centerX = 1.f;
-        centerY = 1.f;
-        break;
-    }
+    float supportSignedDistance = Dot(supportPoint - supportContactPoint, surfaceNormal);
+    const float centerSignedDistance = Dot(colliderCenter - supportContactPoint, surfaceNormal) - supportDistance;
 
-    const float c = m_FillInside ? 1.f : -1.f;
-    const float dx = localX - centerX;
-    const float dy = localY - centerY;
-    const float dfdx = c * 2.f * dx;
-    const float dfdy = c * 2.f * dy;
-
-    const float gradWorldX = dfdx / width;
-    const float gradWorldY = -dfdy / height;
-    const float gradWorldLen = sqrtf(gradWorldX * gradWorldX + gradWorldY * gradWorldY);
-    if (gradWorldLen <= 0.0001f)
-        return false;
-
-    Vec2 candidateNormal = Vec2(gradWorldX / gradWorldLen, gradWorldY / gradWorldLen);
-    Vec2 supportPoint = _FootPos;
-    if (!GetPlayerSupportPoint(_OtherCollider, candidateNormal, supportPoint))
-        return false;
-    if (!IsInsideExpandedBox(supportPoint, boxMin, boxMax, kSupportPointInsideMargin))
-        return false;
-
-    float supportLocalX = (supportPoint.x - boxMin.x) / width;
-    float supportLocalY = (top - supportPoint.y) / height;
-    const float footF = c * (dx * dx + dy * dy - 1.f);
-    const float supportDx = supportLocalX - centerX;
-    const float supportDy = supportLocalY - centerY;
-    float supportF = c * (supportDx * supportDx + supportDy * supportDy - 1.f);
     if (_WasGround)
     {
-        supportF = max(supportF, footF - kGroundDepthClamp);
+        supportSignedDistance = max(supportSignedDistance, centerSignedDistance - kGroundDepthClamp);
     }
 
-    _OutNormal = candidateNormal;
-    _OutSignedDistance = supportF / gradWorldLen;
+    _OutNormal = surfaceNormal;
+    _OutSignedDistance = supportSignedDistance;
     _OutTransitionSurface =
         localX <= kEndpointTransitionMargin ||
         localX >= 1.f - kEndpointTransitionMargin ||
@@ -831,26 +838,13 @@ bool CSurfaceScript::EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _
     return true;
 }
 
-bool CSurfaceScript::EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, bool _WasGround)
+bool CSurfaceScript::EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, Vec2& _OutContactPoint, bool _WasGround)
 {
     _OutTransitionSurface = false;
+    _OutContactPoint = _FootPos;
 
     if (_OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
         return false;
 
-    Vec2 arcCenter = {};
-    float radius = 0.f;
-    Vec2 boxMin = {};
-    Vec2 boxMax = {};
-    GetArcWorldData(arcCenter, radius, boxMin, boxMax);
-
-    if (IsPastCircleExitEdge(m_ArcCorner, _FootPos, boxMin, boxMax, kCircleHalfCheckMargin))
-    {
-        auto pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
-        if (pPlayer != nullptr)
-            pPlayer->BlockSurfaceAttach(GetOwner(), kCircleHalfCheckBlockTime);
-        return false;
-    }
-
-    return EvaluateArcProbe(_OtherCollider, _FootPos, _OutNormal, _OutSignedDistance, _OutTransitionSurface, _WasGround);
+    return EvaluateArcProbe(_OtherCollider, _FootPos, _OutNormal, _OutSignedDistance, _OutTransitionSurface, _OutContactPoint, _WasGround);
 }

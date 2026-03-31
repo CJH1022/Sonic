@@ -41,12 +41,30 @@ private:
     bool                m_Attachable;
 
 public:
+    struct CONTACT_PROBE
+    {
+        Vec2 Normal = Vec2(0.f, 1.f);
+        float SignedDistance = 0.f;
+        float CandidateScore = 999999.f;
+        bool TransitionSurface = false;
+        bool Attachable = false;
+        bool WallLike = false;
+        bool Circle = false;
+        bool InwardCircle = false;
+        float SeamBlendT = 0.f;
+        bool SeamBlendHasValue = false;
+        Vec2 SeamStart = Vec2(0.f, 0.f);
+        Vec2 SeamEnd = Vec2(0.f, 0.f);
+        Vec2 ContactPoint = Vec2(0.f, 0.f);
+    };
+
     virtual void Begin() override;
     virtual void Tick() override;
 
     void BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
     void Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
     void EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
+    bool ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGround, CONTACT_PROBE& _OutProbe);
 
     void ConfigureLine(const Vec2& _LocalStart, const Vec2& _LocalEnd, SURFACE_ROLE _Role, bool _FillAbove, bool _Attachable);
     void ConfigureArc(const Vec2& _LocalStart, const Vec2& _LocalEnd, SURFACE_ROLE _Role, ARC_CORNER _Corner, bool _FillInside, bool _Attachable);
@@ -78,7 +96,7 @@ private:
     void GetWorldBounds(Vec2& _OutMin, Vec2& _OutMax);
     bool EvaluateWallProbe(CCollider2D* _OtherCollider, Vec2& _OutNormal, float& _OutSignedDistance);
     bool EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround);
-    bool EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, bool _WasGround);
-    bool EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, bool _WasGround);
+    bool EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, Vec2& _OutContactPoint, bool _WasGround);
+    bool EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, Vec2& _OutContactPoint, bool _WasGround);
     bool GetPlayerSupportPoint(CCollider2D* _OtherCollider, const Vec2& _SurfaceNormal, Vec2& _OutSupportPoint);
 };

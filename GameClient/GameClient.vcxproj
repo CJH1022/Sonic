@@ -205,6 +205,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="ContentUI.h" />
     <ClInclude Include="CRenderComponent.h" />
     <ClInclude Include="CScript.h" />
+    <ClInclude Include="CSpikeScript.h" />
     <ClInclude Include="CTransform.h" />
     <ClInclude Include="define.h" />
     <ClInclude Include="Device.h" />
@@ -239,6 +240,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="LevelUI.h" />
     <ClInclude Include="Light2DUI.h" />
     <ClInclude Include="ListUI.h" />
+    <ClInclude Include="MapEditorUI.h" />
     <ClInclude Include="MaterialUI.h" />
     <ClInclude Include="Menu.h" />
     <ClInclude Include="MeshRenderUI.h" />
@@ -256,13 +258,18 @@ call CodeGen.exe</Command>
     <ClInclude Include="CSpriteRender.h" />
     <ClInclude Include="SoundUI.h" />
     <ClInclude Include="Source\ScriptMgr.h" />
+    <ClInclude Include="Source\Scripts\CBackgroundScript.h" />
     <ClInclude Include="Source\Scripts\CBlockMovingScript.h" />
     <ClInclude Include="Source\Scripts\CBlockPushingScript.h" />
     <ClInclude Include="Source\Scripts\CBlockScript.h" />
     <ClInclude Include="Source\Scripts\CCamMoveScript.h" />
+    <ClInclude Include="Source\Scripts\CDestroyBlockScript.h" />
+    <ClInclude Include="Source\Scripts\CKnockbackScript.h" />
     <ClInclude Include="Source\Scripts\CMissileScript.h" />
     <ClInclude Include="Source\Scripts\CMonsterScript.h" />
     <ClInclude Include="Source\Scripts\CPlayerScript.h" />
+    <ClInclude Include="Source\Scripts\CSurfaceCircleGuideScript.h" />
+    <ClInclude Include="Source\Scripts\CSurfaceScript.h" />
     <ClInclude Include="Source\Scripts\CSpringScript.h" />
     <ClInclude Include="Source\Scripts\CTileScript.h" />
     <ClInclude Include="SpriteRenderUI.h" />
@@ -273,8 +280,6 @@ call CodeGen.exe</Command>
     <ClInclude Include="TaskMgr.h" />
     <ClInclude Include="CTileRender.h" />
     <ClInclude Include="TextureUI.h" />
-    <ClInclude Include="TileMapUI.h" />
-    <ClInclude Include="TileRenderUI.h" />
     <ClInclude Include="TimeMgr.h" />
     <ClInclude Include="TransformUI.h" />
     <ClInclude Include="TreeUI.h" />
@@ -309,6 +314,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="ContentUI.cpp" />
     <ClCompile Include="CRenderComponent.cpp" />
     <ClCompile Include="CScript.cpp" />
+    <ClCompile Include="CSpikeScript.cpp" />
     <ClCompile Include="CTransform.cpp" />
     <ClCompile Include="Device.cpp" />
     <ClCompile Include="EditorMgr.cpp" />
@@ -340,6 +346,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="Light2DUI.cpp" />
     <ClCompile Include="ListUI.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MapEditorUI.cpp" />
     <ClCompile Include="MaterialUI.cpp" />
     <ClCompile Include="Menu.cpp" />
     <ClCompile Include="MeshRenderUI.cpp" />
@@ -358,13 +365,18 @@ call CodeGen.exe</Command>
     <ClCompile Include="ScriptUI.cpp" />
     <ClCompile Include="SoundUI.cpp" />
     <ClCompile Include="Source\ScriptMgr.cpp" />
+    <ClCompile Include="Source\Scripts\CBackgroundScript.cpp" />
     <ClCompile Include="Source\Scripts\CBlockMovingScript.cpp" />
     <ClCompile Include="Source\Scripts\CBlockPushingScript.cpp" />
     <ClCompile Include="Source\Scripts\CBlockScript.cpp" />
     <ClCompile Include="Source\Scripts\CCamMoveScript.cpp" />
+    <ClCompile Include="Source\Scripts\CDestroyBlockScript.cpp" />
+    <ClCompile Include="Source\Scripts\CKnockbackScript.cpp" />
     <ClCompile Include="Source\Scripts\CMissileScript.cpp" />
     <ClCompile Include="Source\Scripts\CMonsterScript.cpp" />
     <ClCompile Include="Source\Scripts\CPlayerScript.cpp" />
+    <ClCompile Include="Source\Scripts\CSurfaceCircleGuideScript.cpp" />
+    <ClCompile Include="Source\Scripts\CSurfaceScript.cpp" />
     <ClCompile Include="Source\Scripts\CSpringScript.cpp" />
     <ClCompile Include="Source\Scripts\CTileScript.cpp" />
     <ClCompile Include="SpriteRenderUI.cpp" />
@@ -373,8 +385,6 @@ call CodeGen.exe</Command>
     <ClCompile Include="TaskMgr.cpp" />
     <ClCompile Include="CTileRender.cpp" />
     <ClCompile Include="TextureUI.cpp" />
-    <ClCompile Include="TileMapUI.cpp" />
-    <ClCompile Include="TileRenderUI.cpp" />
     <ClCompile Include="TimeMgr.cpp" />
     <ClCompile Include="TransformUI.cpp" />
     <ClCompile Include="TreeUI.cpp" />

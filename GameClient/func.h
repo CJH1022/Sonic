@@ -18,7 +18,7 @@ wstring LoadWString(FILE* _File);
 void SaveAssetRef(FILE* _File, class Asset* _Asset);
 
 void CreateTestLevel();
-void RebuildTileCollision(class GameObject* _TileMapObject);
+void CreateSurfaceAutoplayLevel();
 
 
 

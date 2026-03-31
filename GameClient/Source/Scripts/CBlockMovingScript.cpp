@@ -11,6 +11,14 @@
 
 namespace
 {
+    void MarkPlayerGrounded(CPlayerScript* _Player)
+    {
+        if (_Player == nullptr)
+            return;
+
+        _Player->ForceFlatGroundContact(0.12f);
+    }
+
     struct ContactInfo
     {
         float myCenterY = 0.f;
@@ -115,9 +123,7 @@ namespace
         if (vel.y < 0.f)
             vel.y = 0.f;
         _Player->SetVelocity(vel);
-        _Player->SetIsGround(true);
-        _Player->SetNormal(Vec2(0.f, 1.f));
-        _Player->SetGroundTangent(Vec2(1.f, 0.f));
+        MarkPlayerGrounded(_Player);
     }
 
     bool IsWithinHorizontalRange(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider, float _Margin)
@@ -263,9 +269,7 @@ void CBlockMovingScript::Tick()
         vPlayerPos.y += vDeltaPos.y;
         m_pOnPlayer->GetOwner()->Transform()->SetRelativePos(vPlayerPos);
 
-        m_pOnPlayer->SetIsGround(true);
-        m_pOnPlayer->SetNormal(Vec2(0.f, 1.f));
-        m_pOnPlayer->SetGroundTangent(Vec2(1.f, 0.f));
+        MarkPlayerGrounded(m_pOnPlayer.Get());
     }
 
     m_vPrevPos = vMyPos;

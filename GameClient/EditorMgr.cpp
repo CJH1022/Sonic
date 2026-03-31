@@ -14,6 +14,7 @@
 #include "Inspector.h"
 #include "Outliner.h"
 #include "ImageEditor.h"
+#include "MapEditorUI.h"
 #include "ContentUI.h"
 #include "ListUI.h"
 #include "TreeUI.h"
@@ -118,6 +119,13 @@ void EditorMgr::Tick()
         if (KEY_TAP(KEY::ENTER))
             ImGui::SetWindowFocus(nullptr);
 
+        if (KEY_TAP(KEY::F10))
+        {
+            Ptr<EditorUI> pMapEditor = FindUI("MapEditor");
+            if (pMapEditor != nullptr)
+                pMapEditor->SetActive(!pMapEditor->IsActive());
+        }
+
         // DemoUI
         if (m_ShowDemo)
             ImGui::ShowDemoWindow(&m_ShowDemo);
@@ -167,6 +175,10 @@ void EditorMgr::CreateEditorUI()
     AddUI(pUI->GetUIName(), pUI);
 
     pUI = new ImageEditor;
+    AddUI(pUI->GetUIName(), pUI);
+
+    pUI = new MapEditorUI;
+    pUI->SetActive(false);
     AddUI(pUI->GetUIName(), pUI);
     
     pUI = new ListUI;

@@ -398,8 +398,4 @@ void Device::CreateConstBuffer()
 
 	m_CB[(UINT)CB_TYPE::GLOBAL] = new ConstBuffer;
 	m_CB[(UINT)CB_TYPE::GLOBAL]->Create(CB_TYPE::GLOBAL, sizeof(GlobalData));	
-
-	// Device.cpp
-	m_CB[(UINT)CB_TYPE::FUNCTION] = new ConstBuffer;
-	m_CB[(UINT)CB_TYPE::FUNCTION]->Create(CB_TYPE::FUNCTION, sizeof(FunctionConst));
 }

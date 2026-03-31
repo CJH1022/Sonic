@@ -98,9 +98,7 @@ void CBlockScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollide
         if (dy >= 0.f)
         {
             vPos.y += overlapY + epsilon;
-            pPlayer->SetIsGround(true);
-            pPlayer->SetNormal(Vec2(0.f, 1.f));
-            pPlayer->SetGroundTangent(Vec2(1.f, 0.f));
+            pPlayer->ForceFlatGroundContact(0.12f);
             if (vVelocity.y < 0.f)
                 vVelocity.y = 0.f;
         }

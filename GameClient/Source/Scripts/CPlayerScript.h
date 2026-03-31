@@ -1,11 +1,18 @@
 #pragma once
+
 #include "CScript.h"
 #include "GameObject.h"
 
-class CPlayerScript 
+#include <vector>
+
+class CCollider2D;
+
+class CPlayerScript
     : public CScript
 {
 private:
+    static constexpr float kKnockBackInvincibleDuration = 3.f;
+
     struct SurfaceContact
     {
         GameObject* Surface = nullptr;
@@ -16,6 +23,7 @@ private:
         bool Attachable = false;
         bool WallLike = false;
         bool Circle = false;
+        bool InwardCircle = false;
         float SeamBlendT = 0.f;
         bool SeamBlendHasValue = false;
         Vec2 SeamStart = Vec2(0.f, 0.f);
@@ -23,12 +31,31 @@ private:
         Vec2 ContactPoint = Vec2(0.f, 0.f);
     };
 
+    struct PlayerInput
+    {
+        bool upHeld = false;
+        bool downHeld = false;
+        bool downReleased = false;
+
+        bool leftHeld = false;
+        bool rightHeld = false;
+        bool leftTap = false;
+        bool rightTap = false;
+
+        bool spacePressed = false;
+        bool spaceHeld = false;
+        bool spaceReleased = false;
+
+        bool attackPressed = false;
+        bool rollPressed = false;
+    };
+
+private:
     Ptr<GameObject> m_Target;
 
     float m_Limit = 0.f;
     float gravity = -9.8f;
 
-    // 물리 값
     Vec2 vFraction = Vec2(0.f, 0.f);
     Vec2 vAccel = Vec2(500.f, 1000.f);
     Vec2 vVelocity = Vec2(0.f, 0.f);
@@ -44,44 +71,20 @@ private:
     bool bIsSpringJump = false;
     bool bIsSpringDash = false;
 
-    PoseState   m_Pose = PoseState::None;
+    PoseState m_Pose = PoseState::None;
     ActionState m_Action = ActionState::None;
 
-    // 타이머들 (기존 m_Curtime 용도 분리)
-    float m_IdleTime = 0.f;   // IdleLong 판단
-    float m_PoseTime = 0.f;   // LookUp/Down 시작 프레임 연출
-    float m_ActionTime = 0.f;   // Attack/Roll 같은 액션 지속시간(필요 시)
-    float m_BreakUngroundedTime = 0.f; // 업힐 보정으로 지면이 순간 끊겨도 브레이크 유지
+    float m_IdleTime = 0.f;
+    float m_PoseTime = 0.f;
+    float m_ActionTime = 0.f;
+    float m_BreakUngroundedTime = 0.f;
+    float m_KnockBackInvincibleTime = 0.f;
 
-    // 방향(스킬 대시 방향 결정용)
-    int m_Facing = 1; // +1: 오른쪽, -1: 왼쪽
+    int m_Facing = 1;
     int m_TurnTargetFacing = -1;
-   
 
-private:
-    // 입력을 한 곳에서만 읽기
-    struct PlayerInput
-    {
-        bool upHeld = false;
-        bool downHeld = false;
-        bool downReleased = false;
-
-        bool leftHeld = false;
-        bool rightHeld = false;
-        bool leftTap = false;
-        bool rightTap = false;
-
-        bool spacePressed = false; // KEY_TAP
-        bool spaceHeld = false; // KEY_PRESSED
-        bool spaceReleased = false; // KEY_RELEASED
-
-        bool attackPressed = false; // TODO: 키 지정
-        bool rollPressed = false; // TODO: 키 지정
-    };
-
-private:
-    bool IsGround = false;                 // 최종 확정값
-    int m_TileOverlapCount = 0;            // 지면 오브젝트(타일/블록) begin/end 균형으로 지면 이탈 감지
+    bool IsGround = false;
+    int m_TileOverlapCount = 0;
     bool m_bPushContact = false;
     int m_PushContactDir = 0;
     bool m_bPushing = false;
@@ -97,6 +100,46 @@ private:
     float m_SurfaceResolveFrame = -1.f;
     float m_SurfaceResolveScore = 999999.f;
     GameObject* m_pResolvedSurface = nullptr;
+    bool m_bInwardCircleLoopTracked = false;
+    bool m_bInwardCirclePassedLowerHalf = false;
+    Vec2 m_InwardCircleLoopCenter = Vec2(0.f, 0.f);
+    float m_InwardCircleLoopRadius = 0.f;
+    float m_InwardCircleLoopAccumulatedAngle = 0.f;
+    float m_InwardCircleLoopLastAngle = 0.f;
+    float m_InwardCircleAttachBlockTime = 0.f;
+    Vec2 m_InwardCircleAttachBlockCenter = Vec2(0.f, 0.f);
+    float m_InwardCircleAttachBlockRadius = 0.f;
+    bool m_bInwardCircleHalfCheckerTracked = false;
+    Vec2 m_InwardCircleHalfCheckerCenter = Vec2(0.f, 0.f);
+    float m_InwardCircleHalfCheckerRadius = 0.f;
+    bool m_bInwardCircleLineOwnsTopRight = false;
+
+    bool m_bHasPendingSurfaceContact = false;
+    SurfaceContact m_PendingSurfaceContact = {};
+    bool m_bHasCurrentSurfaceContact = false;
+    SurfaceContact m_CurrentSurfaceContact = {};
+    vector<GameObject*> m_vecActiveSurfaceObjects;
+
+    bool m_bAutoplayInitialized = false;
+    bool m_bAutoplayFinished = false;
+    bool m_bAutoplayWasGround = false;
+    float m_AutoplayTime = 0.f;
+    float m_AutoplaySampleAccum = 0.f;
+    float m_AutoplayAirTime = 0.f;
+    float m_AutoplayLongestAirTime = 0.f;
+    float m_AutoplayMaxX = 0.f;
+    float m_AutoplayMinY = 0.f;
+    float m_AutoplayMaxLineContactError = 0.f;
+    float m_AutoplayMaxCircleContactError = 0.f;
+    float m_AutoplayCircleGroundTime = 0.f;
+    int m_AutoplayGroundLossCount = 0;
+    int m_AutoplayInwardCircleReleaseCount = 0;
+    int m_AutoplayJumpStartCount = 0;
+    int m_AutoplayJumpDetachCount = 0;
+    bool m_bAutoplayTouchedCircle = false;
+    bool m_bAutoplayPendingJumpDetach = false;
+    PlayerInput m_AutoplayInput = {};
+    FILE* m_pAutoplayLog = nullptr;
 
 public:
     void SetTarget(Ptr<GameObject> _Target) { m_Target = _Target; }
@@ -112,9 +155,9 @@ public:
 
 public:
     Vec2 GetVelocity() { return vVelocity; }
-    void SetVelocity(Vec2 _vVelocity) 
+    void SetVelocity(Vec2 _vVelocity)
     {
-        vVelocity.x = _vVelocity.x; 
+        vVelocity.x = _vVelocity.x;
         vVelocity.y = _vVelocity.y;
     }
     void SetVelocityY(float _vVelocity)
@@ -123,7 +166,7 @@ public:
     }
     void StopBlockedAction()
     {
-        if (m_Action != ActionState::Break && m_Action != ActionState::Roll && m_Action !=ActionState::SkillDash)
+        if (m_Action != ActionState::Break && m_Action != ActionState::Roll && m_Action != ActionState::SkillDash)
             return;
 
         m_Action = ActionState::None;
@@ -153,8 +196,12 @@ public:
     ActionState GetAction() const { return m_Action; }
     bool GetIsGround() const { return IsGround; }
     bool IsBreakOrRollAction() const { return m_Action == ActionState::Break || m_Action == ActionState::Roll || m_Action == ActionState::SkillDash; }
-    void SetIsGround(bool _IsGround){ IsGround = _IsGround; }
+    bool IsKnockBackInvincible() const { return m_KnockBackInvincibleTime > 0.f; }
+    float GetKnockBackInvincibleTime() const { return m_KnockBackInvincibleTime; }
+    void SetIsGround(bool _IsGround) { IsGround = _IsGround; }
     void SetIsJump(bool _IsJump) { IsJump = _IsJump; }
+    bool GetIsJump() const { return IsJump; }
+    void ForceFlatGroundContact(float _HoldTime = 0.12f);
     void BlockSurfaceAttach(GameObject* _Surface, float _Time)
     {
         m_pAttachBlockedSurface = _Surface;
@@ -169,8 +216,41 @@ public:
         if (_Time > m_SurfaceGroundHoldTime)
             m_SurfaceGroundHoldTime = _Time;
     }
+    void ResetInwardCircleLoopState()
+    {
+        m_bInwardCircleLoopTracked = false;
+        m_bInwardCirclePassedLowerHalf = false;
+        m_InwardCircleLoopCenter = Vec2(0.f, 0.f);
+        m_InwardCircleLoopRadius = 0.f;
+        m_InwardCircleLoopAccumulatedAngle = 0.f;
+        m_InwardCircleLoopLastAngle = 0.f;
+    }
+    void ResetInwardCircleHalfCheckerState()
+    {
+        m_bInwardCircleHalfCheckerTracked = false;
+        m_InwardCircleHalfCheckerCenter = Vec2(0.f, 0.f);
+        m_InwardCircleHalfCheckerRadius = 0.f;
+        m_bInwardCircleLineOwnsTopRight = false;
+    }
+    bool IsSameInwardCircleLoop(const Vec2& _Center, float _Radius) const;
+    bool IsSameInwardCircleHalfChecker(const Vec2& _Center, float _Radius) const;
+    void NoteInwardCircleLoopProgress(const Vec2& _Center, float _Radius, const Vec2& _ContactPoint);
+    void UpdateInwardCircleHalfChecker(const Vec2& _Center, float _Radius, const Vec2& _ContactPoint);
+    void PrimeInwardCircleHalfCheckerFromLineContext(const SurfaceContact& _Contact);
+    bool ShouldLineOwnTopRightInwardCircleHalf(const Vec2& _Center, float _Radius, const Vec2& _ContactPoint) const;
+    bool ShouldReleaseInwardCircle(const Vec2& _Center, float _Radius, const Vec2& _ContactPoint) const;
+    void BlockInwardCircleAttach(const Vec2& _Center, float _Radius, float _Time);
+    bool IsInwardCircleAttachBlocked(const Vec2& _Center, float _Radius) const;
+    bool HasInwardCircleLineContext() const;
+    bool TryEvaluateGuidedTopHalfInwardCircleContact(const SurfaceContact& _Contact, bool& _OutOnActiveArc, bool& _OutBeforeHalf, bool& _OutBeforeHalfUsesTopRight) const;
+    bool IsGuideLinkedCorrectionLine(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact) const;
+    bool IsTopHalfInwardCircleContact(const SurfaceContact& _Contact);
+    bool IsChordLineForInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact) const;
+    bool ShouldIgnoreTopHalfInwardCircleContact(const SurfaceContact& _Contact);
+    bool ShouldPreferLineOverTopHalfInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact);
+    bool ShouldPreferTopHalfInwardCircleOverLine(const SurfaceContact& _CircleContact, const SurfaceContact& _LineContact);
     void SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Normal, float _SignedDistance,
-                              bool _TransitionSurface, bool _Attachable, bool _WallLike, bool _Circle, float _Score,
+                              bool _TransitionSurface, bool _Attachable, bool _WallLike, bool _Circle, bool _InwardCircle, float _Score,
                               float _SeamBlendT = 0.f, bool _SeamBlendHasValue = false,
                               const Vec2& _SeamStart = Vec2(0.f, 0.f), const Vec2& _SeamEnd = Vec2(0.f, 0.f),
                               const Vec2& _ContactPoint = Vec2(0.f, 0.f));
@@ -179,7 +259,6 @@ public:
     bool GetNeedGravity() const { return m_bNeedGravity; }
 
 public:
-
     void SetSpringJumpState(ActionState _Action, int _Dir)
     {
         IsJump = true;
@@ -190,9 +269,41 @@ public:
         m_ActionTime = 0.f;
     }
 
-
-    void SetGroundTangent(Vec2 _Tangent) {
+    void SetGroundTangent(Vec2 _Tangent)
+    {
         vTangent = _Tangent;
+    }
+
+    void SetKnockBackState(ActionState _Action)
+    {
+        if (m_bHasCurrentSurfaceContact && m_CurrentSurfaceContact.Surface != nullptr)
+            BlockSurfaceAttach(m_CurrentSurfaceContact.Surface, 0.12f);
+
+        m_bHasPendingSurfaceContact = false;
+        m_PendingSurfaceContact = SurfaceContact{};
+        m_SurfaceGroundHoldTime = 0.f;
+        ResetGroundContact();
+        ResetInwardCircleLoopState();
+        ResetInwardCircleHalfCheckerState();
+
+        IsJump = true;
+        m_Action = _Action;
+        bIsSpringJump = false;
+        bIsSpringDash = false;
+        IsGround = false;
+        m_Pose = PoseState::None;
+        m_bPushContact = false;
+        m_PushContactDir = 0;
+        m_bPushing = false;
+        m_PushingDir = 0;
+        m_fBreakSpeed = 0.f;
+        m_bBreakWallLocked = false;
+        m_BreakUngroundedTime = 0.f;
+        m_IdleTime = 0.f;
+        m_ActionTime = 0.f;
+
+        if (_Action == ActionState::KnockBack)
+            m_KnockBackInvincibleTime = kKnockBackInvincibleDuration;
     }
 
 public:
@@ -206,10 +317,15 @@ public:
 private:
     PlayerInput ReadInput() const;
 
+    void InitAutoplay();
+    void UpdateAutoplay(float dt);
+    void LogAutoplayState(const wchar_t* _Tag);
+    void FinishAutoplay();
+
     void ResolveTransitions(const PlayerInput& in, float dt);
     void ResolvePose(const PlayerInput& in, float dt);
     void ResolveAction(const PlayerInput& in, float dt);
-    void ApplySurfaceContact(const SurfaceContact& _Contact);
+    bool ApplySurfaceContact(const SurfaceContact& _Contact);
 
     bool CanStartJump(const PlayerInput& in) const;
     void StartJump();
@@ -226,6 +342,19 @@ private:
     void UpdateTimers(float dt);
     void UpdateGroundRotation();
     void UpdateAnimation(float dt);
+
+    void ResetGroundContact();
+    void RegisterActiveSurface(GameObject* _SurfaceObject);
+    void UnregisterActiveSurface(GameObject* _SurfaceObject);
+    float ComputeSurfaceCandidateScore(const SurfaceContact& _Contact, GameObject* _CurrentBestSurface) const;
+    bool TrySelectSurfaceContact(SurfaceContact _Contact, SurfaceContact& _BestContact,
+                                 float& _BestScore, GameObject*& _BestSurface, bool& _HasBest);
+    bool ProbeSurfaceObject(GameObject* _SurfaceObject, bool _WasGround,
+                            SurfaceContact& _BestContact, float& _BestScore,
+                            GameObject*& _BestSurface, bool& _HasBest);
+    void ProbeSceneSurfaceContacts(bool _WasGround, SurfaceContact& _BestContact, float& _BestScore,
+                                   GameObject*& _BestSurface, bool& _HasBest);
+    void ResolveBufferedSurfaceContacts();
 
     float Lerp(float _Start, float _End, float _Ratio)
     {

@@ -46,6 +46,28 @@ float4 PS_Std2D(VS_OUT _input) : SV_Target
         vColor = g_tex_0.Sample(g_sam_1, _input.vUV);
     }   
     
+    // --- [마젠타 색상 투명 처리 추가] ---
+    // 마젠타(R: 1.0, G: 0.0, B: 1.0)와 정확히 일치하면 픽셀 폐기 (Color Keying)
+    if (vColor.r == 1.0f && vColor.g == 0.0f && vColor.b == 1.0f)
+    {
+        discard;
+    }
+    
+    // --- [특정 색상(223, 100, 128) 투명 처리 추가] ---
+    // 255 기준의 RGB 값을 0.0 ~ 1.0 범위로 변환
+    float3 targetColor = float3(188.0f / 255.0f, 32.0f / 255.0f, 55.0f / 255.0f);
+    float epsilon = 0.1f; // 부동소수점 오차 허용 범위 (필요시 조절)
+
+    // 추출한 색상과 타겟 색상의 차이가 오차 범위 내인지 확인
+    if (abs(vColor.r - targetColor.r) < epsilon &&
+        abs(vColor.g - targetColor.g) < epsilon &&
+        abs(vColor.b - targetColor.b) < epsilon)
+    {
+        discard;
+    }
+    // ------------------------------------------------
+    
+    // ----------------
     vColor *= TintColor;    
     
     if (vColor.a == 0.f)

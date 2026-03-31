@@ -3,35 +3,11 @@
 
 #include "PathMgr.h"
 #include "Source/Scripts/CMissileScript.h"
-#include <filesystem>
-
-namespace
-{
-	void LoadTileMapAssetsFromContent()
-	{
-		const std::filesystem::path tileMapDir = std::filesystem::path(CONTENT_PATH) / L"TileMap";
-
-		if (!std::filesystem::exists(tileMapDir))
-		{
-			std::filesystem::create_directories(tileMapDir);
-			return;
-		}
-
-		for (const auto& entry : std::filesystem::directory_iterator(tileMapDir))
-		{
-			if (!entry.is_regular_file())
-				continue;
-
-			const std::filesystem::path path = entry.path();
-			if (path.extension() != L".tile")
-				continue;
-
-			const wstring key = path.stem().wstring();
-			const wstring relativePath = L"TileMap\\" + path.filename().wstring();
-			AssetMgr::GetInst()->Load<ATileMap>(key, relativePath);
-		}
-	}
-}
+#include "Source/Scripts/CBlockScript.h"
+#include "Source/Scripts/CBlockMovingScript.h"
+#include "Source/Scripts/CBlockPushingScript.h"
+#include "Source/Scripts/CDestroyBlockScript.h"
+#include "Source/Scripts/CKnockbackScript.h"
 
 void AssetMgr::Init()
 {
@@ -44,7 +20,6 @@ void AssetMgr::Init()
 	CreateEngineMaterial();
 
 	CreateEngineSprite();
-	LoadTileMapAssetsFromContent();
 
 	CreateEnginePrefab();
 }
@@ -253,6 +228,8 @@ void AssetMgr::CreateEngineTexture()
 {
 	Load<ATexture>(L"SonicMap", L"Texture\\SonicMap.png");
 
+	Load<ATexture>(L"SonicMapBillboard", L"Texture\\Sonic_Background_Billboard.png");
+
 	Load<ATexture>(L"PlayerImage", L"Texture\\Character.png");
 
 	Load<ATexture>(L"Fighter", L"Texture\\Fighter.bmp");
@@ -272,6 +249,10 @@ void AssetMgr::CreateEngineTexture()
 	Load<ATexture>(L"Enimy", L"Texture\\Enimy.png");
 
 	Load<ATexture>(L"MapTest", L"Texture\\MapTest.png");
+
+	Load<ATexture>(L"Object", L"Texture\\Sonic_Object.png");
+
+	Load<ATexture>(L"Object2", L"Texture\\Sonic_Object2.png");
 }
 
 void AssetMgr::CreateEngineMaterial()
@@ -288,6 +269,21 @@ void AssetMgr::CreateEngineMaterial()
 	// Parameter
 	pMtrl->SetScalar(VEC4_0, Vec4(1.f, 1.f, 1.f, 1.f));
 	pMtrl->SetTexture(TEX_0, Find<ATexture>(L"SonicMap"));
+
+	pMtrl->SetDomain(RENDER_DOMAIN::DOMAIN_MASKED);
+	AddAsset(pMtrl->GetName(), pMtrl.Get());
+
+	// =========
+	// BackGroundMtrl
+	// =========
+	pMtrl = new AMaterial;
+	pMtrl->SetName(L"BackGroundMtrl_Billboard");
+	pMtrl->SetShader(Find<AGraphicShader>(L"Std2DShader"));
+
+	// Parameter
+
+	pMtrl->SetScalar(VEC4_0, Vec4(1.f, 1.f, 1.f, 1.f));
+	pMtrl->SetTexture(TEX_0, Find<ATexture>(L"SonicMapBillboard"));
 
 	pMtrl->SetDomain(RENDER_DOMAIN::DOMAIN_MASKED);
 	AddAsset(pMtrl->GetName(), pMtrl.Get());
@@ -834,60 +830,84 @@ void AssetMgr::CreateEngineSprite()
 		// =========================
 		// TileMap
 		// =========================
+		// The engine used to bootstrap a hard-coded tempMap here. That made the
+		// runtime always start from a baked sample map even when the editor has
+		// moved to surface-based authoring. Keep only an empty TileMap asset so
+		// legacy code paths can still resolve TestTileMap without forcing sample
+		// content into the level.
+		Ptr<ATileMap> pTileMap = new ATileMap;
+		pTileMap->SetName(L"TestTileMap");
+		pTileMap->SetRowCol(6, 25);
+		pTileMap->SetTileSize(Vec2(378.f, 378.f));
+		pTileMap->SetAtlas(FIND(ATexture, L"MapTest"));
 
-		int tempMap[6][25] = {
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 8, 9, 1, 1, 1, 8, 9},
-			{7, 7, 7, 7, 2, 3, 4, 4, 4, 4, 5, 6, 7, 7, 2, 3, 4, 4, 10, 11, 4, 4, 4, 10, 11},
-			{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-		};
-
-		Ptr<ATileMap> pTileMap = Find<ATileMap>(L"TestTileMap");
-		if (nullptr == pTileMap)
+		Ptr<ASprite> pEmptySprite = AssetMgr::GetInst()->Load<ASprite>(L"MapTest_0", L"Sprite\\MapTest_0.sprite");
+		if (nullptr != pEmptySprite)
 		{
-			pTileMap = new ATileMap;
-			pTileMap->SetName(L"TestTileMap");
-
-			pTileMap->SetRowCol(6, 25);
-			pTileMap->SetTileSize(Vec2(378.f, 378.f));
-
 			for (int i = 0; i < 6; ++i)
 			{
 				for (int j = 0; j < 25; ++j)
 				{
-					pTileMap->SetTileType(i, j, (UINT)tempMap[i][j]);
+					pTileMap->SetSprite(i, j, pEmptySprite);
 				}
 			}
-
-			AddAsset(pTileMap->GetName(), pTileMap.Get());
-			// pTileMap->Save(CONTENT_PATH + pTileMap->GetKey());
 		}
+
+		AddAsset(pTileMap->GetName(), pTileMap.Get());
+		// pTileMap->Save(CONTENT_PATH + pTileMap->GetKey());
 }
 
 void AssetMgr::CreateEnginePrefab()
 {
 	CreateDirectoryW((wstring(CONTENT_PATH) + L"Prefab").c_str(), nullptr);
 
-	Ptr<GameObject> pObject = new GameObject;
-	pObject->SetName(L"Missile");
+	auto SaveMeshPrefabAsset = [&](const wchar_t* _AssetKey, const wchar_t* _ObjectName, const Vec3& _Scale, CScript* _Script)
+	{
+		Ptr<GameObject> pPrefabObject = new GameObject;
+		pPrefabObject->SetName(_ObjectName);
 
-	pObject->AddComponent(new CTransform);
-	pObject->AddComponent(new CMeshRender);
-	pObject->AddComponent(new CCollider2D);
-	pObject->AddComponent(new CMissileScript);
+		pPrefabObject->AddComponent(new CTransform);
+		pPrefabObject->AddComponent(new CMeshRender);
+		pPrefabObject->AddComponent(new CCollider2D);
+		if (nullptr != _Script)
+			pPrefabObject->AddComponent(_Script);
 
-	pObject->Transform()->SetRelativeScale(Vec3(10.f, 30.f, 1.f));
-	pObject->MeshRender()->SetMesh(FIND(AMesh, L"RectMesh"));
-	pObject->MeshRender()->SetMaterial(FIND(AMaterial, L"Std2DMtrl"));
+		pPrefabObject->Transform()->SetRelativeScale(_Scale);
+		pPrefabObject->MeshRender()->SetMesh(FIND(AMesh, L"RectMesh"));
+		pPrefabObject->MeshRender()->SetMaterial(FIND(AMaterial, L"Std2DMtrl"));
 
-	Ptr<APrefab> pMissilePrefab = new APrefab;
-	pMissilePrefab->SetObject(pObject);
-	AddAsset(L"Prefab\\Missile.pref", pMissilePrefab.Get());
+		Ptr<APrefab> pPrefab = new APrefab;
+		pPrefab->SetObject(pPrefabObject);
+		AddAsset(_AssetKey, pPrefab.Get());
+		pPrefab->SetRelativePath(_AssetKey);
+		pPrefab->Save(wstring(CONTENT_PATH) + _AssetKey);
+	};
 
-	wstring FilePath = wstring(CONTENT_PATH) + L"Prefab\\Missile.pref";
-	pMissilePrefab->Save(FilePath);
+	auto SaveSpritePrefabAsset = [&](const wchar_t* _AssetKey, const wchar_t* _ObjectName, const wchar_t* _SpritePath, const Vec3& _Scale, CScript* _Script)
+	{
+		Ptr<GameObject> pPrefabObject = new GameObject;
+		pPrefabObject->SetName(_ObjectName);
 
-	LOAD(APrefab, L"Prefab\\Missile.pref");
+		pPrefabObject->AddComponent(new CTransform);
+		pPrefabObject->AddComponent(new CSpriteRender);
+		pPrefabObject->AddComponent(new CCollider2D);
+		if (nullptr != _Script)
+			pPrefabObject->AddComponent(_Script);
+
+		pPrefabObject->Transform()->SetRelativeScale(_Scale);
+		pPrefabObject->SpriteRender()->SetSprite(LOAD(ASprite, _SpritePath));
+
+		Ptr<APrefab> pPrefab = new APrefab;
+		pPrefab->SetObject(pPrefabObject);
+		AddAsset(_AssetKey, pPrefab.Get());
+		pPrefab->SetRelativePath(_AssetKey);
+		pPrefab->Save(wstring(CONTENT_PATH) + _AssetKey);
+	};
+
+	SaveMeshPrefabAsset(L"Prefab\\Missile.pref", L"Missile", Vec3(10.f, 30.f, 1.f), new CMissileScript);
+	SaveSpritePrefabAsset(L"Prefab\\Block_Mid.pref", L"Block_Mid", L"Sprite\\Block_Mid.sprite", Vec3(100.f, 100.f, 1.f), new CBlockPushingScript);
+	SaveSpritePrefabAsset(L"Prefab\\Block_Tall.pref", L"Block_Tall", L"Sprite\\Block_Tall.sprite", Vec3(100.f, 150, 1.f), new CBlockScript);
+	SaveSpritePrefabAsset(L"Prefab\\Block_Small.pref", L"Block_Small", L"Sprite\\Block_Small.sprite", Vec3(100, 70, 1.f), new CBlockScript);
+	SaveSpritePrefabAsset(L"Prefab\\Block_Move.pref", L"Block_Move", L"Sprite\\Block_Move.sprite", Vec3(150.f, 100.f, 1.f), new CBlockMovingScript);
+	SaveSpritePrefabAsset(L"Prefab\\Spike.pref", L"Spike", L"Sprite\\Spike.sprite", Vec3(150.f, 150.f, 1.f), new CKnockbackScript);
 }

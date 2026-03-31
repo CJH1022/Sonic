@@ -4,6 +4,37 @@
 #include "Device.h"
 #include "PathMgr.h"
 
+namespace
+{
+	void ShowShaderCompileError(const wchar_t* relativeFilePath, const wchar_t* fullPath
+		, const std::string& funcName, ID3DBlob* errBlob)
+	{
+		std::wstring msg = L"Shader compile failed.\n";
+		msg += L"Relative Path: ";
+		msg += relativeFilePath;
+		msg += L"\nFull Path: ";
+		msg += fullPath;
+		msg += L"\nEntry: ";
+		msg.append(funcName.begin(), funcName.end());
+
+		if (nullptr != errBlob)
+		{
+			const char* errText = static_cast<const char*>(errBlob->GetBufferPointer());
+			if (nullptr != errText && 0 < errBlob->GetBufferSize())
+			{
+				msg += L"\n\n";
+				msg.append(errText, errText + errBlob->GetBufferSize());
+			}
+		}
+		else
+		{
+			msg += L"\n\nNo compiler error blob was returned.";
+		}
+
+		MessageBoxW(nullptr, msg.c_str(), L"쉐이더 생성 실패", MB_OK);
+	}
+}
+
 AGraphicShader::AGraphicShader()
 	: Asset(ASSET_TYPE::GRAPHICSHADER)
 	, m_Topology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST)
@@ -29,8 +60,7 @@ int AGraphicShader::CreateVertexShader(const wstring& _RelativeFilePath, const s
 		, _FuncName.c_str(), "vs_5_0", D3DCOMPILE_DEBUG, 0
 		, m_VSBlob.GetAddressOf(), Err.GetAddressOf())))
 	{
-		const char* pErrMsg = (const char*)Err->GetBufferPointer();
-		MessageBoxA(nullptr, pErrMsg, "쉐이더 생성 실패", MB_OK);
+		ShowShaderCompileError(_RelativeFilePath.c_str(), Path.c_str(), _FuncName, Err.Get());
 		return E_FAIL;
 	}
 
@@ -96,8 +126,7 @@ int AGraphicShader::CreatePixelShader(const wstring& _RelativeFilePath, const st
 								, _FuncName.c_str(), "ps_5_0", D3DCOMPILE_DEBUG, 0
 								, m_PSBlob.GetAddressOf(), Err.GetAddressOf())))
 	{
-		const char* pErrMsg = (const char* )Err->GetBufferPointer();
-		MessageBoxA(nullptr, pErrMsg, "쉐이더 생성 실패", MB_OK);
+		ShowShaderCompileError(_RelativeFilePath.c_str(), Path.c_str(), _FuncName, Err.Get());
 		return E_FAIL;
 	}
 

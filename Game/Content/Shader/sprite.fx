@@ -60,6 +60,14 @@ float4 PS_Sprite(VS_OUT _input) : SV_Target
     float2 vSpriteUV = LeftTopUV + (bgLocal - offsetUV);
     float4 vColor = AtlasTex.Sample(g_sam_1, vSpriteUV);
         
+    // --- [마젠타 색상 투명 처리 추가] ---
+    // 마젠타(R: 1.0, G: 0.0, B: 1.0)와 정확히 일치하면 픽셀 폐기 (Color Keying)
+    if (vColor.r == 1.0f && vColor.g == 0.0f && vColor.b == 1.0f)
+    {
+        discard;
+    }
+    // ----------------
+    
     if (vColor.a < 0.1f)
         discard;
     
