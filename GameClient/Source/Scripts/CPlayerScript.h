@@ -73,6 +73,7 @@ private:
 
     PoseState m_Pose = PoseState::None;
     ActionState m_Action = ActionState::None;
+    bool m_bBackReaction = false;
 
     float m_IdleTime = 0.f;
     float m_PoseTime = 0.f;
@@ -169,7 +170,11 @@ public:
         if (m_Action != ActionState::Break && m_Action != ActionState::Roll && m_Action != ActionState::SkillDash)
             return;
 
+        if (m_Action == ActionState::Roll && m_bBackReaction)
+            return;
+
         m_Action = ActionState::None;
+        m_bBackReaction = false;
         vVelocity.x = 0.f;
         m_fBreakSpeed = 0.f;
         m_iBreakDirection = 1;
@@ -198,6 +203,7 @@ public:
     bool IsBreakOrRollAction() const { return m_Action == ActionState::Break || m_Action == ActionState::Roll || m_Action == ActionState::SkillDash; }
     bool IsKnockBackInvincible() const { return m_KnockBackInvincibleTime > 0.f; }
     float GetKnockBackInvincibleTime() const { return m_KnockBackInvincibleTime; }
+    bool IsBackReaction() const { return m_bBackReaction; }
     void SetIsGround(bool _IsGround) { IsGround = _IsGround; }
     void SetIsJump(bool _IsJump) { IsJump = _IsJump; }
     bool GetIsJump() const { return IsJump; }
@@ -263,6 +269,7 @@ public:
     {
         IsJump = true;
         m_Action = _Action;
+        m_bBackReaction = false;
         m_Facing = _Dir;
         bIsSpringJump = true;
         IsGround = false;
@@ -288,6 +295,7 @@ public:
 
         IsJump = true;
         m_Action = _Action;
+        m_bBackReaction = false;
         bIsSpringJump = false;
         bIsSpringDash = false;
         IsGround = false;
@@ -304,6 +312,37 @@ public:
 
         if (_Action == ActionState::KnockBack)
             m_KnockBackInvincibleTime = kKnockBackInvincibleDuration;
+    }
+
+    void SetBackState()
+    {
+        if (m_bHasCurrentSurfaceContact && m_CurrentSurfaceContact.Surface != nullptr)
+            BlockSurfaceAttach(m_CurrentSurfaceContact.Surface, 0.12f);
+
+        m_bHasPendingSurfaceContact = false;
+        m_PendingSurfaceContact = SurfaceContact{};
+        m_SurfaceGroundHoldTime = 0.f;
+        ResetGroundContact();
+        ResetInwardCircleLoopState();
+        ResetInwardCircleHalfCheckerState();
+
+        IsJump = true;
+        m_Action = ActionState::Roll;
+        m_bBackReaction = true;
+        bIsSpringJump = false;
+        bIsSpringDash = false;
+        IsGround = false;
+        m_Pose = PoseState::None;
+        m_bPushContact = false;
+        m_PushContactDir = 0;
+        m_bPushing = false;
+        m_PushingDir = 0;
+        m_fBreakSpeed = 0.f;
+        m_bBreakWallLocked = false;
+        m_BreakUngroundedTime = 0.f;
+        m_IdleTime = 0.f;
+        m_ActionTime = 0.f;
+        m_KnockBackInvincibleTime = 0.f;
     }
 
 public:

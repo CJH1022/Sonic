@@ -8,6 +8,9 @@
 #define SliceUV     g_vec2_1
 #define BackgroundUV g_vec2_2
 #define OffsetUV    g_vec2_3
+#define UseChromaKey g_int_0
+#define ChromaKeyData g_vec4_1
+#define ChromaKeyData2 g_vec4_2
 
 
 struct VS_IN
@@ -59,14 +62,28 @@ float4 PS_Sprite(VS_OUT _input) : SV_Target
     
     float2 vSpriteUV = LeftTopUV + (bgLocal - offsetUV);
     float4 vColor = AtlasTex.Sample(g_sam_1, vSpriteUV);
-        
-    // --- [마젠타 색상 투명 처리 추가] ---
-    // 마젠타(R: 1.0, G: 0.0, B: 1.0)와 정확히 일치하면 픽셀 폐기 (Color Keying)
-    if (vColor.r == 1.0f && vColor.g == 0.0f && vColor.b == 1.0f)
+
+    if (0 != UseChromaKey)
     {
-        discard;
+        float3 keyDiff = abs(vColor.rgb - ChromaKeyData.rgb);
+        if (keyDiff.r <= ChromaKeyData.a
+            && keyDiff.g <= ChromaKeyData.a
+            && keyDiff.b <= ChromaKeyData.a)
+        {
+            discard;
+        }
+
+        if (0.f < ChromaKeyData2.a)
+        {
+            float3 keyDiff2 = abs(vColor.rgb - ChromaKeyData2.rgb);
+            if (keyDiff2.r <= ChromaKeyData2.a
+                && keyDiff2.g <= ChromaKeyData2.a
+                && keyDiff2.b <= ChromaKeyData2.a)
+            {
+                discard;
+            }
+        }
     }
-    // ----------------
     
     if (vColor.a < 0.1f)
         discard;

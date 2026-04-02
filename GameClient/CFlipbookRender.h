@@ -14,17 +14,20 @@ private:
 
     int                     m_RepeatCount;  // -1 : 반복재생, 1 이상이면 재생 횟수
     bool                    m_Finish;
+    bool                    m_Visible;
     float                   m_FPS;
     float                   m_AccTime;
 
 public:
 
     bool IsFinish() const { return m_Finish; }
+    bool IsVisible() const { return m_Visible; }
     UINT GetFlipbookCount() const { return (UINT)m_vecFlipbook.size(); }
     int GetCurFlipbookIdx() const { return m_CurFlipbook; }
     int GetCurSpriteIdx() const { return m_CurSprite; }
     int GetRepeatCount() const { return m_RepeatCount; }
     float GetFPS() const { return m_FPS; }
+    void SetVisible(bool _Visible) { m_Visible = _Visible; }
 
     Ptr<AFlipbook> GetFlipbook(int _Idx) const
     {

@@ -3,10 +3,26 @@
 
 #include "assets.h"
 #include "Source/ScriptMgr.h"
+#include "Source/Scripts/CBossScript.h"
 #include "Source/Scripts/CPlayerScript.h"
 
 namespace
 {
+    const char* GetBossStateName(BOSS_STATE _State)
+    {
+        switch (_State)
+        {
+        case BOSS_STATE::IDLE:       return "IDLE";
+        case BOSS_STATE::ATTACK1:    return "ATTACK1";
+        case BOSS_STATE::ATTACK2:    return "ATTACK2";
+        case BOSS_STATE::ATTACK3:    return "ATTACK3";
+        case BOSS_STATE::INVINCIBLE: return "INVINCIBLE";
+        case BOSS_STATE::MOVE:       return "MOVE";
+        case BOSS_STATE::DEAD:       return "DEAD";
+        default:                     return "Unknown";
+        }
+    }
+
 	const char* GetActionStateName(ActionState _Action)
 	{
 		switch (_Action)
@@ -252,6 +268,39 @@ void ScriptUI::Tick_UI()
 
 
 	}
+
+    CBossScript* pBossScript = dynamic_cast<CBossScript*>(m_TargetScript.Get());
+    if (nullptr != pBossScript)
+    {
+        static const char* bossStateNames[] =
+        {
+            "IDLE",
+            "ATTACK1",
+            "ATTACK2",
+            "ATTACK3",
+            "INVINCIBLE",
+            "MOVE",
+            "DEAD",
+        };
+
+        ImGui::Separator();
+        AddItemHeight();
+
+        int bossStateIndex = pBossScript->GetStateIndex();
+
+        ImGui::Text("Boss State");
+        ImGui::SameLine(120);
+        ImGui::PushID(pBossScript);
+        if (ImGui::Combo("##BossState", &bossStateIndex, bossStateNames, IM_ARRAYSIZE(bossStateNames)))
+            pBossScript->SetStateByIndex(bossStateIndex);
+        ImGui::PopID();
+        AddItemHeight();
+
+        ImGui::Text("State Name");
+        ImGui::SameLine(120);
+        ImGui::Text("%s", GetBossStateName(pBossScript->GetState()));
+        AddItemHeight();
+    }
 
 	SetSizeAsChild(Vec2(0.f, (float)m_ItemHeight));
 }

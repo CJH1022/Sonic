@@ -39,8 +39,8 @@ void CKnockbackScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _Oth
 	if (pScript->GetAction() == ActionState::KnockBack)
 		return;
 
-	const Vec3 myPos = GetOwner()->Transform()->GetRelativePos();
-	const Vec3 playerPos = pScript->Transform()->GetRelativePos();
+	const Vec3 myPos = GetOwner()->Transform()->GetWorldPos();
+	const Vec3 playerPos = pScript->Transform()->GetWorldPos();
 	const Vec2 playerVel = pScript->GetVelocity();
 
 	const float knockBackDirX = (playerPos.x >= myPos.x) ? 1.f : -1.f;
@@ -56,3 +56,4 @@ void CKnockbackScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _Oth
 	pScript->SetFacing((knockBackDirX >= 0.f) ? 1 : -1);
 	pScript->SetKnockBackState(ActionState::KnockBack);
 }
+

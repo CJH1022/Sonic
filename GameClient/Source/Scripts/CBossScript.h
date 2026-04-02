@@ -1,0 +1,74 @@
+#pragma once
+#include "CScript.h"
+
+class CCollider2D;
+
+enum class BOSS_STATE
+{
+    IDLE,
+    ATTACK1,
+    ATTACK2,
+    ATTACK3,
+    INVINCIBLE,
+    MOVE,
+    DEAD,
+};
+
+enum class BOSS_DIR
+{
+    LEFT,
+    RIGHT,
+    UP,
+    DOWN,
+};
+
+class CBossScript :
+    public CScript
+{
+private:
+    int         m_Life = 0;
+    bool        m_bCameraFix;
+    BOSS_STATE  m_State;
+    float       m_MoveFlipFPS;
+    float       m_IdleTime;
+    float       m_AttackStateTime;
+    float       m_AttackBurstTime;
+    int         m_AttackBurstCount;
+    bool        m_AttackBurstActive;
+    float       m_HitFlashTime;
+    float       m_BodyBlinkTime;
+    
+public:
+    virtual void Begin();
+    virtual void Tick() override;
+
+    void BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
+
+public:
+    int GetLife() { return m_Life; }
+    void SetLife(int _Life) { m_Life = _Life; }
+    void ApplyDamage(int _Damage, Vec3 _HitWorldPos = Vec3(0.f, 0.f, 0.f));
+    void SetState(BOSS_STATE _State);
+    BOSS_STATE GetState() const { return m_State; }
+    int GetStateIndex() const { return (int)m_State; }
+    void SetStateByIndex(int _StateIndex);
+
+public:
+    virtual void SaveToLevelFile(FILE* _File) override;
+    virtual void LoadFromLevelFile(FILE* _File) override;
+
+private:
+    void ResetAttackSequence();
+    void StartAttackBurst();
+    void StopAttackBurst();
+    void TickAttack1();
+    void TickBodyBlink();
+    void TriggerHitFlash(Vec3 _HitWorldPos);
+    void TickHitFlash();
+    void DestroyHitFlash();
+
+public:
+    CLONE(CBossScript);
+    CBossScript();
+    virtual ~CBossScript();
+};

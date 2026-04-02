@@ -8,6 +8,10 @@
 #define SliceUV         g_vec2_1
 #define BackgroundUV    g_vec2_2
 #define OffsetUV        g_vec2_3
+#define FlashColor      g_vec4_0
+#define UseChromaKey    g_int_0
+#define ChromaKeyData   g_vec4_1
+#define ChromaKeyData2  g_vec4_2
 
 
 struct VS_IN
@@ -65,6 +69,28 @@ float4 PS_Flipbook(VS_OUT _input) : SV_Target
         float2 SampleUV = LeftTopUV + (bgLocal - offsetUV);
         vColor = AtlasTex.Sample(g_sam_1, SampleUV);
 
+        if (0 != UseChromaKey)
+        {
+            float3 keyDiff = abs(vColor.rgb - ChromaKeyData.rgb);
+            if (keyDiff.r <= ChromaKeyData.a
+                && keyDiff.g <= ChromaKeyData.a
+                && keyDiff.b <= ChromaKeyData.a)
+            {
+                discard;
+            }
+
+            if (0.f < ChromaKeyData2.a)
+            {
+                float3 keyDiff2 = abs(vColor.rgb - ChromaKeyData2.rgb);
+                if (keyDiff2.r <= ChromaKeyData2.a
+                    && keyDiff2.g <= ChromaKeyData2.a
+                    && keyDiff2.b <= ChromaKeyData2.a)
+                {
+                    discard;
+                }
+            }
+        }
+
         // 기존 알파 체크도 유지
         if (vColor.a < 0.1f)
             discard;
@@ -78,6 +104,7 @@ float4 PS_Flipbook(VS_OUT _input) : SV_Target
         LightColor += CalcLight2D(i, _input.vWorldPos);
     }
     vColor.rgb *= LightColor;
+    vColor.rgb = lerp(vColor.rgb, FlashColor.rgb, saturate(FlashColor.a));
     
     return vColor;
 }

@@ -3,6 +3,7 @@
 #include "RenderMgr.h"
 #include "TaskMgr.h"
 #include "LevelMgr.h"
+#include "Source/Scripts/COpeningScript.h"
 
 void CreateObject(GameObject* _Object, int LayerIdx)
 {
@@ -161,6 +162,7 @@ float Saturate(float _Data)
 #include "Source/Scripts/CPlayerScript.h"
 #include "Source/Scripts/CCamMoveScript.h"
 #include "Source/Scripts/CMonsterScript.h"
+#include "Source/Scripts/CBossScript.h"
 #include "Source/Scripts/CSpringScript.h"
 #include "Source/Scripts/CBlockScript.h"
 #include "Source/Scripts/CBlockMovingScript.h"
@@ -169,6 +171,77 @@ float Saturate(float _Data)
 #include <Source/Scripts/CBlockPushingScript.h>
 #include <Source/Scripts/CDestroyBlockScript.h>
 #include <Source/Scripts/CBackgroundScript.h>
+
+void CreateOpenLevel()
+{
+	// Level 생성
+	Ptr<ALevel> pLevel = new ALevel;
+	pLevel->SetName(L"Current Level");
+
+	pLevel->GetLayer(0)->SetName(L"Default");
+	pLevel->GetLayer(1)->SetName(L"Background");
+	pLevel->GetLayer(2)->SetName(L"Effect");
+	pLevel->GetLayer(3)->SetName(L"UI");
+
+	Ptr<GameObject> pObject = nullptr;
+	Ptr<GameObject> pCam = nullptr;
+
+	// 카메라
+	pCam = new GameObject;
+	pCam->SetName(L"MainCamera");
+	pCam->AddComponent(new CTransform);
+	pCam->AddComponent(new CCamera);
+
+	pCam->Camera()->LayerCheckAll();
+	pCam->Camera()->SetProjType(PROJ_TYPE::ORTHOGRAPHIC);
+	pCam->Camera()->SetFar(10000.f);
+	pCam->Camera()->SetFOV(90.f);
+	pCam->Camera()->SetOrthoScale(1.f);
+
+	Vec2 vResolution = Device::GetInst()->GetRenderResolution();
+	pCam->Camera()->SetAspectRatio(vResolution.x / vResolution.y);
+	pCam->Camera()->SetWidth(vResolution.x);
+
+	pLevel->AddObject(0, pCam);
+
+	// 오프닝 플립북이 검게 보이지 않도록 기본 광원 추가
+	pObject = new GameObject;
+	pObject->SetName(L"OpenLight");
+	pObject->AddComponent(new CTransform);
+	pObject->AddComponent(new CLight2D);
+
+	pObject->Light2D()->SetLightType(LIGHT_TYPE::DIRECTIONAL);
+	pObject->Light2D()->SetLightColor(Vec3(1.f, 1.f, 1.f));
+	pObject->Transform()->SetRelativePos(Vec3(-0.f, 0.f, 0.f));
+	pLevel->AddObject(0, pObject);
+
+	// 오프닝 배경
+	pObject = new GameObject;
+	pObject->SetName(L"Opening");
+	pObject->AddComponent(new CFlipbookRender);
+	pObject->AddComponent(new CTransform);
+	pObject->AddComponent(new COpeningScript);
+
+	pObject->Transform()->SetRelativePos(Vec3(0.f, 0.f, 5.f));
+	pObject->Transform()->SetRelativeScale(Vec3(vResolution.x, vResolution.y, 1.f));
+
+	Ptr<AFlipbook> pOpeningFlip = LOAD(AFlipbook, L"Flipbook\\Opening.flip");
+	if (pOpeningFlip != nullptr)
+	{
+		pObject->FlipbookRender()->SetFlipbook(0, pOpeningFlip);
+		pObject->FlipbookRender()->Play(0, 0, 8.f, 0); // 0이면 1회만 재생
+	}
+
+	pLevel->AddObject(1, pObject);
+
+
+
+
+	AssetMgr::GetInst()->AddAsset(L"OpenLevel", pLevel.Get());
+	ChangeLevel(L"OpenLevel");
+	ChangeLevelState(LEVEL_STATE::PLAY);
+}
+
 
 void CreateTestLevel()
 {
@@ -353,6 +426,29 @@ void CreateTestLevel()
 
 	//Player(부모 오브젝트) 를 레벨에 추가
 	pLevel->AddObject(3, pObject);
+
+    Ptr<GameObject> pBoss = new GameObject;
+    pBoss->SetName(L"Boss");
+    pBoss->AddComponent(new CTransform);
+    pBoss->AddComponent(new CFlipbookRender);
+    pBoss->AddComponent(new CCollider2D);
+
+    Ptr<CBossScript> pBossScript = new CBossScript;
+    pBossScript->SetState(BOSS_STATE::IDLE);
+    pBoss->AddComponent(pBossScript.Get());
+
+    pBoss->Transform()->SetRelativePos(Vec3(320.f, 0.f, 1.f));
+    pBoss->Transform()->SetRelativeScale(Vec3(220.f, 220.f, 1.f));
+    pBoss->Collider2D()->SetScale(Vec2(0.5f, 0.7f));
+
+    Ptr<AFlipbook> pBossMoveFlipbook = LOAD(AFlipbook, L"Flipbook\\Boss_Move.flip");
+    if (pBossMoveFlipbook != nullptr)
+    {
+        pBoss->FlipbookRender()->AddFlipbook(pBossMoveFlipbook);
+        pBoss->FlipbookRender()->Play(0, 10.f, -1);
+    }
+
+    pLevel->AddObject(5, pBoss);
 
 
 	//// Tile Object

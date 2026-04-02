@@ -12,6 +12,7 @@ CFlipbookRender::CFlipbookRender()
 	, m_CurFlipbook(0)
 	, m_RepeatCount(0)
 	, m_Finish(false)
+	, m_Visible(true)
 {
 }
 
@@ -42,6 +43,10 @@ void CFlipbookRender::FinalTick()
 
 void CFlipbookRender::Render()
 {
+	if (!m_Visible)
+		return;
+
+
 	Ptr<AFlipbook> pCurFlipbook = m_vecFlipbook[m_CurFlipbook];
 	Ptr<ASprite> pCurSprite = pCurFlipbook->GetSprite(m_CurSprite);
 
@@ -68,6 +73,9 @@ void CFlipbookRender::CreateMaterial()
 	// RectMesh 설정
 	SetMesh(AssetMgr::GetInst()->Find<AMesh>(MeshName));
 
+	if (nullptr != GetMaterial())
+		return;
+
 	// 재질 생성
 	Ptr<AMaterial> pMtrl = AssetMgr::GetInst()->Find<AMaterial>(MtrlName);
 
@@ -82,6 +90,7 @@ void CFlipbookRender::CreateMaterial()
 
 		// 찾은 or 생성한 쉐이더를 재질에 설정해주고, 재질도 에셋매니저에 등록한다.
 		pMtrl->SetShader(pShader);
+		pMtrl->SetScalar(VEC4_0, Vec4(1.f, 1.f, 1.f, 0.f));
 		pMtrl->SetDomain(RENDER_DOMAIN::DOMAIN_MASKED);
 		AssetMgr::GetInst()->AddAsset(pMtrl->GetName(), pMtrl.Get());
 	}

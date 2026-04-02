@@ -280,6 +280,9 @@
     <ClInclude Include="Source\Scripts\CMonsterScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Scripts\COpeningScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Scripts\CPlayerScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
@@ -316,7 +319,20 @@
     <ClInclude Include="Source\Scripts\CBackgroundScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Scripts\CBackScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Scripts\CKnockbackScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CSurfaceCircleGuideScript.h" />
+    <ClInclude Include="Source\Scripts\CSpikeScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CBossScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CFireScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
   </ItemGroup>
@@ -835,6 +851,9 @@
     <ClCompile Include="Source\Scripts\CMonsterScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Scripts\COpeningScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Scripts\CPlayerScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
@@ -868,8 +887,21 @@
     <ClCompile Include="Source\Scripts\CBackgroundScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Scripts\CBackScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Scripts\CKnockbackScript.cpp">
       <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CSurfaceCircleGuideScript.cpp" />
+    <ClCompile Include="Source\Scripts\CSpikeScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CBossScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CFireScript.cpp">
+      <Filter>Source\Scripts</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

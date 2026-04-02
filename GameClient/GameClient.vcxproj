@@ -189,6 +189,9 @@ call CodeGen.exe</Command>
     <ClInclude Include="ATileMap.h" />
     <ClInclude Include="CameraUI.h" />
     <ClInclude Include="CBillboardRender.h" />
+    <ClInclude Include="Source\Scripts\CBackScript.h" />
+    <ClInclude Include="Source\Scripts\CFireScript.h" />
+    <ClInclude Include="Source\Scripts\CBossScript.h" />
     <ClInclude Include="CCamera.h" />
     <ClInclude Include="CCollider2D.h" />
     <ClInclude Include="CEditorCamMoveScript.h" />
@@ -205,7 +208,6 @@ call CodeGen.exe</Command>
     <ClInclude Include="ContentUI.h" />
     <ClInclude Include="CRenderComponent.h" />
     <ClInclude Include="CScript.h" />
-    <ClInclude Include="CSpikeScript.h" />
     <ClInclude Include="CTransform.h" />
     <ClInclude Include="define.h" />
     <ClInclude Include="Device.h" />
@@ -267,7 +269,9 @@ call CodeGen.exe</Command>
     <ClInclude Include="Source\Scripts\CKnockbackScript.h" />
     <ClInclude Include="Source\Scripts\CMissileScript.h" />
     <ClInclude Include="Source\Scripts\CMonsterScript.h" />
+    <ClInclude Include="Source\Scripts\COpeningScript.h" />
     <ClInclude Include="Source\Scripts\CPlayerScript.h" />
+    <ClInclude Include="Source\Scripts\CSpikeScript.h" />
     <ClInclude Include="Source\Scripts\CSurfaceCircleGuideScript.h" />
     <ClInclude Include="Source\Scripts\CSurfaceScript.h" />
     <ClInclude Include="Source\Scripts\CSpringScript.h" />
@@ -299,6 +303,9 @@ call CodeGen.exe</Command>
     <ClCompile Include="ATileMap.cpp" />
     <ClCompile Include="CameraUI.cpp" />
     <ClCompile Include="CBillboardRender.cpp" />
+    <ClCompile Include="Source\Scripts\CBackScript.cpp" />
+    <ClCompile Include="Source\Scripts\CFireScript.cpp" />
+    <ClCompile Include="Source\Scripts\CBossScript.cpp" />
     <ClCompile Include="CCamera.cpp" />
     <ClCompile Include="CCollider2D.cpp" />
     <ClCompile Include="CEditorCamMoveScript.cpp" />
@@ -314,7 +321,6 @@ call CodeGen.exe</Command>
     <ClCompile Include="ContentUI.cpp" />
     <ClCompile Include="CRenderComponent.cpp" />
     <ClCompile Include="CScript.cpp" />
-    <ClCompile Include="CSpikeScript.cpp" />
     <ClCompile Include="CTransform.cpp" />
     <ClCompile Include="Device.cpp" />
     <ClCompile Include="EditorMgr.cpp" />
@@ -374,7 +380,9 @@ call CodeGen.exe</Command>
     <ClCompile Include="Source\Scripts\CKnockbackScript.cpp" />
     <ClCompile Include="Source\Scripts\CMissileScript.cpp" />
     <ClCompile Include="Source\Scripts\CMonsterScript.cpp" />
+    <ClCompile Include="Source\Scripts\COpeningScript.cpp" />
     <ClCompile Include="Source\Scripts\CPlayerScript.cpp" />
+    <ClCompile Include="Source\Scripts\CSpikeScript.cpp" />
     <ClCompile Include="Source\Scripts\CSurfaceCircleGuideScript.cpp" />
     <ClCompile Include="Source\Scripts\CSurfaceScript.cpp" />
     <ClCompile Include="Source\Scripts\CSpringScript.cpp" />

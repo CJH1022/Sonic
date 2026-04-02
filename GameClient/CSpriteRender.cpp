@@ -41,6 +41,9 @@ void CSpriteRender::CreateMaterial()
 	// RectMesh 설정
 	SetMesh(AssetMgr::GetInst()->Find<AMesh>(MeshName));
 
+	if (nullptr != GetMaterial())
+		return;
+
 	// 재질 생성
 	Ptr<AMaterial> pMtrl = AssetMgr::GetInst()->Find<AMaterial>(MtrlName);
 

@@ -23,8 +23,8 @@ namespace
 {
     constexpr int kPushingFlipbookIndex = 20;
     constexpr int kKnockBackFlipbookIndex = 21;
-    constexpr float kKnockBackAnimFPS = 10.f;
-    constexpr float kKnockBackMinGroundRecoverTime = 0.15f;
+    constexpr float kKnockBackBlinkInterval = 0.08f;
+    constexpr float kKnockBackMinGroundRecoverTime = 0.25f;
     constexpr float kKnockBackMaxDuration = 0.45f;
     constexpr float kKnockBackGroundFriction = 8.f;
     constexpr float kKnockBackAirDrag = 0.75f;
@@ -558,6 +558,21 @@ void CPlayerScript::Tick()
             m_KnockBackInvincibleTime = 0.f;
     }
 
+    if (FlipbookRender() != nullptr)
+    {
+        bool bVisible = true;
+
+        if (m_KnockBackInvincibleTime > 0.f)
+        {
+            const float blinkElapsed = kKnockBackInvincibleDuration - m_KnockBackInvincibleTime;
+            const float blinkCycle = kKnockBackBlinkInterval * 2.f;
+            const float blinkPhase = fmodf(blinkElapsed, blinkCycle);
+            bVisible = (blinkPhase < kKnockBackBlinkInterval);
+        }
+
+        FlipbookRender()->SetVisible(bVisible);
+    }
+
     ResolveBufferedSurfaceContacts();
     if (IsSurfaceAutoplayScenario() && m_AutoplayTime < 0.5f)
         AppendSurfaceAutoplayDebug(L"tick after_resolve1 t=%.3f ground=%d", m_AutoplayTime, IsGround ? 1 : 0);
@@ -910,7 +925,7 @@ void CPlayerScript::ResolveTransitions(const PlayerInput& in, float dt)
         m_BreakUngroundedTime = 0.f;
     }
 
-    if ((m_Action == ActionState::Roll) && IsGround)
+    if ((m_Action == ActionState::Roll) && IsGround && !m_bBackReaction)
     {
         const float blockedMove = fabsf(m_LastFrameDeltaX);
         const float currentSpeed = fabsf(vVelocity.Dot(vTangent));
@@ -1119,7 +1134,25 @@ void CPlayerScript::ResolveAction(const PlayerInput& in, float dt)
     // TODO: Attack/Roll 종료는 m_ActionTime 또는 애니 이벤트로 처리
     // if (m_Action == ActionState::Attack) ...
     if (m_Action == ActionState::Roll)
+    {
+        if (!m_bBackReaction)
+            return;
+
+        const bool bRecoveredOnGround = IsGround;
+        const bool bTimedOut = m_ActionTime >= kKnockBackMaxDuration;
+
+        if (bRecoveredOnGround || bTimedOut)
+        {
+            m_Action = ActionState::None;
+            m_ActionTime = 0.f;
+            m_bBackReaction = false;
+            bIsSpringJump = false;
+
+            if (IsGround)
+                IsJump = false;
+        }
         return;
+    }
 
     if (m_Action == ActionState::Pushing)
     {
@@ -1144,6 +1177,9 @@ bool CPlayerScript::CanStartJump(const PlayerInput& in) const
     if (!IsGround && !surfaceCoyoteTime) return false;
 
     // Dash는 예외로 허용
+    if (m_bBackReaction)
+        return false;
+
     if (m_Action != ActionState::None
         && m_Action != ActionState::SkillDash
         && m_Action != ActionState::Roll
@@ -1522,6 +1558,7 @@ void CPlayerScript::StartJump()
     ResetInwardCircleLoopState();
     ResetInwardCircleHalfCheckerState();
     m_Action = ActionState::None;
+    m_bBackReaction = false;
     m_BreakUngroundedTime = 0.f;
     m_IdleTime = 0.f;
 }
@@ -1531,6 +1568,7 @@ void CPlayerScript::StartSkillDash()
     const float MaxSpeed = 600.f;
 
     m_Action = ActionState::SkillDash;
+    m_bBackReaction = false;
     m_ActionTime = 0.f;
     m_Pose = PoseState::None;
 
@@ -1540,6 +1578,7 @@ void CPlayerScript::StartSkillDash()
 void CPlayerScript::Rolling()
 {
     m_Action = ActionState::Roll;
+    m_bBackReaction = false;
     m_ActionTime = 0.f;
     m_Pose = PoseState::None;
 
@@ -1703,28 +1742,39 @@ void CPlayerScript::SimulateHorizontal(const PlayerInput& in, float dt, Vec3& vP
     }
     else if (m_Action == ActionState::Roll)
     {
-        float rollFriction = 0.3f; // 작게 줘야 자연스러움
-        float brakePower = 200.f;  // 반대키 감속 힘
-        vVelocity.x -= vVelocity.x * rollFriction * DT;
+        if (m_bBackReaction)
+        {
+            const float friction = IsGround ? kKnockBackGroundFriction : kKnockBackAirDrag;
+            vVelocity.x -= vVelocity.x * friction * dt;
 
-        if (IsGround)
-        {
-            float vt = vVelocity.Dot(vTangent);
-            if (fabsf(vt) < 200.f)
-            {
+            if (IsGround && fabsf(vVelocity.x) < 25.f)
                 vVelocity.x = 0.f;
-                m_Action = ActionState::None;
-            }
         }
-        
-        // 🔥 반대 방향 입력 시 추가 감속
-        if ((vVelocity.x > 0.f && in.leftHeld) ||
-            (vVelocity.x < 0.f && in.rightHeld))
+        else
         {
-            if (vVelocity.x > 0.f)
-                vVelocity.x -= brakePower * dt;
-            else
-                vVelocity.x += brakePower * dt;
+            float rollFriction = 0.3f; // 작게 줘야 자연스러움
+            float brakePower = 200.f;  // 반대키 감속 힘
+            vVelocity.x -= vVelocity.x * rollFriction * DT;
+
+            if (IsGround)
+            {
+                float vt = vVelocity.Dot(vTangent);
+                if (fabsf(vt) < 200.f)
+                {
+                    vVelocity.x = 0.f;
+                    m_Action = ActionState::None;
+                }
+            }
+
+            // 🔥 반대 방향 입력 시 추가 감속
+            if ((vVelocity.x > 0.f && in.leftHeld) ||
+                (vVelocity.x < 0.f && in.rightHeld))
+            {
+                if (vVelocity.x > 0.f)
+                    vVelocity.x -= brakePower * dt;
+                else
+                    vVelocity.x += brakePower * dt;
+            }
         }
     }
     else if (m_Action == ActionState::Spring)
@@ -1922,12 +1972,15 @@ void CPlayerScript::UpdateAnimation(float dt)
 {
     const float MaxSpeed = 300.f;
     const float absSpeed = IsGround ? fabsf(vVelocity.Dot(vTangent)) : fabsf(vVelocity.x);
-    const bool bKnockBackAnimating = (m_Action == ActionState::KnockBack) || IsKnockBackInvincible();
-
-    if (bKnockBackAnimating)
+    if (m_Action == ActionState::KnockBack)
     {
-        if (nullptr != FlipbookRender()->GetFlipbook(kKnockBackFlipbookIndex))
-            FlipbookRender()->Play(kKnockBackFlipbookIndex, kKnockBackAnimFPS, -1);
+        Ptr<AFlipbook> pKnockBackFlipbook = FlipbookRender()->GetFlipbook(kKnockBackFlipbookIndex);
+        if (nullptr != pKnockBackFlipbook && 0 < pKnockBackFlipbook->GetSpriteCount())
+        {
+            const float knockBackAnimFPS = (float)pKnockBackFlipbook->GetSpriteCount() / kKnockBackMaxDuration;
+            if (FlipbookRender()->GetCurFlipbookIdx() != kKnockBackFlipbookIndex)
+                FlipbookRender()->Play(kKnockBackFlipbookIndex, knockBackAnimFPS, 0);
+        }
         return;
     }
 

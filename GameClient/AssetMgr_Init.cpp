@@ -8,6 +8,7 @@
 #include "Source/Scripts/CBlockPushingScript.h"
 #include "Source/Scripts/CDestroyBlockScript.h"
 #include "Source/Scripts/CKnockbackScript.h"
+#include "Source/Scripts/CSpikeScript.h"
 
 void AssetMgr::Init()
 {
@@ -193,6 +194,20 @@ void AssetMgr::CreateEngineShader()
 	pShader->CreatePixelShader(L"Shader\\flipbook.fx", "PS_Flipbook");
 	pShader->SetBSType(BS_TYPE::DEFAULT);
 	pShader->SetRSType(RS_TYPE::CULL_NONE);
+	pShader->AddShaderParam(SHADER_PARAM::VEC4, 0, L"FlashColor");
+	AssetMgr::GetInst()->AddAsset(pShader->GetName(), pShader.Get());
+
+	// ==============
+	// HitFlashShader
+	// ==============
+	pShader = new AGraphicShader;
+	pShader->SetName(L"HitFlashShader");
+	pShader->CreateVertexShader(L"Shader\\hitflash.fx", "VS_HitFlash");
+	pShader->CreatePixelShader(L"Shader\\hitflash.fx", "PS_HitFlash");
+	pShader->SetBSType(BS_TYPE::ALPHABLEND);
+	pShader->SetRSType(RS_TYPE::CULL_NONE);
+	pShader->SetDSType(DS_TYPE::NO_TEST_NO_WRITE);
+	pShader->AddShaderParam(SHADER_PARAM::VEC4, 0, L"FlashColor");
 	AssetMgr::GetInst()->AddAsset(pShader->GetName(), pShader.Get());
 
 	// =============
@@ -253,6 +268,10 @@ void AssetMgr::CreateEngineTexture()
 	Load<ATexture>(L"Object", L"Texture\\Sonic_Object.png");
 
 	Load<ATexture>(L"Object2", L"Texture\\Sonic_Object2.png");
+
+	Load<ATexture>(L"BOSS", L"Texture\\Boss.png");
+
+	Load<ATexture>(L"Opening", L"Texture\\Opening.png");
 }
 
 void AssetMgr::CreateEngineMaterial()
@@ -314,6 +333,16 @@ void AssetMgr::CreateEngineMaterial()
 	pMtrl->SetTexture(TEX_0, Find<ATexture>(L"PlayerImage"));
 
 	pMtrl->SetDomain(RENDER_DOMAIN::DOMAIN_MASKED);
+	AddAsset(pMtrl->GetName(), pMtrl.Get());
+
+	// ================
+	// BossHitFlashMtrl
+	// ================
+	pMtrl = new AMaterial;
+	pMtrl->SetName(L"BossHitFlashMtrl");
+	pMtrl->SetShader(Find<AGraphicShader>(L"HitFlashShader"));
+	pMtrl->SetScalar(VEC4_0, Vec4(1.f, 1.f, 1.f, 0.f));
+	pMtrl->SetDomain(RENDER_DOMAIN::DOMAIN_TRANSPARENT);
 	AddAsset(pMtrl->GetName(), pMtrl.Get());
 
 
@@ -909,5 +938,5 @@ void AssetMgr::CreateEnginePrefab()
 	SaveSpritePrefabAsset(L"Prefab\\Block_Tall.pref", L"Block_Tall", L"Sprite\\Block_Tall.sprite", Vec3(100.f, 150, 1.f), new CBlockScript);
 	SaveSpritePrefabAsset(L"Prefab\\Block_Small.pref", L"Block_Small", L"Sprite\\Block_Small.sprite", Vec3(100, 70, 1.f), new CBlockScript);
 	SaveSpritePrefabAsset(L"Prefab\\Block_Move.pref", L"Block_Move", L"Sprite\\Block_Move.sprite", Vec3(150.f, 100.f, 1.f), new CBlockMovingScript);
-	SaveSpritePrefabAsset(L"Prefab\\Spike.pref", L"Spike", L"Sprite\\Spike.sprite", Vec3(150.f, 150.f, 1.f), new CKnockbackScript);
+	SaveSpritePrefabAsset(L"Prefab\\Spike.pref", L"Spike", L"Sprite\\Spike.sprite", Vec3(150.f, 150.f, 1.f), new CSpikeScript);
 }

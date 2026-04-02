@@ -17,6 +17,7 @@ wstring LoadWString(FILE* _File);
 
 void SaveAssetRef(FILE* _File, class Asset* _Asset);
 
+void CreateOpenLevel();
 void CreateTestLevel();
 void CreateSurfaceAutoplayLevel();
 

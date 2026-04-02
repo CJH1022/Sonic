@@ -1,8 +1,8 @@
 #pragma once
 #include "CScript.h"
-
-class CSpikeScript :
+class CFireScript :
     public CScript
 {
+
 };
 

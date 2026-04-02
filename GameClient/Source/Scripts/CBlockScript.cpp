@@ -34,15 +34,18 @@ void CBlockScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCo
 
 void CBlockScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
+    if (_OwnCollider == nullptr || _OtherCollider == nullptr)
+        return;
+
 	Ptr<CPlayerScript> pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
 	if (pPlayer == nullptr)
         return;
 
-	Vec3 myTransformPos = Transform()->GetRelativePos();
-	Vec3 myTransformScale = Transform()->GetRelativeScale();
+	Vec3 myTransformPos = _OwnCollider->GetOwner()->Transform()->GetWorldPos();
+	Vec3 myTransformScale = _OwnCollider->GetOwner()->Transform()->GetWorldScale();
 
-	Vec3 otherTransformPos = _OtherCollider->GetOwner()->Transform()->GetRelativePos();
-	Vec3 otherTransformScale = _OtherCollider->GetOwner()->Transform()->GetRelativeScale();
+	Vec3 otherTransformPos = _OtherCollider->GetOwner()->Transform()->GetWorldPos();
+	Vec3 otherTransformScale = _OtherCollider->GetOwner()->Transform()->GetWorldScale();
 
 	Vec2 myColOffset = _OwnCollider->GetOffset();
 	Vec2 myColScale = _OwnCollider->GetScale();
