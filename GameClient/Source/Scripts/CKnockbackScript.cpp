@@ -26,16 +26,19 @@ void CKnockbackScript::Tick()
 
 void CKnockbackScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
-	if (_OwnCollider == nullptr || _OtherCollider == nullptr)
+	if (_OwnCollider == nullptr || _OtherCollider == nullptr || GetOwner() == nullptr || GetOwner()->Transform() == nullptr)
 		return;
 
-	Ptr<CPlayerScript> pScript = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
-	if (pScript == nullptr)
+	GameObject* pOtherOwner = _OtherCollider->GetOwner();
+	if (pOtherOwner == nullptr)
+		return;
+
+	Ptr<CPlayerScript> pScript = pOtherOwner->GetScript<CPlayerScript>();
+	if (pScript == nullptr || pScript->Transform() == nullptr)
 		return;
 
 	if (pScript->IsKnockBackInvincible())
 		return;
-
 	if (pScript->GetAction() == ActionState::KnockBack)
 		return;
 
@@ -56,4 +59,5 @@ void CKnockbackScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _Oth
 	pScript->SetFacing((knockBackDirX >= 0.f) ? 1 : -1);
 	pScript->SetKnockBackState(ActionState::KnockBack);
 }
+
 

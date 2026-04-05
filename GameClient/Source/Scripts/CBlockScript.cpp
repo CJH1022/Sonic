@@ -7,8 +7,36 @@
 #include "LevelMgr.h"
 #include "CPlayerScript.h"
 
+namespace
+{
+    bool IsWithinHorizontalRange(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider, float _Margin)
+    {
+        if (_OwnCollider == nullptr || _OtherCollider == nullptr)
+            return false;
+
+        Vec3 myTransformPos = _OwnCollider->GetOwner()->Transform()->GetRelativePos();
+        Vec3 myTransformScale = _OwnCollider->GetOwner()->Transform()->GetRelativeScale();
+        Vec3 otherTransformPos = _OtherCollider->GetOwner()->Transform()->GetRelativePos();
+        Vec3 otherTransformScale = _OtherCollider->GetOwner()->Transform()->GetRelativeScale();
+
+        Vec2 myColOffset = _OwnCollider->GetOffset();
+        Vec2 myColScale = _OwnCollider->GetScale();
+        Vec2 otherColOffset = _OtherCollider->GetOffset();
+        Vec2 otherColScale = _OtherCollider->GetScale();
+
+        float myCenterX = myTransformPos.x + myColOffset.x;
+        float otherCenterX = otherTransformPos.x + otherColOffset.x;
+        float myHalfX = fabsf(myTransformScale.x * myColScale.x) * 0.5f;
+        float otherHalfX = fabsf(otherTransformScale.x * otherColScale.x) * 0.5f;
+
+        float dx = fabsf(otherCenterX - myCenterX);
+        return dx <= (myHalfX + otherHalfX + _Margin);
+    }
+}
+
 CBlockScript::CBlockScript()
 	: CScript(SCRIPT_TYPE::BLOCKSCRIPT)
+    , m_pOnPlayer(nullptr)
 {
 }
 
@@ -78,6 +106,9 @@ void CBlockScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollide
 
     if (overlapX < overlapY)
     {
+        if (m_pOnPlayer == pPlayer.Get())
+            m_pOnPlayer = nullptr;
+
         if (dx >= 0.f)
             vPos.x += overlapX + epsilon;
         else
@@ -102,11 +133,15 @@ void CBlockScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollide
         {
             vPos.y += overlapY + epsilon;
             pPlayer->ForceFlatGroundContact(0.12f);
+            m_pOnPlayer = pPlayer.Get();
             if (vVelocity.y < 0.f)
                 vVelocity.y = 0.f;
         }
         else
         {
+            if (m_pOnPlayer == pPlayer.Get())
+                m_pOnPlayer = nullptr;
+
             vPos.y -= overlapY + epsilon;
             if (vVelocity.y > 0.f)
                 vVelocity.y = 0.f;
@@ -120,5 +155,25 @@ void CBlockScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollide
 
 void CBlockScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
-    return;
+    if (_OtherCollider == nullptr)
+        return;
+
+    Ptr<CPlayerScript> pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
+    if (pPlayer == nullptr)
+        return;
+
+    if (m_pOnPlayer == pPlayer.Get())
+    {
+        const float jumpDetachVel = 80.f;
+        const float horizontalMargin = 8.f;
+
+        bool bJumpDetach = (pPlayer->GetVelocity().y > jumpDetachVel);
+        bool bInsideX = IsWithinHorizontalRange(_OwnCollider, _OtherCollider, horizontalMargin);
+
+        if (bJumpDetach || !bInsideX)
+        {
+            pPlayer->SetIsGround(false);
+            m_pOnPlayer = nullptr;
+        }
+    }
 }

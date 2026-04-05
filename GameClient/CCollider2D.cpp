@@ -31,13 +31,23 @@ void CCollider2D::FinalTick()
 	m_matWorld = matScale * matTran;
 	m_matWorld *= Transform()->GetWorldMat();
 
+	const Vec3 center = XMVector3TransformCoord(Vec3(0.f, 0.f, 0.f), m_matWorld);
+	const Vec3 halfRight = XMVector3TransformNormal(Vec3(0.5f, 0.f, 0.f), m_matWorld);
+	const Vec3 halfUp = XMVector3TransformNormal(Vec3(0.f, 0.5f, 0.f), m_matWorld);
+	const Vec2 aabbHalfExtent = Vec2(fabsf(halfRight.x) + fabsf(halfUp.x),
+		fabsf(halfRight.y) + fabsf(halfUp.y));
+	m_WorldAABBMin = Vec2(center.x, center.y) - aabbHalfExtent;
+	m_WorldAABBMax = Vec2(center.x, center.y) + aabbHalfExtent;
 
-	if (0 < m_OverlapCount)
-		DrawDebugRect(m_matWorld, Vec4(1.f, 0.f, 0.f, 1.f), 0.f);
-	else if (m_OverlapCount == 0)
-		DrawDebugRect(m_matWorld, Vec4(0.f, 1.f, 0.f, 1.f), 0.f);
-	else
-		assert(nullptr);
+	if (RenderMgr::GetInst()->IsDebugRender())
+	{
+		if (0 < m_OverlapCount)
+			DrawDebugRect(m_matWorld, Vec4(1.f, 0.f, 0.f, 1.f), 0.f);
+		else if (m_OverlapCount == 0)
+			DrawDebugRect(m_matWorld, Vec4(0.f, 1.f, 0.f, 1.f), 0.f);
+		else
+			assert(nullptr);
+	}
 }
 
 
@@ -86,6 +96,36 @@ void CCollider2D::AddDynamicOverlap(CScript* _Inst, COLLISION_EVENT _MemFunc)
 void CCollider2D::AddDynamicEndOverlap(CScript* _Inst, COLLISION_EVENT _MemFunc)
 {
 	m_vecEndDel.push_back(COLLISION_DELEGATE{ _Inst , _MemFunc });
+}
+
+void CCollider2D::RemoveDynamicDelegates(CScript* _Inst)
+{
+	if (nullptr == _Inst)
+		return;
+
+	for (vector<COLLISION_DELEGATE>::iterator iter = m_vecBeginDel.begin(); iter != m_vecBeginDel.end(); )
+	{
+		if (iter->Inst == _Inst)
+			iter = m_vecBeginDel.erase(iter);
+		else
+			++iter;
+	}
+
+	for (vector<COLLISION_DELEGATE>::iterator iter = m_vecOverDel.begin(); iter != m_vecOverDel.end(); )
+	{
+		if (iter->Inst == _Inst)
+			iter = m_vecOverDel.erase(iter);
+		else
+			++iter;
+	}
+
+	for (vector<COLLISION_DELEGATE>::iterator iter = m_vecEndDel.begin(); iter != m_vecEndDel.end(); )
+	{
+		if (iter->Inst == _Inst)
+			iter = m_vecEndDel.erase(iter);
+		else
+			++iter;
+	}
 }
 
 void CCollider2D::SaveToLevelFile(FILE* _File)

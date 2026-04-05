@@ -15,6 +15,51 @@
 
 #include <filesystem>
 #include <cstdio>
+#include <cfloat>
+
+namespace
+{
+    float GetMaskedFullBlockMinDistance(const Vec2& _Pos, unsigned char _Mask)
+    {
+        float minDist = FLT_MAX;
+
+        if (_Mask & CTileScript::FULL_FACE_LEFT)
+            minDist = min(minDist, _Pos.x);
+        if (_Mask & CTileScript::FULL_FACE_RIGHT)
+            minDist = min(minDist, 1.f - _Pos.x);
+        if (_Mask & CTileScript::FULL_FACE_TOP)
+            minDist = min(minDist, _Pos.y);
+        if (_Mask & CTileScript::FULL_FACE_BOTTOM)
+            minDist = min(minDist, 1.f - _Pos.y);
+
+        return minDist;
+    }
+
+    unsigned char GetMaskedFullBlockClosestFace(const Vec2& _Pos, unsigned char _Mask)
+    {
+        float bestDist = FLT_MAX;
+        unsigned char bestFace = CTileScript::FULL_FACE_NONE;
+
+        auto considerFace = [&](unsigned char _Face, float _Distance)
+            {
+                if (!(_Mask & _Face))
+                    return;
+
+                if (_Distance < bestDist)
+                {
+                    bestDist = _Distance;
+                    bestFace = _Face;
+                }
+            };
+
+        considerFace(CTileScript::FULL_FACE_TOP, _Pos.y);
+        considerFace(CTileScript::FULL_FACE_BOTTOM, 1.f - _Pos.y);
+        considerFace(CTileScript::FULL_FACE_LEFT, _Pos.x);
+        considerFace(CTileScript::FULL_FACE_RIGHT, 1.f - _Pos.x);
+
+        return bestFace;
+    }
+}
 
 void CTileScript::InitializeTileTypeUnlockState()
 {
@@ -1036,6 +1081,7 @@ void CTileScript::TileMapSetting(int _TypeValue)
         ResetTileFormulaConfigToDefault();
 
     m_eType = (TILETYPE)_TypeValue;
+    m_FullBlockFaceMask = FULL_FACE_ALL;
 
     auto SetLineFormula = [this](const TILE_FORMULA_CONFIG& cfg)
         {
@@ -1132,11 +1178,12 @@ float CTileScript::GetFvalue(Vec2 _pos)
 {
     if (m_eType == TILETYPE::FULL_BLOCK)
     {
-        const float distLeft = _pos.x;
-        const float distRight = 1.f - _pos.x;
-        const float distTop = _pos.y;
-        const float distBottom = 1.f - _pos.y;
-        const float minDist = min(min(distLeft, distRight), min(distTop, distBottom));
+        const unsigned char faceMask =
+            (m_FullBlockFaceMask == FULL_FACE_NONE) ? FULL_FACE_ALL : m_FullBlockFaceMask;
+        const float minDist = GetMaskedFullBlockMinDistance(_pos, faceMask);
+        if (minDist == FLT_MAX)
+            return 1.f;
+
         return -minDist;
     }
 
@@ -1150,18 +1197,23 @@ void CTileScript::GetNormal(Vec2 _pos, Vec2& _normal, float& _mag)
 {
     if (m_eType == TILETYPE::FULL_BLOCK)
     {
-        const float distLeft = _pos.x;
-        const float distRight = 1.f - _pos.x;
-        const float distTop = _pos.y;
-        const float distBottom = 1.f - _pos.y;
+        const unsigned char faceMask =
+            (m_FullBlockFaceMask == FULL_FACE_NONE) ? FULL_FACE_ALL : m_FullBlockFaceMask;
+        const unsigned char closestFace = GetMaskedFullBlockClosestFace(_pos, faceMask);
+        if (closestFace == FULL_FACE_NONE)
+        {
+            _normal = Vec2(0.f, 0.f);
+            _mag = 0.f;
+            return;
+        }
 
         _mag = 1.f;
 
-        if (distTop <= distBottom && distTop <= distLeft && distTop <= distRight)
+        if (closestFace == FULL_FACE_TOP)
             _normal = Vec2(0.f, -1.f);
-        else if (distBottom <= distLeft && distBottom <= distRight)
+        else if (closestFace == FULL_FACE_BOTTOM)
             _normal = Vec2(0.f, 1.f);
-        else if (distLeft <= distRight)
+        else if (closestFace == FULL_FACE_LEFT)
             _normal = Vec2(-1.f, 0.f);
         else
             _normal = Vec2(1.f, 0.f);

@@ -1,5 +1,6 @@
 #pragma once
 #include "CScript.h"
+class CPlayerScript;
 class CBlockPushingScript :
     public CScript
 {
@@ -11,6 +12,7 @@ private:
     bool m_bBlockGrounded;
     bool m_bBlockGroundFlat;
     int IsPushing;
+    CPlayerScript* m_pOnPlayer;
 
 public:
     virtual void Begin();

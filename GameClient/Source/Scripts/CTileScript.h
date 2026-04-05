@@ -168,6 +168,16 @@ enum class TILESTATE
 class CTileScript : public CScript
 {
 public:
+    enum FULL_BLOCK_FACE : unsigned char
+    {
+        FULL_FACE_NONE   = 0,
+        FULL_FACE_TOP    = 1 << 0,
+        FULL_FACE_BOTTOM = 1 << 1,
+        FULL_FACE_LEFT   = 1 << 2,
+        FULL_FACE_RIGHT  = 1 << 3,
+        FULL_FACE_ALL    = FULL_FACE_TOP | FULL_FACE_BOTTOM | FULL_FACE_LEFT | FULL_FACE_RIGHT,
+    };
+
     struct TILE_FORMULA_CONFIG
     {
         float a;
@@ -201,6 +211,7 @@ private:
     float a = 0.f, b = 0.f, c = 0.f;
     float r = 0.f, center_x = 0.f, center_y = 0.f;
     float fFinalRot = 0.f;
+    unsigned char m_FullBlockFaceMask = FULL_FACE_ALL;
 
     int halfcount;
 
@@ -219,6 +230,8 @@ private:
 public:
     Vec2 GetCurNormal() { return vCurNormal; }
     TILETYPE GetTileType() const { return m_eType; }
+    void SetFullBlockFaceMask(unsigned char _Mask) { m_FullBlockFaceMask = _Mask; }
+    unsigned char GetFullBlockFaceMask() const { return m_FullBlockFaceMask; }
 
     static bool IsValidTileTypeValue(int _TypeValue);
     static TILETYPE ToTileType(int _TypeValue);

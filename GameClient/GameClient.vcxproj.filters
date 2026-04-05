@@ -148,6 +148,9 @@
     <ClInclude Include="APrefab.h">
       <Filter>GameEngine\04. Asset\09. Prefab</Filter>
     </ClInclude>
+    <ClInclude Include="ASurfaceSet.h">
+      <Filter>GameEngine\04. Asset\10. SurfaceSet</Filter>
+    </ClInclude>
     <ClInclude Include="CTileRender.h">
       <Filter>GameEngine\06. Component\RenderComponent\05. TileRender</Filter>
     </ClInclude>
@@ -265,6 +268,9 @@
     <ClInclude Include="PrefabUI.h">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI</Filter>
     </ClInclude>
+    <ClInclude Include="SurfaceSetUI.h">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\12. SurfaceSetUI</Filter>
+    </ClInclude>
     <ClInclude Include="ScriptUI.h">
       <Filter>GameEngine\07. EditorUI\02. ComponentUI\ScriptUI</Filter>
     </ClInclude>
@@ -325,8 +331,10 @@
     <ClInclude Include="Source\Scripts\CKnockbackScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Scripts\CSurfaceCircleGuideScript.h" />
     <ClInclude Include="Source\Scripts\CSpikeScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CSurfaceSetScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
     <ClInclude Include="Source\Scripts\CBossScript.h">
@@ -335,6 +343,10 @@
     <ClInclude Include="Source\Scripts\CFireScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Scripts\CSurfaceCircleGuideScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CCylinderScript.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="GameClient.ico">
@@ -474,6 +486,9 @@
     <Filter Include="GameEngine\04. Asset\09. Prefab">
       <UniqueIdentifier>{574a8581-a626-433d-a4c8-f2caa767dce7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="GameEngine\04. Asset\10. SurfaceSet">
+      <UniqueIdentifier>{2e94b2c7-2f31-4e95-aee8-2b0fc8b0f70f}</UniqueIdentifier>
+    </Filter>
     <Filter Include="GameEngine\06. Component\RenderComponent\05. TileRender">
       <UniqueIdentifier>{dc22e4e1-6714-4626-82a6-d9d28b7db742}</UniqueIdentifier>
     </Filter>
@@ -578,6 +593,9 @@
     </Filter>
     <Filter Include="GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI">
       <UniqueIdentifier>{01de38b3-f7ab-444f-a9a3-023494e04400}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\07. EditorUI\03. AssetUI\12. SurfaceSetUI">
+      <UniqueIdentifier>{6ebc4d76-14c5-4fb0-b9c2-9d0df4d2ac55}</UniqueIdentifier>
     </Filter>
     <Filter Include="GameEngine\07. EditorUI\02. ComponentUI\ScriptUI">
       <UniqueIdentifier>{5653a66e-cab6-4464-873c-21db327e0ab4}</UniqueIdentifier>
@@ -718,6 +736,9 @@
     <ClCompile Include="APrefab.cpp">
       <Filter>GameEngine\04. Asset\09. Prefab</Filter>
     </ClCompile>
+    <ClCompile Include="ASurfaceSet.cpp">
+      <Filter>GameEngine\04. Asset\10. SurfaceSet</Filter>
+    </ClCompile>
     <ClCompile Include="CTileRender.cpp">
       <Filter>GameEngine\06. Component\RenderComponent\05. TileRender</Filter>
     </ClCompile>
@@ -836,6 +857,9 @@
     <ClCompile Include="PrefabUI.cpp">
       <Filter>GameEngine\07. EditorUI\03. AssetUI\11. PrefabUI</Filter>
     </ClCompile>
+    <ClCompile Include="SurfaceSetUI.cpp">
+      <Filter>GameEngine\07. EditorUI\03. AssetUI\12. SurfaceSetUI</Filter>
+    </ClCompile>
     <ClCompile Include="ScriptUI.cpp">
       <Filter>GameEngine\07. EditorUI\02. ComponentUI\ScriptUI</Filter>
     </ClCompile>
@@ -890,11 +914,10 @@
     <ClCompile Include="Source\Scripts\CBackScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Scripts\CKnockbackScript.cpp">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Scripts\CSurfaceCircleGuideScript.cpp" />
     <ClCompile Include="Source\Scripts\CSpikeScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CSurfaceSetScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
     <ClCompile Include="Source\Scripts\CBossScript.cpp">
@@ -903,6 +926,13 @@
     <ClCompile Include="Source\Scripts\CFireScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Scripts\CSurfaceCircleGuideScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CKnockbackScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CCylinderScript.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="SimpleMath.inl">

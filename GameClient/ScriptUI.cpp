@@ -2,9 +2,13 @@
 #include "ScriptUI.h"
 
 #include "assets.h"
+#include "EditorMgr.h"
+#include "Inspector.h"
+#include "LevelMgr.h"
 #include "Source/ScriptMgr.h"
 #include "Source/Scripts/CBossScript.h"
 #include "Source/Scripts/CPlayerScript.h"
+#include "Source/Scripts/CSurfaceSetScript.h"
 
 namespace
 {
@@ -70,6 +74,9 @@ void ScriptUI::Tick_UI()
 {
 	m_ItemHeight = 0;
 
+	if (nullptr == m_TargetScript)
+		return;
+
 	ImGui::PushID(0);
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.1f, 0.3f, 1.f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.1f, 0.3f, 1.f));
@@ -81,8 +88,35 @@ void ScriptUI::Tick_UI()
 	ImGui::Button(ScriptName.c_str());
 	AddItemHeight();
 
+	Ptr<GameObject> pOwner = m_TargetScript->GetOwner();
+	const bool canRemoveScript =
+		(nullptr != pOwner) &&
+		(nullptr != LevelMgr::GetInst()->GetCurLevel()) &&
+		(LevelMgr::GetInst()->GetLevelState() == LEVEL_STATE::STOP);
+	bool bRemovedScript = false;
+
+	ImGui::SameLine();
+	if (!canRemoveScript)
+		ImGui::BeginDisabled();
+	if (ImGui::SmallButton("Remove Script"))
+	{
+		pOwner->RemoveScript(m_TargetScript.Get());
+
+		Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+		if (nullptr != pInspector && pInspector->GetTargetObject() == pOwner)
+		{
+			pInspector->SetTargetObject(pOwner);
+		}
+		bRemovedScript = true;
+	}
+	if (!canRemoveScript)
+		ImGui::EndDisabled();
+
 	ImGui::PopStyleColor(3);
 	ImGui::PopID();
+
+	if (bRemovedScript)
+		return;
 
 	const vector<tScriptParam>& vecParam = m_TargetScript->GetScriptParam();
 
@@ -95,6 +129,8 @@ void ScriptUI::Tick_UI()
 		{
 		case SCRIPT_PARAM::FLOAT:
 		{
+			if (nullptr == vecParam[i].Data)
+				break;
 			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
 			ImGui::SameLine(120);
 
@@ -111,6 +147,8 @@ void ScriptUI::Tick_UI()
 			break;
 		case SCRIPT_PARAM::INT:
 		{
+			if (nullptr == vecParam[i].Data)
+				break;
 			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
 			ImGui::SameLine(120);
 
@@ -127,6 +165,8 @@ void ScriptUI::Tick_UI()
 			break;
 		case SCRIPT_PARAM::VEC2:
 		{
+			if (nullptr == vecParam[i].Data)
+				break;
 			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
 			ImGui::SameLine(120);
 
@@ -143,6 +183,8 @@ void ScriptUI::Tick_UI()
 			break;
 		case SCRIPT_PARAM::TEXTURE:
 		{
+			if (nullptr == vecParam[i].Data)
+				break;
 			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
 			AddItemHeight();
 
@@ -180,6 +222,8 @@ void ScriptUI::Tick_UI()
 			break;
 		case SCRIPT_PARAM::PREFAB:
 		{
+			if (nullptr == vecParam[i].Data)
+				break;
 			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
 			ImGui::SameLine(120);
 
@@ -209,6 +253,48 @@ void ScriptUI::Tick_UI()
 					if (ASSET_TYPE::PREFAB == pAsset->GetType())
 					{
 						*((Ptr<APrefab>*)vecParam[i].Data) = ((APrefab*)pAsset.Get());
+					}
+				}
+
+				ImGui::EndDragDropTarget();
+			}
+
+			AddItemHeight();
+		}
+			break;
+		case SCRIPT_PARAM::SURFACESET:
+		{
+			if (nullptr == vecParam[i].Data)
+				break;
+			ImGui::Text(string(vecParam[i].Desc.begin(), vecParam[i].Desc.end()).c_str());
+			ImGui::SameLine(120);
+
+			string Key = "##SurfaceSet";
+			Key += ID;
+
+			Ptr<ASurfaceSet> pSurfaceSet = *((Ptr<ASurfaceSet>*)vecParam[i].Data);
+			string SurfaceSetName = "None";
+			if (nullptr != pSurfaceSet)
+			{
+				SurfaceSetName = string(pSurfaceSet->GetKey().begin(), pSurfaceSet->GetKey().end());
+			}
+
+			char Buffer[256] = {};
+			strcpy_s(Buffer, SurfaceSetName.c_str());
+			ImGui::InputText(Key.c_str(), Buffer, sizeof(Buffer), ImGuiInputTextFlags_ReadOnly);
+			AddItemHeight();
+
+			if (ImGui::BeginDragDropTarget())
+			{
+				const ImGuiPayload* Payload = ImGui::AcceptDragDropPayload("Content");
+				if (Payload)
+				{
+					DWORD_PTR data = *((DWORD_PTR*)Payload->Data);
+					Ptr<Asset> pAsset = (Asset*)data;
+
+					if (ASSET_TYPE::SURFACESET == pAsset->GetType())
+					{
+						*((Ptr<ASurfaceSet>*)vecParam[i].Data) = ((ASurfaceSet*)pAsset.Get());
 					}
 				}
 
@@ -301,6 +387,18 @@ void ScriptUI::Tick_UI()
         ImGui::Text("%s", GetBossStateName(pBossScript->GetState()));
         AddItemHeight();
     }
+
+	CSurfaceSetScript* pSurfaceSetScript = dynamic_cast<CSurfaceSetScript*>(m_TargetScript.Get());
+	if (nullptr != pSurfaceSetScript)
+	{
+		ImGui::Separator();
+		AddItemHeight();
+
+		ImGui::Text("Runtime Surfaces");
+		ImGui::SameLine(120);
+		ImGui::Text("%u", pSurfaceSetScript->GetBuiltSurfaceCount());
+		AddItemHeight();
+	}
 
 	SetSizeAsChild(Vec2(0.f, (float)m_ItemHeight));
 }

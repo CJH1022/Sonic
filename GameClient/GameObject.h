@@ -38,6 +38,7 @@ public:
 
 public:
     void AddComponent(Ptr<Component> _Com);
+    void RemoveScript(CScript* _Script);
     Ptr<Component> GetComponent(COMPONENT_TYPE _Type) { return m_Com[(UINT)_Type]; }
     const vector<Ptr<CScript>>& GetScripts() const { return m_vecScripts; }
     template<typename T>

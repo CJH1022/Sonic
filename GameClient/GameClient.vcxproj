@@ -180,6 +180,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="AMaterial.h" />
     <ClInclude Include="AMesh.h" />
     <ClInclude Include="APrefab.h" />
+    <ClInclude Include="ASurfaceSet.h" />
     <ClInclude Include="ASprite.h" />
     <ClInclude Include="Asset.h" />
     <ClInclude Include="AssetMgr.h" />
@@ -190,6 +191,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="CameraUI.h" />
     <ClInclude Include="CBillboardRender.h" />
     <ClInclude Include="Source\Scripts\CBackScript.h" />
+    <ClInclude Include="Source\Scripts\CCylinderScript.h" />
     <ClInclude Include="Source\Scripts\CFireScript.h" />
     <ClInclude Include="Source\Scripts\CBossScript.h" />
     <ClInclude Include="CCamera.h" />
@@ -251,6 +253,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="PathMgr.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="PrefabUI.h" />
+    <ClInclude Include="SurfaceSetUI.h" />
     <ClInclude Include="Ptr.h" />
     <ClInclude Include="RenderMgr.h" />
     <ClInclude Include="Resource.h" />
@@ -273,6 +276,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="Source\Scripts\CPlayerScript.h" />
     <ClInclude Include="Source\Scripts\CSpikeScript.h" />
     <ClInclude Include="Source\Scripts\CSurfaceCircleGuideScript.h" />
+    <ClInclude Include="Source\Scripts\CSurfaceSetScript.h" />
     <ClInclude Include="Source\Scripts\CSurfaceScript.h" />
     <ClInclude Include="Source\Scripts\CSpringScript.h" />
     <ClInclude Include="Source\Scripts\CTileScript.h" />
@@ -294,6 +298,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="AMaterial.cpp" />
     <ClCompile Include="AMesh.cpp" />
     <ClCompile Include="APrefab.cpp" />
+    <ClCompile Include="ASurfaceSet.cpp" />
     <ClCompile Include="ASprite.cpp" />
     <ClCompile Include="Asset.cpp" />
     <ClCompile Include="AssetMgr.cpp" />
@@ -304,6 +309,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="CameraUI.cpp" />
     <ClCompile Include="CBillboardRender.cpp" />
     <ClCompile Include="Source\Scripts\CBackScript.cpp" />
+    <ClCompile Include="Source\Scripts\CCylinderScript.cpp" />
     <ClCompile Include="Source\Scripts\CFireScript.cpp" />
     <ClCompile Include="Source\Scripts\CBossScript.cpp" />
     <ClCompile Include="CCamera.cpp" />
@@ -366,6 +372,7 @@ call CodeGen.exe</Command>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="PrefabUI.cpp" />
+    <ClCompile Include="SurfaceSetUI.cpp" />
     <ClCompile Include="RenderMgr.cpp" />
     <ClCompile Include="CSpriteRender.cpp" />
     <ClCompile Include="ScriptUI.cpp" />
@@ -384,6 +391,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="Source\Scripts\CPlayerScript.cpp" />
     <ClCompile Include="Source\Scripts\CSpikeScript.cpp" />
     <ClCompile Include="Source\Scripts\CSurfaceCircleGuideScript.cpp" />
+    <ClCompile Include="Source\Scripts\CSurfaceSetScript.cpp" />
     <ClCompile Include="Source\Scripts\CSurfaceScript.cpp" />
     <ClCompile Include="Source\Scripts\CSpringScript.cpp" />
     <ClCompile Include="Source\Scripts\CTileScript.cpp" />

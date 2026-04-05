@@ -8,7 +8,7 @@
 #include "KeyMgr.h"
 
 RenderMgr::RenderMgr()
-	: m_bDebugRender(true)
+	: m_bDebugRender(false)
 {
 
 }

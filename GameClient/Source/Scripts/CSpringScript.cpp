@@ -21,6 +21,7 @@ CSpringScript::~CSpringScript()
 void CSpringScript::Begin()
 {
     Vec3 vRot = GetOwner()->Transform()->GetRelativeRot();
+    vVelocity = Vec2(0.f, 0.f);
 
     if(vRot.z == 0.f) // (RIGHT)
         vVelocity.x = 1000.f;
@@ -108,7 +109,10 @@ void CSpringScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherC
             pScript->SetIsGround(false);
             pScript->SetSpringJumpState(ActionState::Spring, dir); // 이 함수를 호출하여 bIsSpringJump를 true로 만듦
 
-            GetOwner()->FlipbookRender()->Play(0, 0, 20.f, 0);
+            if (GetOwner()->FlipbookRender() != nullptr)
+            {
+                GetOwner()->FlipbookRender()->Play(0, 0, 20.f, 0);
+            }
         }
     }
 }

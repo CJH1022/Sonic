@@ -7,7 +7,10 @@
 #include "CPlayerScript.h"
 #include "TimeMgr.h"
 
+#include <algorithm>
 #include <cmath>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace
 {
@@ -19,6 +22,8 @@ namespace
     constexpr float kEndpointTransitionMargin = 0.12f;
     constexpr float kTransitionSnapThresholdAir = 2.0f;
     constexpr float kTransitionSnapThresholdGround = 8.f;
+    constexpr float kCircleTransitionSnapThresholdAir = 0.6f;
+    constexpr float kCircleTransitionSnapThresholdGround = 3.f;
     // 0.02f: more aggressive depth clamping (less sink-in),
     // 0.04f: conservative clamp (more permissive penetration).
     constexpr float kGroundDepthClamp = 0.02f;
@@ -34,9 +39,28 @@ namespace
     constexpr float kSupportPointInsideMargin = 0.08f;
     constexpr float kArcTransitionLocalMargin = 0.04f;
     constexpr float kArcSupportLocalMargin = 0.38f;
-    constexpr float kLineSupportProjectionMargin = 0.08f;
+    constexpr float kLineSupportProjectionMarginMin = 4.f;
+    constexpr float kLineSupportProjectionMarginMax = 10.f;
     constexpr float kSurfaceAirAttachMaxPenetration = 24.f;
-    constexpr float kTopHalfInwardCircleLineContextAttachMaxDistance = 48.f;
+    constexpr float kTopHalfInwardCircleLineContextAttachMaxDistance = 16.f;
+    constexpr float kSurfaceSpatialCellSize = 256.f;
+    constexpr float kVerticalEntryApproachMinSpeed = 35.f;
+    constexpr float kVerticalEntryApproachDominance = 1.1f;
+
+    std::unordered_map<long long, std::vector<CSurfaceScript*>> g_SurfaceSpatialBuckets;
+    std::unordered_set<CSurfaceScript*> g_LiveSurfaceScripts;
+
+    long long MakeSurfaceSpatialKey(int _CellX, int _CellY)
+    {
+        const unsigned long long x = static_cast<unsigned long long>(static_cast<unsigned int>(_CellX));
+        const unsigned long long y = static_cast<unsigned long long>(static_cast<unsigned int>(_CellY));
+        return static_cast<long long>((x << 32) | y);
+    }
+
+    int WorldToSurfaceCell(float _Value)
+    {
+        return static_cast<int>(floorf(_Value / kSurfaceSpatialCellSize));
+    }
 
     float Dot(const Vec2& _A, const Vec2& _B)
     {
@@ -154,11 +178,41 @@ namespace
 
         Vec2 sampleNormal = Vec2(0.f, 1.f);
         if (_WasGround && pPlayer != nullptr)
-            sampleNormal = pPlayer->GetNormal();
+        {
+            sampleNormal = NormalizeSafe(pPlayer->GetNormal(), Vec2(0.f, 1.f));
+
+            // When descending from a circle, the carried-over surface normal can point
+            // toward the body side instead of the true sole. For line probing we want
+            // a stable "bottom" sample again, otherwise the player stays buried until
+            // a jump resets the contact state.
+            if (pPlayer->HasCurrentCircleSurfaceContact() && sampleNormal.y < 0.6f)
+                sampleNormal = Vec2(0.f, 1.f);
+        }
 
         Vec2 center = {};
         float supportDistance = 0.f;
         return GetColliderSupportData(_OtherCollider, sampleNormal, center, _OutFootPos, supportDistance);
+    }
+
+    bool IsCircleGeometry(CSurfaceScript::SURFACE_GEOMETRY _Geometry)
+    {
+        return _Geometry == CSurfaceScript::SURFACE_GEOMETRY::CIRCLE ||
+               _Geometry == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE;
+    }
+
+    bool IsVerticalEntryApproachAllowed(CPlayerScript* _Player, GameObject* _Surface)
+    {
+        if (_Player == nullptr || _Surface == nullptr)
+            return false;
+
+        if (_Player->GetReferenceAttachableLineSurface() == _Surface)
+            return true;
+
+        const Vec2 velocity = _Player->GetVelocity();
+        const float absX = fabsf(velocity.x);
+        const float absY = fabsf(velocity.y);
+        return absY >= kVerticalEntryApproachMinSpeed &&
+               absY >= absX * kVerticalEntryApproachDominance;
     }
 
 }
@@ -173,7 +227,10 @@ CSurfaceScript::CSurfaceScript()
     , m_FillAbove(false)
     , m_FillInside(false)
     , m_Attachable(true)
+    , m_LastSpatialWorldPos(Vec2(0.f, 0.f))
+    , m_bSpatialRegistered(false)
 {
+    g_LiveSurfaceScripts.insert(this);
 }
 
 CSurfaceScript::CSurfaceScript(const CSurfaceScript& _Origin)
@@ -186,11 +243,16 @@ CSurfaceScript::CSurfaceScript(const CSurfaceScript& _Origin)
     , m_FillAbove(_Origin.m_FillAbove)
     , m_FillInside(_Origin.m_FillInside)
     , m_Attachable(_Origin.m_Attachable)
+    , m_LastSpatialWorldPos(Vec2(0.f, 0.f))
+    , m_bSpatialRegistered(false)
 {
+    g_LiveSurfaceScripts.insert(this);
 }
 
 CSurfaceScript::~CSurfaceScript()
 {
+    UnregisterSpatialRegistration();
+    g_LiveSurfaceScripts.erase(this);
 }
 
 void CSurfaceScript::Begin()
@@ -203,10 +265,29 @@ void CSurfaceScript::Begin()
     }
 
     UpdateBounds();
+    RefreshSpatialRegistration();
 }
 
 void CSurfaceScript::Tick()
 {
+    GameObject* pOwner = GetOwner();
+    if (pOwner == nullptr || pOwner->IsDead())
+    {
+        UnregisterSpatialRegistration();
+        return;
+    }
+
+    CTransform* pTransform = pOwner->Transform().Get();
+    if (pTransform == nullptr)
+        return;
+
+    const Vec3 worldPos = pTransform->GetWorldPos();
+    if (!m_bSpatialRegistered ||
+        fabsf(worldPos.x - m_LastSpatialWorldPos.x) > 0.001f ||
+        fabsf(worldPos.y - m_LastSpatialWorldPos.y) > 0.001f)
+    {
+        RefreshSpatialRegistration();
+    }
 }
 
 void CSurfaceScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
@@ -225,6 +306,66 @@ void CSurfaceScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColli
     auto pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
     if (pPlayer == nullptr)
         return;
+
+    if (m_Role == SURFACE_ROLE::WALL)
+    {
+        Vec2 normal = {};
+        float signedDistance = 0.f;
+        if (!EvaluateWallProbe(_OtherCollider, normal, signedDistance))
+        {
+            pPlayer->UnregisterWallPushContact(GetOwner());
+            return;
+        }
+
+        Vec3 playerPos = pPlayer->Transform()->GetRelativePos();
+        Vec2 playerVelocity = pPlayer->GetVelocity();
+        // Keep pure-wall side contacts on the boundary instead of nudging the
+        // player fully outside. A positive bias caused overlap to disappear for
+        // one frame, which made wall-push contact and the pushing animation
+        // flicker while the player was continuously pressing the wall.
+        const float resolveDistance = max(-signedDistance, 0.f);
+
+        if (fabsf(normal.x) > 0.5f)
+        {
+            const int pushDir = (normal.x < 0.f) ? 1 : -1;
+            pPlayer->RegisterWallPushContact(GetOwner(), pushDir);
+            playerPos.x += normal.x * resolveDistance;
+
+            if (pPlayer->GetAction() == ActionState::Break)
+            {
+                playerVelocity = Vec2(0.f, 0.f);
+                pPlayer->RequestBreakWallStop();
+            }
+            else
+            {
+                if (playerVelocity.x * normal.x < 0.f)
+                    playerVelocity.x = 0.f;
+
+                pPlayer->StopBlockedAction();
+            }
+        }
+        else
+        {
+            pPlayer->UnregisterWallPushContact(GetOwner());
+            playerPos.y += normal.y * resolveDistance;
+
+            if (normal.y > 0.5f)
+            {
+                pPlayer->ForceFlatGroundContact(0.12f);
+                if (playerVelocity.y < 0.f)
+                    playerVelocity.y = 0.f;
+            }
+            else if (normal.y < -0.5f)
+            {
+                if (playerVelocity.y > 0.f)
+                    playerVelocity.y = 0.f;
+            }
+        }
+
+        pPlayer->Transform()->SetRelativePos(playerPos);
+        pPlayer->SetVelocity(playerVelocity);
+        return;
+    }
 
     CONTACT_PROBE probe = {};
     if (!ProbePlayerContact(_OtherCollider, pPlayer->GetIsGround(), probe))
@@ -254,13 +395,6 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
     if (pPlayer == nullptr)
         return false;
 
-    if (pPlayer->IsSurfaceAttachBlocked(GetOwner()))
-        return false;
-
-    Vec2 footPos = {};
-    if (!GetPlayerFootPos(_OtherCollider, _WasGround, footPos))
-        return false;
-
     Vec2 normal = {};
     float signedDistance = 0.f;
     bool transitionSurface = false;
@@ -271,21 +405,40 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
     Vec2 contactPoint = {};
     bool hit = false;
 
-    if (m_Geometry == SURFACE_GEOMETRY::LINE)
-        hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint, _WasGround);
-    else if (m_Geometry == SURFACE_GEOMETRY::CIRCLE)
-        hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
-    else if (m_Geometry == SURFACE_GEOMETRY::ARC)
-        hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
-    else
+    if (m_Role == SURFACE_ROLE::WALL)
         hit = EvaluateWallProbe(_OtherCollider, normal, signedDistance);
+    else
+    {
+        if (pPlayer->IsSurfaceAttachBlocked(GetOwner()))
+            return false;
+
+        if (m_Role == SURFACE_ROLE::VERTICAL_ENTRY &&
+            m_Geometry == SURFACE_GEOMETRY::LINE &&
+            !IsVerticalEntryApproachAllowed(pPlayer.Get(), GetOwner()))
+        {
+            return false;
+        }
+
+        Vec2 footPos = {};
+        if (!GetPlayerFootPos(_OtherCollider, _WasGround, footPos))
+            return false;
+
+        if (m_Geometry == SURFACE_GEOMETRY::LINE)
+            hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint, _WasGround);
+        else if (IsCircleGeometry(m_Geometry))
+            hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
+        else if (m_Geometry == SURFACE_GEOMETRY::ARC)
+            hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
+        else
+            hit = EvaluateWallProbe(_OtherCollider, normal, signedDistance);
+    }
 
     if (!hit)
         return false;
 
     bool inwardCircleContact = false;
     bool topHalfInwardCircleWithLineContext = false;
-    if (m_Geometry == SURFACE_GEOMETRY::CIRCLE)
+    if (IsCircleGeometry(m_Geometry))
     {
         Vec2 circleCenter = {};
         float circleRadius = 0.f;
@@ -298,16 +451,26 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
         if (inwardCircleContact && pPlayer->IsInwardCircleAttachBlocked(circleCenter, circleRadius))
             return false;
 
+        // Guided loops visually disable one arc side at a time, so probe hits on
+        // the hidden side should never become physical contacts either.
+        if (pPlayer->ShouldIgnoreGuidedCircleWallContact(GetOwner(), contactPoint))
+            return false;
+
         if (inwardCircleContact &&
             m_FillInside &&
-            (m_ArcCorner == ARC_CORNER::TOP_LEFT || m_ArcCorner == ARC_CORNER::TOP_RIGHT) &&
-            pPlayer->HasInwardCircleLineContext())
+            pPlayer->HasInwardCircleLineContext() &&
+            (m_Geometry == SURFACE_GEOMETRY::FULL_CIRCLE ||
+                m_ArcCorner == ARC_CORNER::TOP_LEFT ||
+                m_ArcCorner == ARC_CORNER::TOP_RIGHT) &&
+            contactPoint.y < circleCenter.y - 0.5f)
         {
             topHalfInwardCircleWithLineContext = true;
         }
     }
 
     float transitionSnapThreshold = _WasGround ? kTransitionSnapThresholdGround : kTransitionSnapThresholdAir;
+    if (IsCircleGeometry(m_Geometry))
+        transitionSnapThreshold = _WasGround ? kCircleTransitionSnapThresholdGround : kCircleTransitionSnapThresholdAir;
     if (topHalfInwardCircleWithLineContext)
         transitionSnapThreshold = max(transitionSnapThreshold, kTopHalfInwardCircleLineContextAttachMaxDistance);
     if (signedDistance > transitionSnapThreshold)
@@ -316,8 +479,8 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
     const bool keepAttachedSurfaceContact =
         (m_Geometry == SURFACE_GEOMETRY::LINE ||
          m_Geometry == SURFACE_GEOMETRY::ARC ||
-         m_Geometry == SURFACE_GEOMETRY::CIRCLE) &&
-        m_Attachable;
+         IsCircleGeometry(m_Geometry)) &&
+        IsAttachable();
     const float positiveContactLimit =
         keepAttachedSurfaceContact ? transitionSnapThreshold : kSurfaceContactPositiveEpsilon;
 
@@ -343,9 +506,9 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
     _OutProbe.SignedDistance = signedDistance;
     _OutProbe.CandidateScore = candidateScore;
     _OutProbe.TransitionSurface = transitionSurface;
-    _OutProbe.Attachable = m_Attachable;
+    _OutProbe.Attachable = IsAttachable();
     _OutProbe.WallLike = (m_Role == SURFACE_ROLE::WALL);
-    _OutProbe.Circle = (m_Geometry == SURFACE_GEOMETRY::CIRCLE);
+    _OutProbe.Circle = IsCircleGeometry(m_Geometry);
     _OutProbe.InwardCircle = inwardCircleContact;
     _OutProbe.SeamBlendT = seamBlendT;
     _OutProbe.SeamBlendHasValue = seamBlendHasValue;
@@ -357,6 +520,12 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
 
 void CSurfaceScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
+    if (m_Role != SURFACE_ROLE::WALL || _OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
+        return;
+
+    auto pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
+    if (pPlayer != nullptr)
+        pPlayer->UnregisterWallPushContact(GetOwner());
 }
 
 void CSurfaceScript::ConfigureLine(const Vec2& _LocalStart, const Vec2& _LocalEnd, SURFACE_ROLE _Role, bool _FillAbove, bool _Attachable)
@@ -394,15 +563,57 @@ void CSurfaceScript::ConfigureCircle(const Vec2& _LocalStart, const Vec2& _Local
     UpdateBounds();
 }
 
+void CSurfaceScript::ConfigureFullCircle(float _Radius, SURFACE_ROLE _Role, bool _FillInside, bool _Attachable)
+{
+    const float safeRadius = max(_Radius, 1.f);
+    m_Geometry = SURFACE_GEOMETRY::FULL_CIRCLE;
+    m_Role = _Role;
+    m_LocalStart = Vec2(-safeRadius, -safeRadius);
+    m_LocalEnd = Vec2(safeRadius, safeRadius);
+    m_ArcCorner = ARC_CORNER::TOP_LEFT;
+    m_FillInside = _FillInside;
+    m_Attachable = _Attachable;
+    UpdateBounds();
+}
+
 void CSurfaceScript::GetWorldEndpoints(Vec2& _OutStart, Vec2& _OutEnd)
 {
-    Vec3 worldPos = Transform()->GetWorldPos();
+    GameObject* pOwner = GetOwner();
+    if (pOwner == nullptr || pOwner->Transform() == nullptr)
+    {
+        _OutStart = m_LocalStart;
+        _OutEnd = m_LocalEnd;
+        return;
+    }
+
+    Vec3 worldPos = pOwner->Transform()->GetWorldPos();
     _OutStart = Vec2(worldPos.x + m_LocalStart.x, worldPos.y + m_LocalStart.y);
     _OutEnd = Vec2(worldPos.x + m_LocalEnd.x, worldPos.y + m_LocalEnd.y);
 }
 
 void CSurfaceScript::GetArcWorldData(Vec2& _OutCenter, float& _OutRadius, Vec2& _OutBoxMin, Vec2& _OutBoxMax)
 {
+    GameObject* pOwner = GetOwner();
+    if (pOwner == nullptr || pOwner->Transform() == nullptr)
+    {
+        _OutCenter = Vec2(0.f, 0.f);
+        _OutRadius = 0.f;
+        _OutBoxMin = Vec2(0.f, 0.f);
+        _OutBoxMax = Vec2(0.f, 0.f);
+        return;
+    }
+
+    if (m_Geometry == SURFACE_GEOMETRY::FULL_CIRCLE)
+    {
+        Vec3 worldPos = pOwner->Transform()->GetWorldPos();
+        _OutCenter = Vec2(worldPos.x, worldPos.y);
+        _OutRadius = max(fabsf(m_LocalStart.x), fabsf(m_LocalEnd.x));
+        _OutRadius = max(_OutRadius, max(fabsf(m_LocalStart.y), fabsf(m_LocalEnd.y)));
+        _OutBoxMin = _OutCenter - Vec2(_OutRadius, _OutRadius);
+        _OutBoxMax = _OutCenter + Vec2(_OutRadius, _OutRadius);
+        return;
+    }
+
     Vec2 startWorld = {};
     Vec2 endWorld = {};
     GetWorldEndpoints(startWorld, endWorld);
@@ -457,6 +668,8 @@ Vec4 CSurfaceScript::GetEditorColor() const
         return Vec4(0.2f, 1.f, 0.45f, 1.f);
     case SURFACE_ROLE::WALL:
         return Vec4(1.f, 0.45f, 0.2f, 1.f);
+    case SURFACE_ROLE::VERTICAL_ENTRY:
+        return Vec4(1.f, 0.9f, 0.2f, 1.f);
     default:
         return Vec4(1.f, 1.f, 1.f, 1.f);
     }
@@ -502,7 +715,12 @@ void CSurfaceScript::LoadFromLevelFile(FILE* _File)
 
 void CSurfaceScript::UpdateBounds()
 {
-    if (nullptr == Transform() || nullptr == Collider2D())
+    GameObject* pOwner = GetOwner();
+    if (pOwner == nullptr)
+        return;
+
+    CTransform* pTransform = pOwner->Transform().Get();
+    if (pTransform == nullptr)
         return;
 
     float minX = min(m_LocalStart.x, m_LocalEnd.x);
@@ -510,7 +728,16 @@ void CSurfaceScript::UpdateBounds()
     float minY = min(m_LocalStart.y, m_LocalEnd.y);
     float maxY = max(m_LocalStart.y, m_LocalEnd.y);
 
-    if (m_Geometry == SURFACE_GEOMETRY::ARC || m_Geometry == SURFACE_GEOMETRY::CIRCLE)
+    if (m_Geometry == SURFACE_GEOMETRY::FULL_CIRCLE)
+    {
+        float radius = max(fabsf(m_LocalStart.x), fabsf(m_LocalEnd.x));
+        radius = max(radius, max(fabsf(m_LocalStart.y), fabsf(m_LocalEnd.y)));
+        minX = -radius;
+        maxX = radius;
+        minY = -radius;
+        maxY = radius;
+    }
+    else if (m_Geometry == SURFACE_GEOMETRY::ARC || m_Geometry == SURFACE_GEOMETRY::CIRCLE)
     {
         float left = min(m_LocalStart.x, m_LocalEnd.x);
         float right = max(m_LocalStart.x, m_LocalEnd.x);
@@ -550,43 +777,54 @@ void CSurfaceScript::UpdateBounds()
         }
     }
 
-    float width = maxX - minX;
-    float height = maxY - minY;
-    Vec2 colliderCenter = Vec2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
+    if (Collider2D() != nullptr)
+    {
+        float width = maxX - minX;
+        float height = maxY - minY;
+        Vec2 colliderCenter = Vec2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
 
-    // A line can be perfectly horizontal/vertical, so one axis may collapse to
-    // zero. Keep only a tiny thickness on the collapsed axis so the collider
-    // still exists without introducing the large broadphase margin that caused
-    // inaccurate overlaps around adjacent surfaces.
-    width = max(kColliderMinThickness, width);
-    height = max(kColliderMinThickness, height);
+        // A line can be perfectly horizontal/vertical, so one axis may collapse to
+        // zero. Keep only a tiny thickness on the collapsed axis so the collider
+        // still exists without introducing the large broadphase margin that caused
+        // inaccurate overlaps around adjacent surfaces.
+        width = max(kColliderMinThickness, width);
+        height = max(kColliderMinThickness, height);
 
-    // Collider2D offset is expressed in normalized local space before the
-    // owner's transform scale is applied. Arc/circle objects live at the
-    // curve center, while their broadphase AABB lives on the quarter box
-    // center, so we must move the broadphase box away from (0,0) to match the
-    // actual curve region. Leaving this at zero places the trigger box at the
-    // wrong location and can prevent overlap callbacks from firing at all.
-    Vec2 normalizedOffset = Vec2(0.f, 0.f);
-    if (width > 0.0001f)
-        normalizedOffset.x = colliderCenter.x / width;
-    if (height > 0.0001f)
-        normalizedOffset.y = colliderCenter.y / height;
+        // Collider2D offset is expressed in normalized local space before the
+        // owner's transform scale is applied. Arc/circle objects live at the
+        // curve center, while their broadphase AABB lives on the quarter box
+        // center, so we must move the broadphase box away from (0,0) to match the
+        // actual curve region. Leaving this at zero places the trigger box at the
+        // wrong location and can prevent overlap callbacks from firing at all.
+        Vec2 normalizedOffset = Vec2(0.f, 0.f);
+        if (width > 0.0001f)
+            normalizedOffset.x = colliderCenter.x / width;
+        if (height > 0.0001f)
+            normalizedOffset.y = colliderCenter.y / height;
 
-    Transform()->SetIndependentScale(true);
-    Transform()->SetRelativeScale(Vec3(width, height, 1.f));
-    Collider2D()->SetOffset(normalizedOffset);
-    Collider2D()->SetScale(Vec2(1.f, 1.f));
+        pTransform->SetIndependentScale(true);
+        pTransform->SetRelativeScale(Vec3(width, height, 1.f));
+        Collider2D()->SetOffset(normalizedOffset);
+        Collider2D()->SetScale(Vec2(1.f, 1.f));
+    }
 }
 
 void CSurfaceScript::GetWorldBounds(Vec2& _OutMin, Vec2& _OutMax)
 {
+    GameObject* pOwner = GetOwner();
+    if (pOwner == nullptr || pOwner->Transform() == nullptr)
+    {
+        _OutMin = Vec2(0.f, 0.f);
+        _OutMax = Vec2(0.f, 0.f);
+        return;
+    }
+
     float minX = min(m_LocalStart.x, m_LocalEnd.x);
     float maxX = max(m_LocalStart.x, m_LocalEnd.x);
     float minY = min(m_LocalStart.y, m_LocalEnd.y);
     float maxY = max(m_LocalStart.y, m_LocalEnd.y);
 
-    if (m_Geometry == SURFACE_GEOMETRY::ARC || m_Geometry == SURFACE_GEOMETRY::CIRCLE)
+    if (m_Geometry == SURFACE_GEOMETRY::ARC || IsCircleGeometry(m_Geometry))
     {
         Vec2 center = {};
         float radius = 0.f;
@@ -594,7 +832,7 @@ void CSurfaceScript::GetWorldBounds(Vec2& _OutMin, Vec2& _OutMax)
     }
     else
     {
-        Vec3 worldPos = Transform()->GetWorldPos();
+        Vec3 worldPos = pOwner->Transform()->GetWorldPos();
 
         float width = maxX - minX;
         float height = maxY - minY;
@@ -619,6 +857,142 @@ void CSurfaceScript::GetWorldBounds(Vec2& _OutMin, Vec2& _OutMax)
         _OutMin = Vec2(worldPos.x + minX, worldPos.y + minY);
         _OutMax = Vec2(worldPos.x + maxX, worldPos.y + maxY);
     }
+}
+
+bool CSurfaceScript::IntersectsWorldBounds(const Vec2& _Min, const Vec2& _Max, float _Margin)
+{
+    Vec2 worldMin = {};
+    Vec2 worldMax = {};
+    GetWorldBounds(worldMin, worldMax);
+
+    return !(worldMax.x < _Min.x - _Margin ||
+             worldMin.x > _Max.x + _Margin ||
+             worldMax.y < _Min.y - _Margin ||
+             worldMin.y > _Max.y + _Margin);
+}
+
+void CSurfaceScript::ResetSpatialIndex()
+{
+    g_SurfaceSpatialBuckets.clear();
+}
+
+void CSurfaceScript::QueryNearbySurfaceObjects(const Vec2& _Min, const Vec2& _Max,
+                                               std::vector<GameObject*>& _OutObjects,
+                                               float _Margin, bool _IncludeWalls)
+{
+    _OutObjects.clear();
+
+    const int minCellX = WorldToSurfaceCell(_Min.x - _Margin);
+    const int maxCellX = WorldToSurfaceCell(_Max.x + _Margin);
+    const int minCellY = WorldToSurfaceCell(_Min.y - _Margin);
+    const int maxCellY = WorldToSurfaceCell(_Max.y + _Margin);
+
+    std::unordered_set<CSurfaceScript*> uniqueSurfaces;
+
+    for (int cellY = minCellY; cellY <= maxCellY; ++cellY)
+    {
+        for (int cellX = minCellX; cellX <= maxCellX; ++cellX)
+        {
+            const auto iter = g_SurfaceSpatialBuckets.find(MakeSurfaceSpatialKey(cellX, cellY));
+            if (iter == g_SurfaceSpatialBuckets.end())
+                continue;
+
+            for (CSurfaceScript* pSurface : iter->second)
+            {
+                if (pSurface == nullptr)
+                    continue;
+
+                if (g_LiveSurfaceScripts.find(pSurface) == g_LiveSurfaceScripts.end())
+                    continue;
+
+                GameObject* pOwner = pSurface->GetOwner();
+                if (pOwner == nullptr || pOwner->IsDead())
+                    continue;
+
+                if (!_IncludeWalls && pSurface->GetRole() == SURFACE_ROLE::WALL)
+                    continue;
+
+                if (!pSurface->IntersectsWorldBounds(_Min, _Max, _Margin))
+                    continue;
+
+                if (uniqueSurfaces.insert(pSurface).second)
+                    _OutObjects.push_back(pOwner);
+            }
+        }
+    }
+}
+
+void CSurfaceScript::RefreshSpatialRegistration()
+{
+    GameObject* pOwner = GetOwner();
+    if (pOwner == nullptr || pOwner->IsDead())
+    {
+        UnregisterSpatialRegistration();
+        return;
+    }
+
+    CTransform* pTransform = pOwner->Transform().Get();
+    if (pTransform == nullptr)
+    {
+        UnregisterSpatialRegistration();
+        return;
+    }
+
+    Vec2 worldMin = {};
+    Vec2 worldMax = {};
+    GetWorldBounds(worldMin, worldMax);
+
+    const int minCellX = WorldToSurfaceCell(worldMin.x);
+    const int maxCellX = WorldToSurfaceCell(worldMax.x);
+    const int minCellY = WorldToSurfaceCell(worldMin.y);
+    const int maxCellY = WorldToSurfaceCell(worldMax.y);
+
+    std::vector<long long> newKeys;
+    newKeys.reserve(static_cast<size_t>(maxCellX - minCellX + 1) * static_cast<size_t>(maxCellY - minCellY + 1));
+    for (int cellY = minCellY; cellY <= maxCellY; ++cellY)
+    {
+        for (int cellX = minCellX; cellX <= maxCellX; ++cellX)
+            newKeys.push_back(MakeSurfaceSpatialKey(cellX, cellY));
+    }
+
+    const Vec3 worldPos = pTransform->GetWorldPos();
+    if (m_bSpatialRegistered &&
+        m_SpatialCellKeys == newKeys &&
+        fabsf(worldPos.x - m_LastSpatialWorldPos.x) <= 0.001f &&
+        fabsf(worldPos.y - m_LastSpatialWorldPos.y) <= 0.001f)
+    {
+        return;
+    }
+
+    UnregisterSpatialRegistration();
+
+    for (long long key : newKeys)
+        g_SurfaceSpatialBuckets[key].push_back(this);
+
+    m_SpatialCellKeys = std::move(newKeys);
+    m_LastSpatialWorldPos = Vec2(worldPos.x, worldPos.y);
+    m_bSpatialRegistered = true;
+}
+
+void CSurfaceScript::UnregisterSpatialRegistration()
+{
+    if (!m_bSpatialRegistered)
+        return;
+
+    for (long long key : m_SpatialCellKeys)
+    {
+        auto iter = g_SurfaceSpatialBuckets.find(key);
+        if (iter == g_SurfaceSpatialBuckets.end())
+            continue;
+
+        auto& bucket = iter->second;
+        bucket.erase(std::remove(bucket.begin(), bucket.end(), this), bucket.end());
+        if (bucket.empty())
+            g_SurfaceSpatialBuckets.erase(iter);
+    }
+
+    m_SpatialCellKeys.clear();
+    m_bSpatialRegistered = false;
 }
 
 bool CSurfaceScript::EvaluateWallProbe(CCollider2D* _OtherCollider, Vec2& _OutNormal, float& _OutSignedDistance)
@@ -715,7 +1089,7 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
 
     // [핵심 1] 선분 위에 있는지 투영(Projection) 검사. 여유값은 float 오차를 막을 아주 작은 값만 줍니다.
     float projection = Dot(_FootPos - worldA, tangent);
-    const float strictMargin = 0.5f; // 0.5 픽셀 정도의 극소량 마진 (이전 각도 끈적임 해결)
+    const float strictMargin = kSurfaceLineSeamPixelMargin;
     if (projection < -strictMargin || projection > length + strictMargin)
         return false;
 
@@ -736,8 +1110,18 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
         supportSignedDistance = max(supportSignedDistance, footSignedDistance - kGroundDepthClamp);
     }
 
-    const float supportProjectionN = Dot(supportPoint - worldA, tangent) / length;
-    if (supportProjectionN < -kLineSupportProjectionMargin || supportProjectionN > 1.f + kLineSupportProjectionMargin)
+    // A line should never become the active ground when the player is already
+    // deeply buried below it. This was most visible right after descending out
+    // of a circle, where the line contact could stay latched with a huge
+    // negative depth until a jump reset the state.
+    if (supportSignedDistance < -kSurfaceAirAttachMaxPenetration)
+        return false;
+
+    const float supportProjection = Dot(supportPoint - worldA, tangent);
+    float supportProjectionMargin = kLineSupportProjectionMarginMin + fabsf(Dot(supportPoint - _FootPos, tangent));
+    if (supportProjectionMargin > kLineSupportProjectionMarginMax)
+        supportProjectionMargin = kLineSupportProjectionMarginMax;
+    if (supportProjection < -supportProjectionMargin || supportProjection > length + supportProjectionMargin)
         return false;
 
     if (supportSignedDistance < -kSurfaceContactPositiveEpsilon && Dot(supportPoint - worldA, outward) > kLineSupportDepthTolerance)

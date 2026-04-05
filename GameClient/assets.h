@@ -9,3 +9,4 @@
 #include "AFlipbook.h"
 #include "ATileMap.h"
 #include "APrefab.h"
+#include "ASurfaceSet.h"

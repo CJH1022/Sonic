@@ -31,15 +31,16 @@ void CBackScript::Tick()
 void CBackScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
 
-	if (_OwnCollider == nullptr || _OtherCollider == nullptr)
+	if (_OwnCollider == nullptr || _OtherCollider == nullptr || GetOwner() == nullptr || GetOwner()->Transform() == nullptr)
 		return;
 
+	GameObject* pOwnOwner = _OwnCollider->GetOwner();
 	GameObject* pOtherOwner = _OtherCollider->GetOwner();
-	if (pOtherOwner == nullptr)
+	if (pOwnOwner == nullptr || pOtherOwner == nullptr)
 		return;
 
 	Ptr<CPlayerScript> pScript = pOtherOwner->GetScript<CPlayerScript>();
-	if (pScript == nullptr)
+	if (pScript == nullptr || pScript->Transform() == nullptr)
 		return;
 
 	if (pScript->GetAction() == ActionState::KnockBack)
@@ -64,7 +65,7 @@ void CBackScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCol
 			pBossObject = (pBossScript == nullptr && pParent != nullptr) ? pParent.Get() : nullptr;
 		}
 
-		if (pBossScript == nullptr)
+		if (pBossScript == nullptr || pBossScript->GetOwner() == nullptr || pBossScript->GetOwner()->IsDead())
 			return;
 
 		const Vec3 myPos = GetOwner()->Transform()->GetWorldPos();
@@ -87,3 +88,4 @@ void CBackScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCol
 		pScript->SetBackState();
 	}
 }
+

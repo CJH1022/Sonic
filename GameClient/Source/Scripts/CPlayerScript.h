@@ -6,6 +6,7 @@
 #include <vector>
 
 class CCollider2D;
+class CSurfaceCircleGuideScript;
 
 class CPlayerScript
     : public CScript
@@ -29,6 +30,18 @@ private:
         Vec2 SeamStart = Vec2(0.f, 0.f);
         Vec2 SeamEnd = Vec2(0.f, 0.f);
         Vec2 ContactPoint = Vec2(0.f, 0.f);
+    };
+
+    struct SurfaceAttachBlock
+    {
+        GameObject* Surface = nullptr;
+        float Time = 0.f;
+    };
+
+    struct WallPushContact
+    {
+        GameObject* Surface = nullptr;
+        int Dir = 0;
     };
 
     struct PlayerInput
@@ -62,6 +75,11 @@ private:
     Vec3 vDir = Vec3(0.f, 0.f, 0.f);
     Vec2 vNormal = Vec2(0.f, 1.f);
     Vec2 vTangent = Vec2(0.f, 0.f);
+    float m_MaxMoveSpeed = 1000.f;
+    float m_JumpForce = 600.f;
+    float m_SkillDashSpeed = 600.f;
+    float m_PushSpeed = 30.f;
+    float m_AirAccelScale = 0.5f;
 
     bool IsJump = false;
     bool m_bNeedGravity = false;
@@ -85,21 +103,25 @@ private:
     int m_TurnTargetFacing = -1;
 
     bool IsGround = false;
-    int m_TileOverlapCount = 0;
+    int m_PhysicalGroundOverlapCount = 0;
+    int m_AttachableSurfaceOverlapCount = 0;
+    bool m_bHasNearbyAttachableSurface = false;
     bool m_bPushContact = false;
     int m_PushContactDir = 0;
     bool m_bPushing = false;
     int m_PushingDir = 0;
+    vector<WallPushContact> m_vecWallPushContacts;
     float m_fBreakSpeed = 0.f;
     int m_iBreakDirection = 1;
     bool m_bBreakWallLocked = false;
     float m_LastTickPosX = 0.f;
     float m_LastFrameDeltaX = 0.f;
-    GameObject* m_pAttachBlockedSurface = nullptr;
-    float m_AttachBlockedTime = 0.f;
+    vector<SurfaceAttachBlock> m_vecAttachBlockedSurfaces;
+    float m_ForcedFlatGroundLockTime = 0.f;
     float m_SurfaceGroundHoldTime = 0.f;
     float m_SurfaceResolveFrame = -1.f;
     float m_SurfaceResolveScore = 999999.f;
+    float m_LastSceneSurfaceProbeFrame = -1.f;
     GameObject* m_pResolvedSurface = nullptr;
     bool m_bInwardCircleLoopTracked = false;
     bool m_bInwardCirclePassedLowerHalf = false;
@@ -114,6 +136,22 @@ private:
     Vec2 m_InwardCircleHalfCheckerCenter = Vec2(0.f, 0.f);
     float m_InwardCircleHalfCheckerRadius = 0.f;
     bool m_bInwardCircleLineOwnsTopRight = false;
+    bool m_bGuidedInwardCircleEntryTracked = false;
+    Vec2 m_GuidedInwardCircleEntryCenter = Vec2(0.f, 0.f);
+    float m_GuidedInwardCircleEntryRadius = 0.f;
+    bool m_bGuidedInwardCircleEntryFromRight = false;
+    bool m_bGuidedInwardCircleLineOwnsRight = false;
+    bool m_bGuidedInwardCirclePassedHalf = false;
+    bool m_bGuidedInwardCircleHalfZoneTracked = false;
+    int m_GuidedInwardCircleHalfZoneSign = 0;
+    bool m_bGuidedInwardCircleHalfDeltaTracked = false;
+    float m_GuidedInwardCircleLastHalfDelta = 0.f;
+    bool m_bHasRecentReleasedInwardCircleContact = false;
+    SurfaceContact m_RecentReleasedInwardCircleContact = {};
+    float m_RecentReleasedInwardCircleTime = 0.f;
+    float m_RecentGuidedCorrectionLineTime = 0.f;
+    wstring m_RecentGuidedCorrectionLineName;
+    float m_SurfaceRotationSnapTime = 0.f;
 
     bool m_bHasPendingSurfaceContact = false;
     SurfaceContact m_PendingSurfaceContact = {};
@@ -197,9 +235,16 @@ public:
     }
 
     int GetFacing() { return m_Facing; }
+    float GetMaxMoveSpeed() const { return m_MaxMoveSpeed; }
     float GetBreakSpeed() const { return m_fBreakSpeed; }
     ActionState GetAction() const { return m_Action; }
     bool GetIsGround() const { return IsGround; }
+    bool HasCurrentCircleSurfaceContact() const
+    {
+        return m_bHasCurrentSurfaceContact &&
+            m_CurrentSurfaceContact.Surface != nullptr &&
+            m_CurrentSurfaceContact.Circle;
+    }
     bool IsBreakOrRollAction() const { return m_Action == ActionState::Break || m_Action == ActionState::Roll || m_Action == ActionState::SkillDash; }
     bool IsKnockBackInvincible() const { return m_KnockBackInvincibleTime > 0.f; }
     float GetKnockBackInvincibleTime() const { return m_KnockBackInvincibleTime; }
@@ -207,16 +252,15 @@ public:
     void SetIsGround(bool _IsGround) { IsGround = _IsGround; }
     void SetIsJump(bool _IsJump) { IsJump = _IsJump; }
     bool GetIsJump() const { return IsJump; }
+    bool HasPhysicalGroundOverlap() const { return m_PhysicalGroundOverlapCount > 0; }
+    bool HasAttachableSurfaceOverlap() const { return m_AttachableSurfaceOverlapCount > 0 || m_bHasNearbyAttachableSurface; }
+    bool HasAnyGroundOverlap() const { return HasPhysicalGroundOverlap() || HasAttachableSurfaceOverlap(); }
+    bool HasPushContactDir(int _Dir) const;
+    void RegisterWallPushContact(GameObject* _Surface, int _Dir);
+    void UnregisterWallPushContact(GameObject* _Surface);
     void ForceFlatGroundContact(float _HoldTime = 0.12f);
-    void BlockSurfaceAttach(GameObject* _Surface, float _Time)
-    {
-        m_pAttachBlockedSurface = _Surface;
-        m_AttachBlockedTime = _Time;
-    }
-    bool IsSurfaceAttachBlocked(GameObject* _Surface) const
-    {
-        return (m_pAttachBlockedSurface == _Surface && m_AttachBlockedTime > 0.f);
-    }
+    void BlockSurfaceAttach(GameObject* _Surface, float _Time);
+    bool IsSurfaceAttachBlocked(GameObject* _Surface) const;
     void RefreshSurfaceGroundHold(float _Time = 0.08f)
     {
         if (_Time > m_SurfaceGroundHoldTime)
@@ -231,15 +275,51 @@ public:
         m_InwardCircleLoopAccumulatedAngle = 0.f;
         m_InwardCircleLoopLastAngle = 0.f;
     }
+    void ResetGuidedInwardCircleState()
+    {
+        m_bGuidedInwardCircleEntryTracked = false;
+        m_GuidedInwardCircleEntryCenter = Vec2(0.f, 0.f);
+        m_GuidedInwardCircleEntryRadius = 0.f;
+        m_bGuidedInwardCircleEntryFromRight = false;
+        m_bGuidedInwardCircleLineOwnsRight = false;
+        m_bGuidedInwardCirclePassedHalf = false;
+        m_bGuidedInwardCircleHalfZoneTracked = false;
+        m_GuidedInwardCircleHalfZoneSign = 0;
+        m_bGuidedInwardCircleHalfDeltaTracked = false;
+        m_GuidedInwardCircleLastHalfDelta = 0.f;
+    }
     void ResetInwardCircleHalfCheckerState()
     {
         m_bInwardCircleHalfCheckerTracked = false;
         m_InwardCircleHalfCheckerCenter = Vec2(0.f, 0.f);
         m_InwardCircleHalfCheckerRadius = 0.f;
         m_bInwardCircleLineOwnsTopRight = false;
+        ResetGuidedInwardCircleState();
     }
     bool IsSameInwardCircleLoop(const Vec2& _Center, float _Radius) const;
     bool IsSameInwardCircleHalfChecker(const Vec2& _Center, float _Radius) const;
+    bool IsSameGuidedInwardCircleEntryState(const Vec2& _Center, float _Radius) const;
+    bool IsAttachableLineSurfaceObject(GameObject* _SurfaceObject) const;
+    const SurfaceContact* GetReferenceAttachableLineContact() const;
+    GameObject* GetReferenceAttachableLineSurface() const;
+    bool AreLineSurfaceEndpointsConnected(GameObject* _SurfaceA, GameObject* _SurfaceB) const;
+    bool TryGetTransitionLineSeamEndpoint(const SurfaceContact& _Contact, bool _UseExitEndpoint, Vec2& _OutEndpoint) const;
+    float GetTransitionLineEndpointGap(const SurfaceContact& _ReferenceContact, const SurfaceContact& _CandidateContact) const;
+    bool AreTransitionLineContactsSeamCompatible(const SurfaceContact& _ReferenceContact, const SurfaceContact& _CandidateContact) const;
+    bool IsConnectedTransitionLineContact(const SurfaceContact& _Contact) const;
+    bool IsRelaxedDownwardTransitionLineContact(const SurfaceContact& _Contact) const;
+    bool InferGuidedInwardCircleEntryFromRight(const Vec2& _Center);
+    bool TryGetInwardCircleSurfaceData(const SurfaceContact& _Contact, Vec2& _OutCenter, float& _OutRadius) const;
+    bool TryGetInwardCircleGuideData(const SurfaceContact& _Contact, Vec2& _OutCenter, float& _OutRadius, const CSurfaceCircleGuideScript*& _OutGuide) const;
+    bool TryGetGuidedInwardCircleABPoints(const Vec2& _Center, float _Radius, const CSurfaceCircleGuideScript* _Guide,
+                                          Vec2& _OutLeftPoint, Vec2& _OutRightPoint) const;
+    bool TryGetGuidedInwardCircleRuntimeState(const Vec2& _Center, float _Radius, const CSurfaceCircleGuideScript* _Guide,
+                                              Vec2& _OutLeftPoint, Vec2& _OutRightPoint,
+                                              bool& _OutEntryFromRight, bool& _OutPassedHalf,
+                                              bool& _OutLineOwnsRight);
+    bool TryGetGuidedInwardCirclePassState(const Vec2& _Center, float _Radius, const CSurfaceCircleGuideScript* _Guide,
+                                           Vec2& _OutLeftPoint, Vec2& _OutRightPoint,
+                                           bool& _OutPassedHalf, bool& _OutOpenRight);
     void NoteInwardCircleLoopProgress(const Vec2& _Center, float _Radius, const Vec2& _ContactPoint);
     void UpdateInwardCircleHalfChecker(const Vec2& _Center, float _Radius, const Vec2& _ContactPoint);
     void PrimeInwardCircleHalfCheckerFromLineContext(const SurfaceContact& _Contact);
@@ -248,13 +328,31 @@ public:
     void BlockInwardCircleAttach(const Vec2& _Center, float _Radius, float _Time);
     bool IsInwardCircleAttachBlocked(const Vec2& _Center, float _Radius) const;
     bool HasInwardCircleLineContext() const;
-    bool TryEvaluateGuidedTopHalfInwardCircleContact(const SurfaceContact& _Contact, bool& _OutOnActiveArc, bool& _OutBeforeHalf, bool& _OutBeforeHalfUsesTopRight) const;
+    bool ShouldIgnoreGuidedCircleWallContact(GameObject* _Surface, const Vec2& _ContactPoint);
+    bool IsGuidedInwardCircleActiveArcPoint(const Vec2& _Center, float _Radius, const CSurfaceCircleGuideScript* _Guide,
+                                            const Vec2& _Point);
+    bool ShouldIgnoreGuidedInwardCirclePoint(const Vec2& _Center, float _Radius, const CSurfaceCircleGuideScript* _Guide,
+                                             const Vec2& _Point);
+    bool TryResolveGuidedInwardCircleEntryExit(const Vec2& _Center, float _Radius, const CSurfaceCircleGuideScript* _Guide,
+                                               Vec2& _OutEntryPoint, Vec2& _OutExitPoint,
+                                               float& _OutEntryAngle, float& _OutExitAngle,
+                                               bool _CommitEntryState = false);
+    bool TryGetGuidedInwardCircleHalfDelta(const SurfaceContact& _Contact, bool& _OutOnActiveArc,
+                                           float& _OutHalfDelta, bool& _OutEntryOnRight);
+    void UpdateGuidedInwardCircleHalfPhase(const SurfaceContact& _Contact, bool _ContinuingCurrentInwardCircle);
+    bool ShouldIgnoreGuidedInwardCircleContact(const SurfaceContact& _Contact);
+    bool ShouldReleaseGuidedInwardCircle(const SurfaceContact& _Contact, const Vec2& _Center, float _Radius);
+    bool TryEvaluateGuidedTopHalfInwardCircleContact(const SurfaceContact& _Contact, bool& _OutOnActiveArc, bool& _OutBeforeHalf, bool& _OutBeforeHalfUsesTopRight);
     bool IsGuideLinkedCorrectionLine(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact) const;
+    bool IsGuidedCorrectionLineContact(const SurfaceContact& _Contact) const;
+    bool IsRecentGuidedCorrectionLineSurface(GameObject* _Surface) const;
+    void CacheRecentGuidedCorrectionLineFromSurface(GameObject* _Surface, float _Time);
     bool IsTopHalfInwardCircleContact(const SurfaceContact& _Contact);
     bool IsChordLineForInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact) const;
     bool ShouldIgnoreTopHalfInwardCircleContact(const SurfaceContact& _Contact);
     bool ShouldPreferLineOverTopHalfInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact);
     bool ShouldPreferTopHalfInwardCircleOverLine(const SurfaceContact& _CircleContact, const SurfaceContact& _LineContact);
+    void DrawGuidedInwardCircleDebug();
     void SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Normal, float _SignedDistance,
                               bool _TransitionSurface, bool _Attachable, bool _WallLike, bool _Circle, bool _InwardCircle, float _Score,
                               float _SeamBlendT = 0.f, bool _SeamBlendHasValue = false,
@@ -351,6 +449,7 @@ public:
 
     CLONE(CPlayerScript);
     CPlayerScript();
+    CPlayerScript(const CPlayerScript& _Origin);
     virtual ~CPlayerScript();
 
 private:
@@ -385,6 +484,8 @@ private:
     void ResetGroundContact();
     void RegisterActiveSurface(GameObject* _SurfaceObject);
     void UnregisterActiveSurface(GameObject* _SurfaceObject);
+    void RefreshNearbyAttachableSurfaces();
+    bool IsActiveSurfaceObject(GameObject* _SurfaceObject) const;
     float ComputeSurfaceCandidateScore(const SurfaceContact& _Contact, GameObject* _CurrentBestSurface) const;
     bool TrySelectSurfaceContact(SurfaceContact _Contact, SurfaceContact& _BestContact,
                                  float& _BestScore, GameObject*& _BestSurface, bool& _HasBest);

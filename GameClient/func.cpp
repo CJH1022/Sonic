@@ -4,6 +4,7 @@
 #include "TaskMgr.h"
 #include "LevelMgr.h"
 #include "Source/Scripts/COpeningScript.h"
+#include "Source/Scripts/CSurfaceCircleGuideScript.h"
 
 void CreateObject(GameObject* _Object, int LayerIdx)
 {
@@ -840,19 +841,33 @@ void CreateSurfaceAutoplayLevel()
     const bool surfaceSlowFallScenario = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_slow_fall"));
     const bool surfaceLineUnderScenario = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_line_under"));
     const bool surfaceChordScenario = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_chord"));
+    const bool surfaceLoopScenario = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_loop"));
     const bool surfaceLeftScenario =
         (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_left")) ||
-        (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_chord_left"));
+        (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_chord_left")) ||
+        (nullptr != wcsstr(GetCommandLineW(), L"-autoplay_surface_loop_left"));
+    constexpr float kAutoplayCircleCenterX = 140.f;
+    constexpr float kAutoplayCircleCenterY = 0.f;
+    constexpr float kAutoplayCircleRadius = 140.f;
+    constexpr float kAutoplayPlayerCircleRideRadius = 100.f;
     const Vec3 rightSecantStartPos = Vec3(-80.f, -50.f, 1.f);
     const Vec3 leftSecantStartPos = Vec3(360.f, -50.f, 1.f);
+    const Vec3 rightLoopStartPos = Vec3(kAutoplayCircleCenterX + kAutoplayPlayerCircleRideRadius, kAutoplayCircleCenterY, 1.f);
+    const Vec3 leftLoopStartPos = Vec3(kAutoplayCircleCenterX - kAutoplayPlayerCircleRideRadius, kAutoplayCircleCenterY, 1.f);
     const Vec2 rightSecantStartVel = Vec2(260.f, 0.f);
     const Vec2 leftSecantStartVel = Vec2(-260.f, 0.f);
+    const Vec2 rightLoopStartVel = Vec2(0.f, 420.f);
+    const Vec2 leftLoopStartVel = Vec2(0.f, 420.f);
     if (surfaceTopJumpScenario)
         pPlayer->Transform()->SetRelativePos(Vec3(128.f, -95.f, 1.f));
     else if (surfaceSlowFallScenario)
         pPlayer->Transform()->SetRelativePos(Vec3(128.f, -95.f, 1.f));
     else if (surfaceLineUnderScenario)
         pPlayer->Transform()->SetRelativePos(Vec3(-40.f, 60.f, 1.f));
+    else if (surfaceLoopScenario && surfaceLeftScenario)
+        pPlayer->Transform()->SetRelativePos(leftLoopStartPos);
+    else if (surfaceLoopScenario)
+        pPlayer->Transform()->SetRelativePos(rightLoopStartPos);
     else if (surfaceJumpScenario)
         pPlayer->Transform()->SetRelativePos(rightSecantStartPos);
     else if (surfaceChordScenario && surfaceLeftScenario)
@@ -870,6 +885,10 @@ void CreateSurfaceAutoplayLevel()
         pPlayerScript->SetVelocity(Vec2(55.f, -8.f));
     else if (surfaceLineUnderScenario)
         pPlayerScript->SetVelocity(Vec2(0.f, -240.f));
+    else if (surfaceLoopScenario && surfaceLeftScenario)
+        pPlayerScript->SetVelocity(leftLoopStartVel);
+    else if (surfaceLoopScenario)
+        pPlayerScript->SetVelocity(rightLoopStartVel);
     else if (surfaceJumpScenario)
         pPlayerScript->SetVelocity(rightSecantStartVel);
     else if (surfaceChordScenario && surfaceLeftScenario)
@@ -921,7 +940,7 @@ void CreateSurfaceAutoplayLevel()
     };
 
     auto SpawnCircleSurface = [&](const wchar_t* _Name, const Vec2& _Center, float _Radius,
-                                  CSurfaceScript::ARC_CORNER _Corner, bool _FillInside)
+                                  CSurfaceScript::ARC_CORNER _Corner, bool _FillInside) -> GameObject*
     {
         Ptr<GameObject> pSurface = new GameObject;
         pSurface->SetName(_Name);
@@ -958,11 +977,9 @@ void CreateSurfaceAutoplayLevel()
         pScript->ConfigureCircle(minBox - _Center, maxBox - _Center,
                                  CSurfaceScript::SURFACE_ROLE::SURFACE, _Corner, _FillInside, true);
         pSurfaceRoot->AddChild(pSurface);
+        return pSurface.Get();
     };
 
-    constexpr float kAutoplayCircleCenterX = 140.f;
-    constexpr float kAutoplayCircleCenterY = 0.f;
-    constexpr float kAutoplayCircleRadius = 140.f;
     constexpr float kAutoplayChordY = -80.f;
     const float chordOffsetY = fabsf(kAutoplayChordY - kAutoplayCircleCenterY);
     const float chordHalfSpan =
@@ -972,11 +989,40 @@ void CreateSurfaceAutoplayLevel()
 
     SpawnCircleSurface(L"SurfaceCircleBottomLeft", Vec2(kAutoplayCircleCenterX, kAutoplayCircleCenterY), kAutoplayCircleRadius, CSurfaceScript::ARC_CORNER::BOTTOM_LEFT, true);
     SpawnCircleSurface(L"SurfaceCircleBottomRight", Vec2(kAutoplayCircleCenterX, kAutoplayCircleCenterY), kAutoplayCircleRadius, CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT, true);
-    SpawnCircleSurface(L"SurfaceCircleTopRight", Vec2(kAutoplayCircleCenterX, kAutoplayCircleCenterY), kAutoplayCircleRadius, CSurfaceScript::ARC_CORNER::TOP_RIGHT, true);
-    SpawnCircleSurface(L"SurfaceCircleTopLeft", Vec2(kAutoplayCircleCenterX, kAutoplayCircleCenterY), kAutoplayCircleRadius, CSurfaceScript::ARC_CORNER::TOP_LEFT, true);
+    GameObject* pSurfaceCircleTopRight =
+        SpawnCircleSurface(L"SurfaceCircleTopRight", Vec2(kAutoplayCircleCenterX, kAutoplayCircleCenterY), kAutoplayCircleRadius, CSurfaceScript::ARC_CORNER::TOP_RIGHT, true);
+    GameObject* pSurfaceCircleTopLeft =
+        SpawnCircleSurface(L"SurfaceCircleTopLeft", Vec2(kAutoplayCircleCenterX, kAutoplayCircleCenterY), kAutoplayCircleRadius, CSurfaceScript::ARC_CORNER::TOP_LEFT, true);
     SpawnLineSurface(L"SurfaceLineApproach", Vec2(-120.f, kAutoplayChordY), Vec2(chordStartX, kAutoplayChordY));
     SpawnLineSurface(L"SurfaceLineChord", Vec2(chordStartX, kAutoplayChordY), Vec2(chordEndX, kAutoplayChordY));
     SpawnLineSurface(L"SurfaceLineExit", Vec2(chordEndX, kAutoplayChordY), Vec2(400.f, kAutoplayChordY));
+
+    const auto AttachChordGuide = [&](GameObject* _SurfaceObject)
+    {
+        if (_SurfaceObject == nullptr)
+            return;
+
+        auto pGuide = _SurfaceObject->GetScript<CSurfaceCircleGuideScript>();
+        if (pGuide == nullptr)
+        {
+            CSurfaceCircleGuideScript* pNewGuide = new CSurfaceCircleGuideScript;
+            _SurfaceObject->AddComponent(pNewGuide);
+            pGuide = _SurfaceObject->GetScript<CSurfaceCircleGuideScript>();
+        }
+
+        if (pGuide == nullptr)
+            return;
+
+        pGuide->SetEnabled(true);
+        pGuide->ResetToDefaultGuide(kAutoplayCircleRadius);
+        pGuide->SetCorrectionLineStartLocal(Vec2(chordStartX - kAutoplayCircleCenterX, kAutoplayChordY - kAutoplayCircleCenterY));
+        pGuide->SetCorrectionLineEndLocal(Vec2(chordEndX - kAutoplayCircleCenterX, kAutoplayChordY - kAutoplayCircleCenterY));
+        pGuide->SetLinkedCorrectionLineName(L"SurfaceLineChord");
+    };
+
+    AttachChordGuide(pSurfaceCircleTopRight);
+    AttachChordGuide(pSurfaceCircleTopLeft);
+
     if (!surfaceChordScenario)
     {
         SpawnLineSurface(L"SurfaceLineSlope", Vec2(-360.f, 20.f), Vec2(-120.f, 140.f));

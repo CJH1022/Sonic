@@ -13,6 +13,9 @@ public:
 public:
 	Ptr& operator =(T* _Ptr)
 	{
+		if (m_Ptr == _Ptr)
+			return *this;
+
 		if (nullptr != m_Ptr)
 			m_Ptr->Release();
 
@@ -26,6 +29,9 @@ public:
 
 	Ptr& operator =(const Ptr<T>& _Ptr)
 	{
+		if (m_Ptr == _Ptr.m_Ptr)
+			return *this;
+
 		if (nullptr != m_Ptr)
 			m_Ptr->Release();
 

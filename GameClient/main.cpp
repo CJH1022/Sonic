@@ -116,7 +116,8 @@ int APIENTRY wWinMain(_In_      HINSTANCE hInstance,
     }
     else
     {
-        CreateOpenLevel();
+        // CreateOpenLevel();
+         CreateTestLevel();
     }
 
     // 메세지 루프

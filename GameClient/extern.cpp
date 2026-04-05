@@ -17,7 +17,8 @@ const char* ASSET_TYPE_STR[(UINT)ASSET_TYPE::END] =
 	"SPRITE",
 	"FLIPBOOK",
 	"TILEMAP",
-	"PREFAB"
+	"PREFAB",
+	"SURFACESET"
 };
 
 const char* ToString(ASSET_TYPE _Type)

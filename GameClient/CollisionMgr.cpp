@@ -2,8 +2,53 @@
 #include "CollisionMgr.h"
 
 #include "AssetMgr.h"
+#include "Source/Scripts/CSurfaceScript.h"
 
-CollisionMgr::CollisionMgr()	
+namespace
+{
+	ULONGLONG MakeCollisionKey(UINT _LeftID, UINT _RightID)
+	{
+		COL_ID colid = {};
+		colid.LeftID = (_LeftID < _RightID) ? _LeftID : _RightID;
+		colid.RightID = (_LeftID < _RightID) ? _RightID : _LeftID;
+		return colid.ID;
+	}
+
+	bool IsPlayerLayer(Layer* _Layer)
+	{
+		return (_Layer != nullptr) && (_Layer->GetName() == wstring(L"Player"));
+	}
+
+	void CollectLayerCollidersForPair(Layer* _Layer, bool _PairedWithPlayerLayer, vector<Ptr<CCollider2D>>& _Out)
+	{
+		if (_Layer == nullptr)
+			return;
+
+		const vector<Ptr<GameObject>>& vecObjects = _Layer->GetAllObjects();
+		_Out.reserve(vecObjects.size());
+
+		for (size_t i = 0; i < vecObjects.size(); ++i)
+		{
+			if (vecObjects[i] == nullptr || vecObjects[i]->IsDead())
+				continue;
+
+			Ptr<CCollider2D> pCollider = vecObjects[i]->Collider2D();
+			if (pCollider == nullptr)
+				continue;
+
+			if (_PairedWithPlayerLayer)
+			{
+				auto pSurface = vecObjects[i]->GetScript<CSurfaceScript>();
+				if (pSurface != nullptr && pSurface->GetRole() != CSurfaceScript::SURFACE_ROLE::WALL)
+					continue;
+			}
+
+			_Out.push_back(pCollider);
+		}
+	}
+}
+
+CollisionMgr::CollisionMgr()
 {
 }
 
@@ -29,70 +74,66 @@ void CollisionMgr::Progress(Ptr<ALevel> _Level)
 
 void CollisionMgr::CollisionBtwLayer(Layer* _Left, Layer* _Right)
 {
-	const vector<Ptr<GameObject>>& vecLeft = _Left->GetAllObjects();
-	const vector<Ptr<GameObject>>& vecRight = _Right->GetAllObjects();
+	const bool bSameLayer = (_Left == _Right);
+	const bool leftPlayerLayer = IsPlayerLayer(_Left);
+	const bool rightPlayerLayer = IsPlayerLayer(_Right);
+
+	vector<Ptr<CCollider2D>> vecLeft;
+	vector<Ptr<CCollider2D>> vecRight;
+	CollectLayerCollidersForPair(_Left, rightPlayerLayer, vecLeft);
+	if (bSameLayer)
+		vecRight = vecLeft;
+	else
+		CollectLayerCollidersForPair(_Right, leftPlayerLayer, vecRight);
 
 	for (size_t i = 0; i < vecLeft.size(); ++i)
 	{
-		if (nullptr == vecLeft[i]->Collider2D())
+		if (vecLeft[i] == nullptr || vecLeft[i]->GetOwner() == nullptr)
 			continue;
 
-		for (size_t j = 0; j < vecRight.size(); ++j)
+		const size_t startIdx = bSameLayer ? (i + 1) : 0;
+		for (size_t j = startIdx; j < vecRight.size(); ++j)
 		{
-			if (nullptr == vecRight[j]->Collider2D())
+			if (vecRight[j] == nullptr || vecRight[j]->GetOwner() == nullptr)
 				continue;
 
-			// 두 충돌체의 고유 ID 로 조합을한 키값 생성
-			COL_ID colid;
-			colid.LeftID = vecLeft[i]->Collider2D()->GetID();
-			colid.RightID = vecRight[j]->Collider2D()->GetID();
+			const ULONGLONG collisionKey =
+				MakeCollisionKey(vecLeft[i]->GetID(), vecRight[j]->GetID());
 
-			map<ULONGLONG, bool>::iterator iter = m_mapColID.find(colid.ID);
-
+			map<ULONGLONG, bool>::iterator iter = m_mapColID.find(collisionKey);
 			if (iter == m_mapColID.end())
 			{
-				m_mapColID.insert(make_pair(colid.ID, false));
-				iter = m_mapColID.find(colid.ID);
+				m_mapColID.insert(make_pair(collisionKey, false));
+				iter = m_mapColID.find(collisionKey);
 			}
 
-			// 충돌 검사를 진행하는 두 오브젝트중에서 하나라도 Dead 상태가 존재하는지 체크
-			bool IsDead = vecLeft[i]->IsDead() || vecRight[j]->IsDead();
-						
-			// 지금 충돌중인지
-			if (IsCollision(vecLeft[i]->Collider2D(), vecRight[j]->Collider2D()))
-			{				
-				// 둘중 하나가 곧 삭제 예정
-				if (IsDead)
+			const bool isDead = vecLeft[i]->GetOwner()->IsDead() || vecRight[j]->GetOwner()->IsDead();
+			if (IsCollision(vecLeft[i], vecRight[j]))
+			{
+				if (isDead)
 				{
-					vecLeft[i]->Collider2D()->EndOverlap(vecRight[j]->Collider2D());
-					vecRight[j]->Collider2D()->EndOverlap(vecLeft[i]->Collider2D());
+					vecLeft[i]->EndOverlap(vecRight[j]);
+					vecRight[j]->EndOverlap(vecLeft[i]);
 				}
-
-				// 이전에도 충돌했었다
 				else if (iter->second)
 				{
-					vecLeft[i]->Collider2D()->Overlap(vecRight[j]->Collider2D());
-					vecRight[j]->Collider2D()->Overlap(vecLeft[i]->Collider2D());
+					vecLeft[i]->Overlap(vecRight[j]);
+					vecRight[j]->Overlap(vecLeft[i]);
 				}
-
-				// 이전에는 중돌하지 않았었다.
 				else
 				{
-					vecLeft[i]->Collider2D()->BeginOverlap(vecRight[j]->Collider2D());
-					vecRight[j]->Collider2D()->BeginOverlap(vecLeft[i]->Collider2D());
+					vecLeft[i]->BeginOverlap(vecRight[j]);
+					vecRight[j]->BeginOverlap(vecLeft[i]);
 				}
 
 				iter->second = true;
 			}
-
-			// 현재 충돌중이 아니다.
 			else
 			{
-				// 이전 프레임에는 충돌 중이었다.
 				if (iter->second)
 				{
-					vecLeft[i]->Collider2D()->EndOverlap(vecRight[j]->Collider2D());
-					vecRight[j]->Collider2D()->EndOverlap(vecLeft[i]->Collider2D());
+					vecLeft[i]->EndOverlap(vecRight[j]);
+					vecRight[j]->EndOverlap(vecLeft[i]);
 				}
 
 				iter->second = false;
@@ -103,6 +144,14 @@ void CollisionMgr::CollisionBtwLayer(Layer* _Left, Layer* _Right)
 
 bool CollisionMgr::IsCollision(Ptr<CCollider2D> _LeftCol, Ptr<CCollider2D> _RightCol)
 {
+	if (_LeftCol->m_WorldAABBMax.x < _RightCol->m_WorldAABBMin.x ||
+		_RightCol->m_WorldAABBMax.x < _LeftCol->m_WorldAABBMin.x ||
+		_LeftCol->m_WorldAABBMax.y < _RightCol->m_WorldAABBMin.y ||
+		_RightCol->m_WorldAABBMax.y < _LeftCol->m_WorldAABBMin.y)
+	{
+		return false;
+	}
+
 	Ptr<AMesh> pRectMesh = FIND(AMesh, L"RectMesh");
 
 	const Vtx* pVtx = pRectMesh->GetVtxSysMem();
@@ -110,24 +159,19 @@ bool CollisionMgr::IsCollision(Ptr<CCollider2D> _LeftCol, Ptr<CCollider2D> _Righ
 	const Matrix& matWorldLeft = _LeftCol->GetWorldMat();
 	const Matrix& matWorldRight = _RightCol->GetWorldMat();
 
-	// 월드 공간상에서 충돌을 검사하기 위해서, RectMesh 모델을 각 충돌체의 월드행렬을 곱해서 정점을 충돌체 꼭지점에 배치시킨다.
-	// 각 꼭지점끼리 빼서 두 충돌체의 표면 방향벡터를 각 충돌체로부터 2개씩 구한다.
 	Vec3 Axis[4] = {};
 	Axis[0] = XMVector3TransformCoord(pVtx[1].vPos, matWorldLeft) - XMVector3TransformCoord(pVtx[0].vPos, matWorldLeft);
 	Axis[1] = XMVector3TransformCoord(pVtx[3].vPos, matWorldLeft) - XMVector3TransformCoord(pVtx[0].vPos, matWorldLeft);
 	Axis[2] = XMVector3TransformCoord(pVtx[1].vPos, matWorldRight) - XMVector3TransformCoord(pVtx[0].vPos, matWorldRight);
 	Axis[3] = XMVector3TransformCoord(pVtx[3].vPos, matWorldRight) - XMVector3TransformCoord(pVtx[0].vPos, matWorldRight);
-		
+
 	Vec3 vCenter = XMVector3TransformCoord(Vec3(0.f, 0.f, 0.f), matWorldRight) - XMVector3TransformCoord(Vec3(0.f, 0.f, 0.f), matWorldLeft);
 
 	for (int i = 0; i < 4; ++i)
-	{	
-		// 4 개의 축 중에서, 하나를 투영 목적지로 정함
-		// 원본값을 훼손하면 나중에 투영할때 문제가 생기기 때문에, 정규화한 벡터를 따로 지역변수로 둠
+	{
 		Vec3 vProjAxis = Axis[i];
 		vProjAxis.Normalize();
 
-		// 투영축으로 4개의 벡터를 투영시켜서 얻은 면적의 절반 길이를 구함
 		float Dot = 0.f;
 		for (int j = 0; j < 4; ++j)
 		{
@@ -135,10 +179,7 @@ bool CollisionMgr::IsCollision(Ptr<CCollider2D> _LeftCol, Ptr<CCollider2D> _Righ
 		}
 		Dot /= 2.f;
 
-		// 두 충돌체의 중심끼리 이은 벡터도 투영시킴
 		float fCenter = fabs(vCenter.Dot(vProjAxis));
-
-		// 중심끼리 이은 벡터의 면적이 더크다면, 두 충돌체를 나눌 수 있는 분리축이 존재함
 		if (fCenter > Dot)
 			return false;
 	}

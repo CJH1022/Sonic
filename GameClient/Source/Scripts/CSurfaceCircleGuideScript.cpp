@@ -28,9 +28,9 @@ namespace
 CSurfaceCircleGuideScript::CSurfaceCircleGuideScript()
     : CScript(SCRIPT_TYPE::SURFACECIRCLEGUIDESCRIPT)
     , m_Enabled(false)
-    , m_EntryAngleDeg(-145.f)
-    , m_HalfCheckAngleDeg(-90.f)
-    , m_ExitAngleDeg(-35.f)
+    , m_EntryAngleDeg(-35.f)
+    , m_HalfCheckAngleDeg(90.f)
+    , m_ExitAngleDeg(-145.f)
     , m_CorrectionLineStartLocal(Vec2(-160.f, -110.f))
     , m_CorrectionLineEndLocal(Vec2(160.f, -110.f))
 {
@@ -91,11 +91,11 @@ void CSurfaceCircleGuideScript::ResetToDefaultGuide(float _Radius)
 {
     const float safeRadius = max(_Radius, 1.f);
 
-    m_EntryAngleDeg = -145.f;
-    m_HalfCheckAngleDeg = -90.f;
-    m_ExitAngleDeg = -35.f;
-    m_CorrectionLineStartLocal = MakePointFromAngleDegrees(m_EntryAngleDeg, safeRadius);
-    m_CorrectionLineEndLocal = MakePointFromAngleDegrees(m_ExitAngleDeg, safeRadius);
+    m_EntryAngleDeg = -35.f;
+    m_HalfCheckAngleDeg = 90.f;
+    m_ExitAngleDeg = -145.f;
+    m_CorrectionLineStartLocal = MakePointFromAngleDegrees(-145.f, safeRadius);
+    m_CorrectionLineEndLocal = MakePointFromAngleDegrees(-35.f, safeRadius);
 }
 
 void CSurfaceCircleGuideScript::CopyFrom(const CSurfaceCircleGuideScript& _Other)

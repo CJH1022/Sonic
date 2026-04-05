@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "MapEditorUI.h"
 
+#include "ASurfaceSet.h"
 #include "AssetMgr.h"
 #include "Device.h"
 #include "EditorMgr.h"
@@ -8,6 +9,7 @@
 #include "KeyMgr.h"
 #include "LevelMgr.h"
 #include "RenderMgr.h"
+#include "SurfaceSetUI.h"
 #include "func.h"
 
 #include "CCamera.h"
@@ -32,6 +34,7 @@ namespace
     constexpr float kWallOverlayDepth = 64.f;
     constexpr float kCircleGuideMatchEpsilon = 0.5f;
     constexpr float kCircleGuideMarkerRadius = 7.f;
+    constexpr float kCircleGuideHalfCheckAngleDeg = 90.f;
 
     float Clamp01(float _Value)
     {
@@ -77,6 +80,51 @@ namespace
         return _AngleRad * 180.f / XM_PI;
     }
 
+    float NormalizeAngleDegreesPositive(float _AngleDeg)
+    {
+        while (_AngleDeg < 0.f)
+            _AngleDeg += 360.f;
+
+        while (_AngleDeg >= 360.f)
+            _AngleDeg -= 360.f;
+
+        return _AngleDeg;
+    }
+
+    float DeltaAngleCCWDeg(float _FromDeg, float _ToDeg)
+    {
+        const float from = NormalizeAngleDegreesPositive(_FromDeg);
+        const float to = NormalizeAngleDegreesPositive(_ToDeg);
+        float delta = to - from;
+        if (delta < 0.f)
+            delta += 360.f;
+        return delta;
+    }
+
+    float LerpAngleDegreesAlong(bool _CounterClockwise, float _FromDeg, float _ToDeg, float _T)
+    {
+        const float delta = _CounterClockwise ? DeltaAngleCCWDeg(_FromDeg, _ToDeg) : DeltaAngleCCWDeg(_ToDeg, _FromDeg);
+        const float angle = _CounterClockwise ? (_FromDeg + delta * _T) : (_FromDeg - delta * _T);
+        return NormalizeAngleDegrees(angle);
+    }
+
+    bool TryResolveGuideArcDirection(float _StartAngleDeg, float _EndAngleDeg, float _HalfAngleDeg, bool& _OutCounterClockwise)
+    {
+        if (DeltaAngleCCWDeg(_StartAngleDeg, _HalfAngleDeg) <= DeltaAngleCCWDeg(_StartAngleDeg, _EndAngleDeg) + 0.001f)
+        {
+            _OutCounterClockwise = true;
+            return true;
+        }
+
+        if (DeltaAngleCCWDeg(_EndAngleDeg, _HalfAngleDeg) <= DeltaAngleCCWDeg(_EndAngleDeg, _StartAngleDeg) + 0.001f)
+        {
+            _OutCounterClockwise = false;
+            return true;
+        }
+
+        return false;
+    }
+
     Vec2 MakeCirclePointFromAngle(const Vec2& _Center, float _Radius, float _AngleDeg)
     {
         const float angleRad = DegreesToRadians(_AngleDeg);
@@ -88,9 +136,15 @@ namespace
     {
         const Vec2 delta = _Point - _Center;
         if (fabsf(delta.x) <= 0.0001f && fabsf(delta.y) <= 0.0001f)
-            return -90.f;
+            return 90.f;
 
         return NormalizeAngleDegrees(RadiansToDegrees(atan2f(delta.y, delta.x)));
+    }
+
+    bool IsCircleGeometry(CSurfaceScript::SURFACE_GEOMETRY _Geometry)
+    {
+        return _Geometry == CSurfaceScript::SURFACE_GEOMETRY::CIRCLE ||
+               _Geometry == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE;
     }
 
     int CellIndex(int _Row, int _Col, int _ColCount)
@@ -256,12 +310,13 @@ MapEditorUI::MapEditorUI()
     , m_FillAbove(false)
     , m_ArcFillInside(false)
     , m_Attachable(true)
-    , m_EnablePointSnap(true)
+    , m_EnablePointSnap(false)
     , m_PointSnapDistance(36.f)
     , m_FreeformShape(FREEFORM_SHAPE::LINE)
     , m_FreeformRole(FREEFORM_ROLE::SURFACE)
     , m_UseCircleRadius(false)
     , m_CircleRadius(200.f)
+    , m_SurfaceSetAsset(nullptr)
     , m_HasStartVertex(false)
     , m_StartVertex{ 0, 0 }
     , m_HasStartPoint(false)
@@ -269,6 +324,7 @@ MapEditorUI::MapEditorUI()
     , m_HasLastCreatedSegment(false)
     , m_LastCreatedStart(Vec2(0.f, 0.f))
     , m_LastCreatedEnd(Vec2(0.f, 0.f))
+    , m_GuideDragHandle(GUIDE_DRAG_HANDLE::NONE)
     , m_Row(kDefaultRow)
     , m_Col(kDefaultCol)
     , m_TileSize(kDefaultTileSize, kDefaultTileSize)
@@ -339,18 +395,30 @@ void MapEditorUI::CollectSurfaceObjects(vector<Ptr<GameObject>>& _OutObjects) co
 {
     _OutObjects.clear();
 
-    Ptr<GameObject> pRoot = ResolveSurfaceRoot();
-    if (pRoot == nullptr)
+    Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+    if (pLevel == nullptr)
         return;
 
-    const vector<Ptr<GameObject>>& vecChild = pRoot->GetChild();
-    for (size_t i = 0; i < vecChild.size(); ++i)
+    vector<Ptr<GameObject>> stack;
+    for (int layerIdx = 0; layerIdx < MAX_LAYER; ++layerIdx)
     {
-        if (vecChild[i] == nullptr)
+        const vector<Ptr<GameObject>>& vecParents = pLevel->GetLayer(layerIdx)->GetParentObjects();
+        stack.insert(stack.end(), vecParents.begin(), vecParents.end());
+    }
+
+    while (!stack.empty())
+    {
+        Ptr<GameObject> pObject = stack.back();
+        stack.pop_back();
+
+        if (pObject == nullptr || pObject->IsDead())
             continue;
 
-        if (vecChild[i]->GetScript<CSurfaceScript>() != nullptr)
-            _OutObjects.push_back(vecChild[i]);
+        if (pObject->GetScript<CSurfaceScript>() != nullptr)
+            _OutObjects.push_back(pObject);
+
+        const vector<Ptr<GameObject>>& vecChild = pObject->GetChild();
+        stack.insert(stack.end(), vecChild.begin(), vecChild.end());
     }
 }
 
@@ -397,7 +465,7 @@ CSurfaceCircleGuideScript* MapEditorUI::EnsureCircleGuideScript(GameObject* _Sur
         return nullptr;
 
     auto pSurface = _SurfaceObject->GetScript<CSurfaceScript>();
-    if (pSurface == nullptr || pSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::CIRCLE)
+    if (pSurface == nullptr || !IsCircleGeometry(pSurface->GetGeometry()))
         return nullptr;
 
     Ptr<CSurfaceCircleGuideScript> pGuide = _SurfaceObject->GetScript<CSurfaceCircleGuideScript>();
@@ -432,8 +500,7 @@ void MapEditorUI::ApplyCircleGuideToMatchingSurfaces(GameObject* _AnchorObject)
 
     auto pAnchorSurface = _AnchorObject->GetScript<CSurfaceScript>();
     auto pAnchorGuide = _AnchorObject->GetScript<CSurfaceCircleGuideScript>();
-    if (pAnchorSurface == nullptr || pAnchorGuide == nullptr ||
-        pAnchorSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::CIRCLE)
+    if (pAnchorSurface == nullptr || pAnchorGuide == nullptr || !IsCircleGeometry(pAnchorSurface->GetGeometry()))
     {
         return;
     }
@@ -455,7 +522,7 @@ void MapEditorUI::ApplyCircleGuideToMatchingSurfaces(GameObject* _AnchorObject)
 
         auto pSurface = pSurfaceObject->GetScript<CSurfaceScript>();
         if (pSurface == nullptr ||
-            pSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::CIRCLE ||
+            pSurface->GetGeometry() != pAnchorSurface->GetGeometry() ||
             pSurface->GetFillInside() != pAnchorSurface->GetFillInside())
         {
             continue;
@@ -542,6 +609,7 @@ void MapEditorUI::CreateOrUpdateCircleGuideCorrectionLine(GameObject* _CircleSur
                                 false,
                                 true);
 
+    RefreshCircleGuideCorrectionLines();
     m_StatusText = "Circle correction line updated from the selected guide.";
 }
 
@@ -563,6 +631,13 @@ bool MapEditorUI::GetSurfaceEndpointPair(CSurfaceScript* _Script, Vec2& _OutStar
     _Script->GetArcWorldData(center, radius, boxMin, boxMax);
     if (radius <= 0.001f)
         return false;
+
+    if (_Script->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE)
+    {
+        _OutStart = Vec2(center.x - radius, center.y);
+        _OutEnd = Vec2(center.x + radius, center.y);
+        return true;
+    }
 
     switch (_Script->GetArcCorner())
     {
@@ -685,8 +760,7 @@ bool MapEditorUI::FindSnapPoint(const Vec2& _WorldPos, Vec2& _OutSnapPoint) cons
         }
 
         auto pGuide = vecSurfaces[i]->GetScript<CSurfaceCircleGuideScript>();
-        if (pGuide != nullptr && pGuide->IsEnabled() &&
-            pScript->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::CIRCLE)
+        if (pGuide != nullptr && pGuide->IsEnabled() && IsCircleGeometry(pScript->GetGeometry()))
         {
             Vec2 center = {};
             float radius = 0.f;
@@ -715,6 +789,102 @@ bool MapEditorUI::FindSnapPoint(const Vec2& _WorldPos, Vec2& _OutSnapPoint) cons
     }
 
     return found;
+}
+
+void MapEditorUI::RefreshCircleGuideCorrectionLines()
+{
+    vector<Ptr<GameObject>> vecSurfaces;
+    CollectSurfaceObjects(vecSurfaces);
+
+    vector<wstring> vecLinkedNames;
+    vecLinkedNames.reserve(vecSurfaces.size());
+
+    for (size_t i = 0; i < vecSurfaces.size(); ++i)
+    {
+        if (vecSurfaces[i] == nullptr)
+            continue;
+
+        auto pSurface = vecSurfaces[i]->GetScript<CSurfaceScript>();
+        auto pGuide = vecSurfaces[i]->GetScript<CSurfaceCircleGuideScript>();
+        if (pSurface == nullptr ||
+            pGuide == nullptr ||
+            !IsCircleGeometry(pSurface->GetGeometry()) ||
+            pGuide->GetLinkedCorrectionLineName().empty())
+        {
+            continue;
+        }
+
+        vecLinkedNames.push_back(pGuide->GetLinkedCorrectionLineName());
+
+        Ptr<GameObject> pLineObject = FindSurfaceObjectByName(pGuide->GetLinkedCorrectionLineName());
+        if (pLineObject == nullptr)
+            continue;
+
+        auto pLineSurface = pLineObject->GetScript<CSurfaceScript>();
+        if (pLineSurface == nullptr ||
+            pLineSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::LINE)
+        {
+            continue;
+        }
+
+        Vec2 center = {};
+        float radius = 0.f;
+        Vec2 boxMin = {};
+        Vec2 boxMax = {};
+        pSurface->GetArcWorldData(center, radius, boxMin, boxMax);
+
+        const Vec2 worldStart = center + pGuide->GetCorrectionLineStartLocal();
+        const Vec2 worldEnd = center + pGuide->GetCorrectionLineEndLocal();
+        if (LengthVec2(worldEnd - worldStart) <= 1.f)
+            continue;
+
+        const Vec2 lineCenter = (worldStart + worldEnd) * 0.5f;
+        pLineObject->Transform()->SetRelativePos(Vec3(lineCenter.x, lineCenter.y, 10.f));
+        pLineSurface->ConfigureLine(worldStart - lineCenter,
+                                    worldEnd - lineCenter,
+                                    CSurfaceScript::SURFACE_ROLE::SURFACE,
+                                    false,
+                                    true);
+    }
+
+    const auto isLinkedCorrectionLineName = [&](const wstring& _Name)
+    {
+        for (size_t i = 0; i < vecLinkedNames.size(); ++i)
+        {
+            if (vecLinkedNames[i] == _Name)
+                return true;
+        }
+
+        return false;
+    };
+
+    const auto hasCorrectionLineSuffix = [](const wstring& _Name)
+    {
+        static const wstring suffix = L"_CorrectionLine";
+        if (_Name.length() < suffix.length())
+            return false;
+
+        return (_Name.compare(_Name.length() - suffix.length(), suffix.length(), suffix) == 0);
+    };
+
+    for (size_t i = 0; i < vecSurfaces.size(); ++i)
+    {
+        if (vecSurfaces[i] == nullptr)
+            continue;
+
+        auto pSurface = vecSurfaces[i]->GetScript<CSurfaceScript>();
+        if (pSurface == nullptr ||
+            pSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::LINE)
+        {
+            continue;
+        }
+
+        const wstring& lineName = vecSurfaces[i]->GetName();
+        if (!hasCorrectionLineSuffix(lineName) || isLinkedCorrectionLineName(lineName))
+            continue;
+
+        vecSurfaces[i]->Destroy();
+    }
 }
 
 void MapEditorUI::BuildQuarterSurfaceBounds(const Vec2& _StartWorld, const Vec2& _EndWorld, bool _UseCircleRadius, Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter, float& _OutRadius) const
@@ -763,6 +933,25 @@ void MapEditorUI::BuildQuarterSurfaceBounds(const Vec2& _StartWorld, const Vec2&
     _OutRadius = side;
 }
 
+void MapEditorUI::BuildFullCircleBounds(const Vec2& _StartWorld, const Vec2& _EndWorld,
+                                        Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter, float& _OutRadius) const
+{
+    _OutCenter = _StartWorld;
+
+    float radius = 0.f;
+    if (m_UseCircleRadius)
+        radius = max(1.f, m_CircleRadius);
+    else
+        radius = LengthVec2(_EndWorld - _StartWorld);
+
+    if (radius <= 0.001f)
+        radius = 1.f;
+
+    _OutRadius = radius;
+    _OutMinBox = _OutCenter - Vec2(radius, radius);
+    _OutMaxBox = _OutCenter + Vec2(radius, radius);
+}
+
 void MapEditorUI::CreateLineSurfaceObject(const Vec2& _StartWorld, const Vec2& _EndWorld)
 {
     Ptr<GameObject> pRoot = EnsureSurfaceRoot();
@@ -788,6 +977,8 @@ void MapEditorUI::CreateLineSurfaceObject(const Vec2& _StartWorld, const Vec2& _
         role = CSurfaceScript::SURFACE_ROLE::CORRECTION;
     else if (m_FreeformRole == FREEFORM_ROLE::WALL)
         role = CSurfaceScript::SURFACE_ROLE::WALL;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
 
     pScript->ConfigureLine(localStart, localEnd, role, m_FillAbove, m_Attachable);
 
@@ -827,6 +1018,8 @@ void MapEditorUI::CreateArcSurfaceObject(const Vec2& _StartWorld, const Vec2& _E
         role = CSurfaceScript::SURFACE_ROLE::CORRECTION;
     else if (m_FreeformRole == FREEFORM_ROLE::WALL)
         role = CSurfaceScript::SURFACE_ROLE::WALL;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
 
     pScript->ConfigureArc(localStart, localEnd, role, (CSurfaceScript::ARC_CORNER)(int)m_ArcCorner, m_ArcFillInside, m_Attachable);
 
@@ -866,6 +1059,8 @@ void MapEditorUI::CreateCircleSurfaceObject(const Vec2& _StartWorld, const Vec2&
         role = CSurfaceScript::SURFACE_ROLE::CORRECTION;
     else if (m_FreeformRole == FREEFORM_ROLE::WALL)
         role = CSurfaceScript::SURFACE_ROLE::WALL;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
 
     pScript->ConfigureCircle(localStart, localEnd, role, (CSurfaceScript::ARC_CORNER)(int)m_ArcCorner, m_ArcFillInside, m_Attachable);
 
@@ -878,12 +1073,96 @@ void MapEditorUI::CreateCircleSurfaceObject(const Vec2& _StartWorld, const Vec2&
     }
 
     pRoot->AddChild(pSurface);
+
+    const bool createdGuideLine = (m_ArcFillInside && role == CSurfaceScript::SURFACE_ROLE::SURFACE);
+    if (createdGuideLine)
+        CreateOrUpdateCircleGuideCorrectionLine(pSurface);
+
     m_HasLastCreatedSegment = true;
     m_LastCreatedStart = minBox;
     m_LastCreatedEnd = maxBox;
-    m_StatusText = m_UseCircleRadius
-        ? "Circle surface created with explicit radius."
-        : "Circle surface created from the clicked quarter span.";
+    if (createdGuideLine)
+    {
+        m_StatusText = m_UseCircleRadius
+            ? "Quarter circle and inside correction line created with explicit radius."
+            : "Quarter circle and inside correction line created from the clicked span.";
+    }
+    else
+    {
+        m_StatusText = m_UseCircleRadius
+            ? "Quarter circle created with explicit radius."
+            : "Quarter circle created from the clicked span.";
+    }
+}
+
+void MapEditorUI::CreateFullCircleSurfaceObject(const Vec2& _StartWorld, const Vec2& _EndWorld)
+{
+    Ptr<GameObject> pRoot = EnsureSurfaceRoot();
+    if (pRoot == nullptr)
+        return;
+
+    Vec2 minBox = {};
+    Vec2 maxBox = {};
+    Vec2 center = {};
+    float radius = 0.f;
+    BuildFullCircleBounds(_StartWorld, _EndWorld, minBox, maxBox, center, radius);
+    if (radius <= 0.001f)
+        return;
+
+    CSurfaceScript::SURFACE_ROLE role = CSurfaceScript::SURFACE_ROLE::SURFACE;
+    if (m_FreeformRole == FREEFORM_ROLE::CORRECTION)
+        role = CSurfaceScript::SURFACE_ROLE::CORRECTION;
+    else if (m_FreeformRole == FREEFORM_ROLE::WALL)
+        role = CSurfaceScript::SURFACE_ROLE::WALL;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+
+    GameObject* pSurface = new GameObject;
+    pSurface->SetName(
+        L"SurfaceFullCircle_" +
+        std::to_wstring((int)roundf(center.x)) + L"_" +
+        std::to_wstring((int)roundf(center.y)) + L"_" +
+        std::to_wstring((int)roundf(radius)));
+    pSurface->AddComponent(new CTransform);
+    pSurface->AddComponent(new CCollider2D);
+
+    CSurfaceScript* pScript = new CSurfaceScript;
+    pSurface->AddComponent(pScript);
+    pSurface->Transform()->SetRelativePos(Vec3(center.x, center.y, 10.f));
+    pScript->ConfigureFullCircle(radius, role, m_ArcFillInside, m_Attachable);
+
+    if (m_ArcFillInside && role == CSurfaceScript::SURFACE_ROLE::SURFACE)
+    {
+        CSurfaceCircleGuideScript* pGuide = new CSurfaceCircleGuideScript;
+        pGuide->SetEnabled(true);
+        pGuide->ResetToDefaultGuide(radius);
+        pSurface->AddComponent(pGuide);
+    }
+
+    pRoot->AddChild(pSurface);
+
+    const bool createdGuideLine = (m_ArcFillInside && role == CSurfaceScript::SURFACE_ROLE::SURFACE);
+    if (createdGuideLine)
+    {
+        CreateOrUpdateCircleGuideCorrectionLine(pSurface);
+    }
+    SelectSurfaceObject(pSurface);
+
+    m_HasLastCreatedSegment = true;
+    m_LastCreatedStart = minBox;
+    m_LastCreatedEnd = maxBox;
+    if (createdGuideLine)
+    {
+        m_StatusText = m_UseCircleRadius
+            ? "Full circle and inside correction line created with explicit radius."
+            : "Full circle and inside correction line created from the clicked span.";
+    }
+    else
+    {
+        m_StatusText = m_UseCircleRadius
+            ? "Full circle created with explicit radius."
+            : "Full circle created from the clicked span.";
+    }
 }
 
 void MapEditorUI::DeleteNearestSurfaceObject(const Vec2& _WorldPos)
@@ -893,7 +1172,16 @@ void MapEditorUI::DeleteNearestSurfaceObject(const Vec2& _WorldPos)
 
     if (pBest != nullptr && bestDist <= 48.f)
     {
+        auto pGuide = pBest->GetScript<CSurfaceCircleGuideScript>();
+        if (pGuide != nullptr && !pGuide->GetLinkedCorrectionLineName().empty())
+        {
+            Ptr<GameObject> pLinkedLine = FindSurfaceObjectByName(pGuide->GetLinkedCorrectionLineName());
+            if (pLinkedLine != nullptr && pLinkedLine.Get() != pBest.Get())
+                pLinkedLine->Destroy();
+        }
+
         pBest->Destroy();
+        RefreshCircleGuideCorrectionLines();
         m_StatusText = "Nearest surface deleted.";
     }
     else
@@ -1457,6 +1745,31 @@ void MapEditorUI::RebuildCollisionChildren(GameObject* _TileMapObject)
             if (typeValue == (int)TILETYPE::EMPTY_BLOCK)
                 continue;
 
+            unsigned char fullBlockFaceMask = CTileScript::FULL_FACE_ALL;
+            if (typeValue == (int)TILETYPE::FULL_BLOCK)
+            {
+                fullBlockFaceMask = CTileScript::FULL_FACE_NONE;
+
+                const bool emptyAbove = (row == 0) || (m_TileValues[CellIndex(row - 1, col, m_Col)] == (int)TILETYPE::EMPTY_BLOCK);
+                const bool emptyBelow = (row == m_Row - 1) || (m_TileValues[CellIndex(row + 1, col, m_Col)] == (int)TILETYPE::EMPTY_BLOCK);
+                const bool emptyLeft = (col == 0) || (m_TileValues[CellIndex(row, col - 1, m_Col)] == (int)TILETYPE::EMPTY_BLOCK);
+                const bool emptyRight = (col == m_Col - 1) || (m_TileValues[CellIndex(row, col + 1, m_Col)] == (int)TILETYPE::EMPTY_BLOCK);
+
+                if (emptyAbove)
+                    fullBlockFaceMask |= CTileScript::FULL_FACE_TOP;
+                if (emptyBelow)
+                    fullBlockFaceMask |= CTileScript::FULL_FACE_BOTTOM;
+                if (emptyLeft)
+                    fullBlockFaceMask |= CTileScript::FULL_FACE_LEFT;
+                if (emptyRight)
+                    fullBlockFaceMask |= CTileScript::FULL_FACE_RIGHT;
+
+                // Interior solid cells should not spawn their own collider, otherwise
+                // adjacent full tiles stack corrective pushes and can fling the player.
+                if (fullBlockFaceMask == CTileScript::FULL_FACE_NONE)
+                    continue;
+            }
+
             GameObject* pTileObj = new GameObject;
             pTileObj->SetName(L"Tile");
             pTileObj->AddComponent(new CTransform);
@@ -1472,6 +1785,8 @@ void MapEditorUI::RebuildCollisionChildren(GameObject* _TileMapObject)
             CTileScript* pTileScript = new CTileScript;
             pTileObj->AddComponent(pTileScript);
             pTileScript->TileMapSetting(typeValue);
+            if (typeValue == (int)TILETYPE::FULL_BLOCK)
+                pTileScript->SetFullBlockFaceMask(fullBlockFaceMask);
 
             _TileMapObject->AddChild(pTileObj);
         }
@@ -1751,6 +2066,9 @@ void MapEditorUI::HandleFreeformInput()
     if (!GetMouseWorldPos(mouseWorld))
         return;
 
+    if (HandleSelectedCircleGuideDrag(mouseWorld))
+        return;
+
     Vec2 snappedMouseWorld = mouseWorld;
     if (m_FreeformRole != FREEFORM_ROLE::ERASE)
     {
@@ -1801,7 +2119,16 @@ void MapEditorUI::HandleFreeformInput()
     {
         m_StartPoint = snappedMouseWorld;
         m_HasStartPoint = true;
-        m_StatusText = "Start point selected. Click the end point in the game view.";
+        if (m_FreeformShape == FREEFORM_SHAPE::FULL_CIRCLE)
+        {
+            m_StatusText = m_UseCircleRadius
+                ? "Center selected. Click again to place the full circle."
+                : "Center selected. Click a radius point in the game view.";
+        }
+        else
+        {
+            m_StatusText = "Start point selected. Click the end point in the game view.";
+        }
         return;
     }
 
@@ -1817,8 +2144,10 @@ void MapEditorUI::HandleFreeformInput()
         CreateLineSurfaceObject(m_StartPoint, Vec2(snappedMouseWorld.x, m_StartPoint.y));
     else if (m_FreeformShape == FREEFORM_SHAPE::ARC)
         CreateArcSurfaceObject(m_StartPoint, snappedMouseWorld);
-    else
+    else if (m_FreeformShape == FREEFORM_SHAPE::CIRCLE)
         CreateCircleSurfaceObject(m_StartPoint, snappedMouseWorld);
+    else
+        CreateFullCircleSurfaceObject(m_StartPoint, snappedMouseWorld);
 
     m_HasStartPoint = false;
 }
@@ -1837,8 +2166,83 @@ void MapEditorUI::DrawFreeformOverlay()
     vector<Ptr<GameObject>> vecSurfaces;
     CollectSurfaceObjects(vecSurfaces);
 
+    vector<GameObject*> vecGuidedCircleObjects;
+    vector<wstring> vecGuidedCorrectionLineNames;
+    GameObject* pSelectedGuideCircleObject = nullptr;
+    {
+        for (size_t i = 0; i < vecSurfaces.size(); ++i)
+        {
+            if (vecSurfaces[i] == nullptr)
+                continue;
+
+            auto pSurfaceScript = vecSurfaces[i]->GetScript<CSurfaceScript>();
+            auto pGuide = vecSurfaces[i]->GetScript<CSurfaceCircleGuideScript>();
+            if (pSurfaceScript == nullptr ||
+                pGuide == nullptr ||
+                !pGuide->IsEnabled() ||
+                !IsCircleGeometry(pSurfaceScript->GetGeometry()))
+            {
+                continue;
+            }
+
+            vecGuidedCircleObjects.push_back(vecSurfaces[i].Get());
+            if (!pGuide->GetLinkedCorrectionLineName().empty())
+                vecGuidedCorrectionLineNames.push_back(pGuide->GetLinkedCorrectionLineName());
+        }
+
+        Ptr<GameObject> pSelectedSurface = GetSelectedSurfaceObject();
+        if (pSelectedSurface != nullptr)
+        {
+            for (size_t i = 0; i < vecGuidedCircleObjects.size(); ++i)
+            {
+                if (vecGuidedCircleObjects[i] == pSelectedSurface.Get())
+                {
+                    pSelectedGuideCircleObject = pSelectedSurface.Get();
+                    break;
+                }
+            }
+        }
+    }
+
+    const auto isGuidedCircleObject = [&](GameObject* _Object)
+    {
+        if (_Object == nullptr)
+            return false;
+
+        for (size_t i = 0; i < vecGuidedCircleObjects.size(); ++i)
+        {
+            if (vecGuidedCircleObjects[i] == _Object)
+                return true;
+        }
+
+        return false;
+    };
+
+    const auto isGuidedCorrectionLineName = [&](const wstring& _Name)
+    {
+        if (_Name.empty())
+            return false;
+
+        for (size_t i = 0; i < vecGuidedCorrectionLineNames.size(); ++i)
+        {
+            if (vecGuidedCorrectionLineNames[i] == _Name)
+                return true;
+        }
+
+        return false;
+    };
+
     for (size_t i = 0; i < vecSurfaces.size(); ++i)
     {
+        if (vecSurfaces[i] != nullptr && isGuidedCircleObject(vecSurfaces[i].Get()))
+            continue;
+
+        if (vecSurfaces[i] != nullptr &&
+            isGuidedCorrectionLineName(vecSurfaces[i]->GetName()))
+        {
+            continue;
+        }
+
         Ptr<CSurfaceScript> pScript = vecSurfaces[i]->GetScript<CSurfaceScript>();
         if (pScript == nullptr)
             continue;
@@ -1917,10 +2321,11 @@ void MapEditorUI::DrawFreeformOverlay()
             Vec2 boxMax = {};
             float radius = 0.f;
             pScript->GetArcWorldData(center, radius, boxMin, boxMax);
+            const bool fullCircle = (pScript->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE);
 
             if (pScript->GetRole() == CSurfaceScript::SURFACE_ROLE::WALL && radius > 0.001f)
             {
-                const int fillSegmentCount = 24;
+                const int fillSegmentCount = fullCircle ? 48 : 24;
                 vector<ImVec2> fillPoints;
 
                 if (pScript->GetFillInside())
@@ -1940,7 +2345,11 @@ void MapEditorUI::DrawFreeformOverlay()
                     float t = (float)segment / (float)fillSegmentCount;
                     float angle = 0.f;
 
-                    switch (pScript->GetArcCorner())
+                    if (fullCircle)
+                    {
+                        angle = t * XM_2PI;
+                    }
+                    else switch (pScript->GetArcCorner())
                     {
                     case CSurfaceScript::ARC_CORNER::TOP_LEFT:
                         angle = 0.f + t * (-XM_PIDIV2);
@@ -1986,7 +2395,7 @@ void MapEditorUI::DrawFreeformOverlay()
                     pDraw->AddConvexPolyFilled(fillPoints.data(), (int)fillPoints.size(), IM_COL32(255, 128, 64, 72));
             }
 
-            const int segmentCount = 24;
+            const int segmentCount = fullCircle ? 48 : 24;
             ImVec2 prev = {};
             bool hasPrev = false;
 
@@ -1995,7 +2404,11 @@ void MapEditorUI::DrawFreeformOverlay()
                 float t = (float)segment / (float)segmentCount;
                 float angle = 0.f;
 
-                switch (pScript->GetArcCorner())
+                if (fullCircle)
+                {
+                    angle = t * XM_2PI;
+                }
+                else switch (pScript->GetArcCorner())
                 {
                 case CSurfaceScript::ARC_CORNER::TOP_LEFT:
                     angle = 0.f + t * (-XM_PIDIV2);
@@ -2036,13 +2449,24 @@ void MapEditorUI::DrawFreeformOverlay()
             }
 
             ImVec2 screenCenter = {};
-            if (WorldToScreen(center, screenCenter))
+            if (!fullCircle && WorldToScreen(center, screenCenter))
             {
                 pDraw->AddCircleFilled(screenCenter, 4.f, IM_COL32(255, 120, 255, 220));
                 pDraw->AddCircle(screenCenter, 8.f, IM_COL32(255, 120, 255, 120), 0, 1.5f);
             }
         }
     }
+
+    for (size_t i = 0; i < vecGuidedCircleObjects.size(); ++i)
+    {
+        if (vecGuidedCircleObjects[i] == nullptr || vecGuidedCircleObjects[i] == pSelectedGuideCircleObject)
+            continue;
+
+        DrawCircleGuideOverlayForSurface(pDraw, vecGuidedCircleObjects[i], false);
+    }
+
+    if (pSelectedGuideCircleObject != nullptr)
+        DrawCircleGuideOverlayForSurface(pDraw, pSelectedGuideCircleObject, true);
 
     if (m_FreeformRole == FREEFORM_ROLE::ERASE)
     {
@@ -2080,7 +2504,8 @@ void MapEditorUI::DrawFreeformOverlay()
                         float radius = 0.f;
                         pScript->GetArcWorldData(center, radius, boxMin, boxMax);
 
-                        const int segmentCount = 24;
+                        const bool fullCircle = (pScript->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE);
+                        const int segmentCount = fullCircle ? 48 : 24;
                         ImVec2 prev = {};
                         bool hasPrev = false;
 
@@ -2089,7 +2514,11 @@ void MapEditorUI::DrawFreeformOverlay()
                             float t = (float)segment / (float)segmentCount;
                             float angle = 0.f;
 
-                            switch (pScript->GetArcCorner())
+                            if (fullCircle)
+                            {
+                                angle = t * XM_2PI;
+                            }
+                            else switch (pScript->GetArcCorner())
                             {
                             case CSurfaceScript::ARC_CORNER::TOP_LEFT:
                                 angle = 0.f + t * (-XM_PIDIV2);
@@ -2127,6 +2556,15 @@ void MapEditorUI::DrawFreeformOverlay()
     // connected without manually matching coordinates.
     for (size_t i = 0; i < vecSurfaces.size(); ++i)
     {
+        if (vecSurfaces[i] != nullptr && isGuidedCircleObject(vecSurfaces[i].Get()))
+            continue;
+
+        if (vecSurfaces[i] != nullptr &&
+            isGuidedCorrectionLineName(vecSurfaces[i]->GetName()))
+        {
+            continue;
+        }
+
         Ptr<CSurfaceScript> pScript = vecSurfaces[i]->GetScript<CSurfaceScript>();
         if (pScript == nullptr)
             continue;
@@ -2144,19 +2582,46 @@ void MapEditorUI::DrawFreeformOverlay()
             pDraw->AddCircleFilled(screenB, 5.f, IM_COL32(255, 255, 255, 220));
     }
 
-    DrawSelectedCircleGuideOverlay(pDraw);
-
     if (!m_HasStartPoint)
     {
         Vec2 mouseWorld = {};
         Vec2 snapPoint = {};
-        if (GetMouseWorldPos(mouseWorld) && FindSnapPoint(mouseWorld, snapPoint))
+        const bool hasMouseWorld = GetMouseWorldPos(mouseWorld);
+        const bool hasSnapPoint = hasMouseWorld && FindSnapPoint(mouseWorld, snapPoint);
+        if (hasSnapPoint)
         {
             ImVec2 snapScreen = {};
             if (WorldToScreen(snapPoint, snapScreen))
             {
                 pDraw->AddCircle(snapScreen, 9.f, IM_COL32(80, 255, 255, 255), 0, 2.5f);
                 pDraw->AddCircle(snapScreen, 14.f, IM_COL32(80, 255, 255, 120), 0, 1.5f);
+            }
+        }
+
+        if (hasMouseWorld &&
+            m_FreeformShape == FREEFORM_SHAPE::FULL_CIRCLE &&
+            m_UseCircleRadius)
+        {
+            const Vec2 previewCenter = hasSnapPoint ? snapPoint : mouseWorld;
+            const float radius = max(1.f, m_CircleRadius);
+            const int segmentCount = 48;
+            ImVec2 prev = {};
+            bool hasPrev = false;
+            for (int segment = 0; segment <= segmentCount; ++segment)
+            {
+                const float t = (float)segment / (float)segmentCount;
+                const float angle = t * XM_2PI;
+                const Vec2 worldPos = Vec2(previewCenter.x + cosf(angle) * radius,
+                                           previewCenter.y + sinf(angle) * radius);
+                ImVec2 screenPos = {};
+                if (!WorldToScreen(worldPos, screenPos))
+                    continue;
+
+                if (hasPrev)
+                    pDraw->AddLine(prev, screenPos, IM_COL32(255, 160, 80, 220), 2.f);
+
+                prev = screenPos;
+                hasPrev = true;
             }
         }
 
@@ -2195,6 +2660,43 @@ void MapEditorUI::DrawFreeformOverlay()
         else
         {
             pDraw->AddLine(startScreen, endScreen, IM_COL32(255, 160, 80, 255), 2.f);
+        }
+    }
+    else if (m_FreeformShape == FREEFORM_SHAPE::FULL_CIRCLE)
+    {
+        Vec2 minBox = {};
+        Vec2 maxBox = {};
+        Vec2 center = {};
+        float radius = 0.f;
+        BuildFullCircleBounds(m_StartPoint, previewEnd, minBox, maxBox, center, radius);
+
+        const int segmentCount = 48;
+        ImVec2 prev = {};
+        bool hasPrev = false;
+        for (int segment = 0; segment <= segmentCount; ++segment)
+        {
+            const float t = (float)segment / (float)segmentCount;
+            const float angle = t * XM_2PI;
+            const Vec2 worldPos = Vec2(center.x + cosf(angle) * radius, center.y + sinf(angle) * radius);
+            ImVec2 screenPos = {};
+            if (!WorldToScreen(worldPos, screenPos))
+                continue;
+
+            if (hasPrev)
+                pDraw->AddLine(prev, screenPos, IM_COL32(255, 160, 80, 255), 2.f);
+
+            prev = screenPos;
+            hasPrev = true;
+        }
+
+        if (m_ArcFillInside && m_FreeformRole == FREEFORM_ROLE::SURFACE)
+        {
+            const Vec2 corrStart = MakeCirclePointFromAngle(center, radius, -145.f);
+            const Vec2 corrEnd = MakeCirclePointFromAngle(center, radius, -35.f);
+            ImVec2 screenCorrStart = {};
+            ImVec2 screenCorrEnd = {};
+            if (WorldToScreen(corrStart, screenCorrStart) && WorldToScreen(corrEnd, screenCorrEnd))
+                pDraw->AddLine(screenCorrStart, screenCorrEnd, IM_COL32(80, 255, 255, 220), 2.f);
         }
     }
     else
@@ -2254,19 +2756,92 @@ void MapEditorUI::HandleSceneInput()
     }
 }
 
-void MapEditorUI::DrawSelectedCircleGuideOverlay(ImDrawList* _Draw)
+bool MapEditorUI::HandleSelectedCircleGuideDrag(const Vec2& _MouseWorld)
 {
-    if (_Draw == nullptr)
-        return;
-
     Ptr<GameObject> pSelectedSurface = GetSelectedSurfaceObject();
     if (pSelectedSurface == nullptr)
-        return;
+    {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            m_GuideDragHandle = GUIDE_DRAG_HANDLE::NONE;
+        return false;
+    }
 
     auto pSurface = pSelectedSurface->GetScript<CSurfaceScript>();
     auto pGuide = pSelectedSurface->GetScript<CSurfaceCircleGuideScript>();
+    if (pSurface == nullptr || pGuide == nullptr || !pGuide->IsEnabled() || !IsCircleGeometry(pSurface->GetGeometry()))
+    {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            m_GuideDragHandle = GUIDE_DRAG_HANDLE::NONE;
+        return false;
+    }
+
+    Vec2 center = {};
+    float radius = 0.f;
+    Vec2 boxMin = {};
+    Vec2 boxMax = {};
+    pSurface->GetArcWorldData(center, radius, boxMin, boxMax);
+    if (radius <= 0.001f)
+    {
+        m_GuideDragHandle = GUIDE_DRAG_HANDLE::NONE;
+        return false;
+    }
+
+    const Vec2 corrStartWorld = center + pGuide->GetCorrectionLineStartLocal();
+    const Vec2 corrEndWorld = center + pGuide->GetCorrectionLineEndLocal();
+    const float handlePickRadius = max(18.f, radius * 0.06f);
+    const float distToStart = LengthVec2(_MouseWorld - corrStartWorld);
+    const float distToEnd = LengthVec2(_MouseWorld - corrEndWorld);
+
+    if (m_GuideDragHandle != GUIDE_DRAG_HANDLE::NONE)
+    {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        {
+            m_GuideDragHandle = GUIDE_DRAG_HANDLE::NONE;
+            m_StatusText = "Guide correction handle released.";
+            return true;
+        }
+
+        if (m_GuideDragHandle == GUIDE_DRAG_HANDLE::CORR_START)
+            pGuide->SetCorrectionLineStartLocal(_MouseWorld - center);
+        else
+            pGuide->SetCorrectionLineEndLocal(_MouseWorld - center);
+
+        ApplyCircleGuideToMatchingSurfaces(pSelectedSurface.Get());
+        CreateOrUpdateCircleGuideCorrectionLine(pSelectedSurface.Get());
+        m_StatusText = "Guide correction line updated from scene handle.";
+        return true;
+    }
+
+    if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        return false;
+
+    if (distToStart > handlePickRadius && distToEnd > handlePickRadius)
+        return false;
+
+    m_GuideDragHandle = (distToStart <= distToEnd) ? GUIDE_DRAG_HANDLE::CORR_START : GUIDE_DRAG_HANDLE::CORR_END;
+    m_StatusText = (m_GuideDragHandle == GUIDE_DRAG_HANDLE::CORR_START)
+        ? "Dragging correction line A handle."
+        : "Dragging correction line B handle.";
+
+    if (m_GuideDragHandle == GUIDE_DRAG_HANDLE::CORR_START)
+        pGuide->SetCorrectionLineStartLocal(_MouseWorld - center);
+    else
+        pGuide->SetCorrectionLineEndLocal(_MouseWorld - center);
+
+    ApplyCircleGuideToMatchingSurfaces(pSelectedSurface.Get());
+    CreateOrUpdateCircleGuideCorrectionLine(pSelectedSurface.Get());
+    return true;
+}
+
+void MapEditorUI::DrawCircleGuideOverlayForSurface(ImDrawList* _Draw, GameObject* _SurfaceObject, bool _ShowLabels)
+{
+    if (_Draw == nullptr || _SurfaceObject == nullptr)
+        return;
+
+    auto pSurface = _SurfaceObject->GetScript<CSurfaceScript>();
+    auto pGuide = _SurfaceObject->GetScript<CSurfaceCircleGuideScript>();
     if (pSurface == nullptr || pGuide == nullptr || !pGuide->IsEnabled() ||
-        pSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::CIRCLE)
+        !IsCircleGeometry(pSurface->GetGeometry()))
     {
         return;
     }
@@ -2279,45 +2854,112 @@ void MapEditorUI::DrawSelectedCircleGuideOverlay(ImDrawList* _Draw)
     if (radius <= 0.001f)
         return;
 
-    const Vec2 entryWorld = MakeCirclePointFromAngle(center, radius, pGuide->GetEntryAngleDeg());
-    const Vec2 halfWorld = MakeCirclePointFromAngle(center, radius, pGuide->GetHalfCheckAngleDeg());
-    const Vec2 exitWorld = MakeCirclePointFromAngle(center, radius, pGuide->GetExitAngleDeg());
-    const Vec2 corrStartWorld = center + pGuide->GetCorrectionLineStartLocal();
-    const Vec2 corrEndWorld = center + pGuide->GetCorrectionLineEndLocal();
+    const Vec2 halfWorld = MakeCirclePointFromAngle(center, radius, kCircleGuideHalfCheckAngleDeg);
+    Vec2 corrStartWorld = center + pGuide->GetCorrectionLineStartLocal();
+    Vec2 corrEndWorld = center + pGuide->GetCorrectionLineEndLocal();
+    if (corrEndWorld.x < corrStartWorld.x)
+    {
+        const Vec2 temp = corrStartWorld;
+        corrStartWorld = corrEndWorld;
+        corrEndWorld = temp;
+    }
 
-    ImVec2 screenEntry = {};
+    const bool entryOnRight = cosf(DegreesToRadians(pGuide->GetEntryAngleDeg())) >= 0.f;
+    const bool initialLineOwnsRight = !entryOnRight;
+    const Vec2 activeArcStartPoint = initialLineOwnsRight ? halfWorld : corrEndWorld;
+    const Vec2 activeArcEndPoint = initialLineOwnsRight ? corrStartWorld : halfWorld;
+    const float activeArcStartAngleDeg = ComputeCircleAngleDegrees(center, activeArcStartPoint);
+    const float activeArcEndAngleDeg = ComputeCircleAngleDegrees(center, activeArcEndPoint);
+    bool activeArcCounterClockwise = false;
+    const bool hasActiveArcDirection =
+        TryResolveGuideArcDirection(activeArcStartAngleDeg, activeArcEndAngleDeg, kCircleGuideHalfCheckAngleDeg, activeArcCounterClockwise);
+    const ImU32 arcColor = _ShowLabels ? IM_COL32(255, 160, 80, 255) : IM_COL32(255, 190, 96, 220);
+    const float arcThickness = _ShowLabels ? 3.f : 2.5f;
+    const float lineThickness = _ShowLabels ? 2.f : 1.75f;
+    const ImU32 halfColor = initialLineOwnsRight ? IM_COL32(255, 0, 80, 255) : IM_COL32(0, 120, 255, 255);
+
     ImVec2 screenHalf = {};
-    ImVec2 screenExit = {};
     ImVec2 screenCorrStart = {};
     ImVec2 screenCorrEnd = {};
-    const bool hasEntry = WorldToScreen(entryWorld, screenEntry);
     const bool hasHalf = WorldToScreen(halfWorld, screenHalf);
-    const bool hasExit = WorldToScreen(exitWorld, screenExit);
     const bool hasCorrStart = WorldToScreen(corrStartWorld, screenCorrStart);
     const bool hasCorrEnd = WorldToScreen(corrEndWorld, screenCorrEnd);
 
-    if (hasCorrStart && hasCorrEnd)
+    const auto drawArcSegment = [&](float _StartAngleDeg, float _EndAngleDeg, bool _CounterClockwise, ImU32 _Color)
     {
-        _Draw->AddLine(screenCorrStart, screenCorrEnd, IM_COL32(80, 255, 255, 230), 2.5f);
-    }
+        const int segmentCount = 20;
+        ImVec2 prev = {};
+        bool hasPrev = false;
+
+        for (int segment = 0; segment <= segmentCount; ++segment)
+        {
+            const float t = (float)segment / (float)segmentCount;
+            const float angleDeg = LerpAngleDegreesAlong(_CounterClockwise, _StartAngleDeg, _EndAngleDeg, t);
+            const Vec2 worldPos = MakeCirclePointFromAngle(center, radius, angleDeg);
+            ImVec2 screenPos = {};
+            if (!WorldToScreen(worldPos, screenPos))
+                continue;
+
+            if (hasPrev)
+                _Draw->AddLine(prev, screenPos, _Color, arcThickness);
+
+            prev = screenPos;
+            hasPrev = true;
+        }
+    };
 
     const auto drawGuideMarker = [&](const ImVec2& _ScreenPos, ImU32 _Color, const char* _Label)
     {
-        _Draw->AddCircleFilled(_ScreenPos, kCircleGuideMarkerRadius, _Color);
-        _Draw->AddCircle(_ScreenPos, kCircleGuideMarkerRadius + 3.f, IM_COL32(255, 255, 255, 200), 0, 1.5f);
-        _Draw->AddText(ImVec2(_ScreenPos.x + 10.f, _ScreenPos.y - 8.f), _Color, _Label);
+        const float markerRadius = _ShowLabels ? kCircleGuideMarkerRadius : (kCircleGuideMarkerRadius - 2.f);
+        _Draw->AddCircleFilled(_ScreenPos, markerRadius, _Color);
+        _Draw->AddCircle(_ScreenPos, markerRadius + 3.f, IM_COL32(255, 255, 255, 200), 0, 1.5f);
+        if (_ShowLabels)
+            _Draw->AddText(ImVec2(_ScreenPos.x + 10.f, _ScreenPos.y - 8.f), _Color, _Label);
     };
 
-    if (hasEntry)
-        drawGuideMarker(screenEntry, IM_COL32(90, 255, 120, 255), "Entry");
+    const auto drawExitArrow = [&](const ImVec2& _ScreenPos, bool _OpenRight, ImU32 _Color)
+    {
+        const float shaftLength = _ShowLabels ? 34.f : 26.f;
+        const float shaftYOffset = _ShowLabels ? -16.f : -12.f;
+        const float headLength = _ShowLabels ? 10.f : 8.f;
+        const float headWidth = _ShowLabels ? 6.f : 5.f;
+        const float dir = _OpenRight ? 1.f : -1.f;
+        const ImVec2 start = ImVec2(_ScreenPos.x, _ScreenPos.y + shaftYOffset);
+        const ImVec2 end = ImVec2(start.x + shaftLength * dir, start.y);
+        const ImVec2 headBase = ImVec2(end.x - headLength * dir, end.y);
+
+        _Draw->AddLine(start, end, _Color, 2.5f);
+        _Draw->AddLine(end, ImVec2(headBase.x, headBase.y - headWidth), _Color, 2.5f);
+        _Draw->AddLine(end, ImVec2(headBase.x, headBase.y + headWidth), _Color, 2.5f);
+        if (_ShowLabels)
+            _Draw->AddText(ImVec2(end.x + (_OpenRight ? 8.f : -36.f), end.y - 8.f), _Color, "Exit");
+    };
+
+    if (hasActiveArcDirection)
+        drawArcSegment(activeArcStartAngleDeg, activeArcEndAngleDeg, activeArcCounterClockwise, arcColor);
+    if (hasCorrStart && hasCorrEnd)
+        _Draw->AddLine(screenCorrStart, screenCorrEnd, IM_COL32(80, 255, 255, 220), lineThickness);
     if (hasHalf)
-        drawGuideMarker(screenHalf, IM_COL32(255, 220, 80, 255), "Half");
-    if (hasExit)
-        drawGuideMarker(screenExit, IM_COL32(255, 140, 90, 255), "Exit");
+    {
+        drawGuideMarker(screenHalf, halfColor, "Half");
+        drawExitArrow(screenHalf, initialLineOwnsRight, halfColor);
+    }
     if (hasCorrStart)
-        drawGuideMarker(screenCorrStart, IM_COL32(80, 255, 255, 255), "Corr A");
+        drawGuideMarker(screenCorrStart, IM_COL32(80, 255, 255, 255), "A");
     if (hasCorrEnd)
-        drawGuideMarker(screenCorrEnd, IM_COL32(80, 255, 255, 255), "Corr B");
+        drawGuideMarker(screenCorrEnd, IM_COL32(80, 255, 255, 255), "B");
+}
+
+void MapEditorUI::DrawSelectedCircleGuideOverlay(ImDrawList* _Draw)
+{
+    if (_Draw == nullptr)
+        return;
+
+    Ptr<GameObject> pSelectedSurface = GetSelectedSurfaceObject();
+    if (pSelectedSurface == nullptr)
+        return;
+
+    DrawCircleGuideOverlayForSurface(_Draw, pSelectedSurface.Get(), true);
 }
 
 void MapEditorUI::DrawSceneOverlay()
@@ -2331,6 +2973,8 @@ void MapEditorUI::DrawSceneOverlay()
 
 void MapEditorUI::Tick_UI()
 {
+    RefreshCircleGuideCorrectionLines();
+
     ImGui::TextWrapped("Freeform surface editor. Click a world start point, then an end point directly in the game view.");
     ImGui::TextWrapped("This editor creates persistent scene surface objects instead of baking grid tiles.");
     ImGui::TextWrapped("Right click cancels the current stroke. F10 toggles this editor.");
@@ -2342,7 +2986,7 @@ void MapEditorUI::Tick_UI()
         m_StatusText = "Surface root is ready.";
     }
 
-    const char* shapeNames[] = { "Line", "Flat", "Arc", "Circle" };
+    const char* shapeNames[] = { "Line", "Flat", "Arc", "Quarter Circle", "Full Circle" };
     int shapeIdx = (int)m_FreeformShape;
     if (ImGui::Combo("Shape", &shapeIdx, shapeNames, IM_ARRAYSIZE(shapeNames)))
     {
@@ -2350,7 +2994,7 @@ void MapEditorUI::Tick_UI()
         m_HasStartPoint = false;
     }
 
-    const char* roleNames[] = { "Surface", "Correction", "Pure Wall", "Erase" };
+    const char* roleNames[] = { "Surface", "Correction", "Pure Wall", "Vertical Entry", "Erase" };
     int roleIdx = (int)m_FreeformRole;
     if (ImGui::Combo("Role", &roleIdx, roleNames, IM_ARRAYSIZE(roleNames)))
     {
@@ -2359,10 +3003,15 @@ void MapEditorUI::Tick_UI()
 
         if (m_FreeformRole == FREEFORM_ROLE::WALL)
             m_Attachable = false;
+        else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY && !m_Attachable)
+            m_Attachable = true;
     }
 
     if (m_FreeformRole != FREEFORM_ROLE::ERASE)
     {
+        if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
+            ImGui::TextWrapped("Vertical Entry line only catches when the player's world Y movement is dominant. Side approaches are ignored.");
+
         if (m_FreeformShape == FREEFORM_SHAPE::LINE || m_FreeformShape == FREEFORM_SHAPE::FLAT)
         {
             ImGui::Checkbox("Solid Above", &m_FillAbove);
@@ -2373,11 +3022,14 @@ void MapEditorUI::Tick_UI()
         }
         else
         {
-            const char* cornerNames[] = { "Top Left", "Top Right", "Bottom Left", "Bottom Right" };
-            int cornerIdx = (int)m_ArcCorner;
-            if (ImGui::Combo("Arc Corner", &cornerIdx, cornerNames, IM_ARRAYSIZE(cornerNames)))
+            if (m_FreeformShape != FREEFORM_SHAPE::FULL_CIRCLE)
             {
-                m_ArcCorner = (ARC_CORNER)cornerIdx;
+                const char* cornerNames[] = { "Top Left", "Top Right", "Bottom Left", "Bottom Right" };
+                int cornerIdx = (int)m_ArcCorner;
+                if (ImGui::Combo("Arc Corner", &cornerIdx, cornerNames, IM_ARRAYSIZE(cornerNames)))
+                {
+                    m_ArcCorner = (ARC_CORNER)cornerIdx;
+                }
             }
 
             ImGui::Checkbox("Fill Inside", &m_ArcFillInside);
@@ -2385,9 +3037,13 @@ void MapEditorUI::Tick_UI()
 
             if (m_FreeformShape == FREEFORM_SHAPE::ARC)
                 ImGui::TextWrapped("Arc is a pure quarter-curve with no automatic half-check or line fallback.");
+            else if (m_FreeformShape == FREEFORM_SHAPE::CIRCLE)
+                ImGui::TextWrapped("Quarter Circle creates one curved quarter. If Fill Inside is on, its guide correction line is created automatically.");
             else
+                ImGui::TextWrapped("Full Circle uses the first click as center. The second click sets radius, or just confirms placement when Use Radius is on.");
+
+            if (m_FreeformShape == FREEFORM_SHAPE::CIRCLE || m_FreeformShape == FREEFORM_SHAPE::FULL_CIRCLE)
             {
-                ImGui::TextWrapped("Circle is a pure curved surface now. If you need a flat correction, add a separate line surface under it.");
                 ImGui::Checkbox("Use Radius", &m_UseCircleRadius);
                 if (m_UseCircleRadius)
                 {
@@ -2424,13 +3080,17 @@ void MapEditorUI::Tick_UI()
     else
         ImGui::Text("End Pos : <none>");
 
-    if (m_HasStartPoint && hasMouseWorld && m_FreeformShape == FREEFORM_SHAPE::CIRCLE)
+    if (m_HasStartPoint && hasMouseWorld &&
+        (m_FreeformShape == FREEFORM_SHAPE::CIRCLE || m_FreeformShape == FREEFORM_SHAPE::FULL_CIRCLE))
     {
         Vec2 previewMinBox = {};
         Vec2 previewMaxBox = {};
         Vec2 previewCenter = {};
         float previewRadius = 0.f;
-        BuildQuarterSurfaceBounds(m_StartPoint, displayEndPos, true, previewMinBox, previewMaxBox, previewCenter, previewRadius);
+        if (m_FreeformShape == FREEFORM_SHAPE::FULL_CIRCLE)
+            BuildFullCircleBounds(m_StartPoint, displayEndPos, previewMinBox, previewMaxBox, previewCenter, previewRadius);
+        else
+            BuildQuarterSurfaceBounds(m_StartPoint, displayEndPos, true, previewMinBox, previewMaxBox, previewCenter, previewRadius);
 
         ImGui::Text("Preview Radius : %.1f", previewRadius);
     }
@@ -2454,6 +3114,87 @@ void MapEditorUI::Tick_UI()
     vector<Ptr<GameObject>> vecSurfaces;
     CollectSurfaceObjects(vecSurfaces);
     ImGui::Text("Surface Count : %d", (int)vecSurfaces.size());
+
+    std::string surfaceSetName = "None";
+    if (m_SurfaceSetAsset != nullptr)
+    {
+        std::wstring surfaceSetLabel = m_SurfaceSetAsset->GetKey();
+        if (surfaceSetLabel.empty())
+            surfaceSetLabel = m_SurfaceSetAsset->GetRelativePath();
+
+        if (!surfaceSetLabel.empty())
+            surfaceSetName = string(surfaceSetLabel.begin(), surfaceSetLabel.end());
+    }
+
+    char surfaceSetBuffer[256] = {};
+    strcpy_s(surfaceSetBuffer, surfaceSetName.c_str());
+    ImGui::InputText("SurfaceSet Target", surfaceSetBuffer, sizeof(surfaceSetBuffer), ImGuiInputTextFlags_ReadOnly);
+    if (ImGui::BeginDragDropTarget())
+    {
+        const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("Content");
+        if (pPayload != nullptr)
+        {
+            DWORD_PTR data = *((DWORD_PTR*)pPayload->Data);
+            Ptr<Asset> pAsset = (Asset*)data;
+            if (pAsset != nullptr && pAsset->GetType() == ASSET_TYPE::SURFACESET)
+            {
+                m_SurfaceSetAsset = (ASurfaceSet*)pAsset.Get();
+                m_StatusText = "SurfaceSet target assigned from Content.";
+            }
+        }
+
+        ImGui::EndDragDropTarget();
+    }
+
+    if (ImGui::Button("Use Inspector SurfaceSet"))
+    {
+        Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+        Ptr<Asset> pTargetAsset = (pInspector != nullptr) ? pInspector->GetTargetAsset() : nullptr;
+        if (pTargetAsset != nullptr && pTargetAsset->GetType() == ASSET_TYPE::SURFACESET)
+        {
+            m_SurfaceSetAsset = (ASurfaceSet*)pTargetAsset.Get();
+            m_StatusText = "SurfaceSet target copied from Inspector.";
+        }
+        else
+        {
+            m_StatusText = "Inspector does not currently have a SurfaceSet asset selected.";
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear SurfaceSet"))
+    {
+        m_SurfaceSetAsset = nullptr;
+        m_StatusText = "SurfaceSet target cleared.";
+    }
+
+    if (ImGui::Button("Bake && Replace With Actor"))
+    {
+        if (LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+        {
+            m_StatusText = "Bake / replace is disabled while the level is playing.";
+        }
+        else
+        {
+            if (m_SurfaceSetAsset == nullptr)
+            {
+                std::string autoCreateStatus;
+                m_SurfaceSetAsset = SurfaceSetUI::EnsureCurrentLevelSurfaceSetAsset(&autoCreateStatus);
+                if (m_SurfaceSetAsset == nullptr)
+                {
+                    m_StatusText = autoCreateStatus;
+                    return;
+                }
+            }
+
+            UINT bakedCount = 0;
+            std::string bakeStatus;
+            if (SurfaceSetUI::ReplaceSceneSurfacesWithActorInLevel(m_SurfaceSetAsset.Get(), bakedCount, &bakeStatus))
+                m_StatusText = bakeStatus + " Use File -> Level Save to persist the level.";
+            else
+                m_StatusText = bakeStatus;
+        }
+    }
+    ImGui::TextWrapped("Drag a .sset asset from Content here, or the bake button will auto-create one from the current level name.");
 
     ImGui::Separator();
     ImGui::TextWrapped("Ctrl + left click in the scene selects the nearest surface for guide editing.");
@@ -2487,8 +3228,7 @@ void MapEditorUI::Tick_UI()
         ImGui::TextWrapped("Selected Surface : %s", selectedNameUtf8.empty() ? "<unnamed>" : selectedNameUtf8.c_str());
 
         auto pSelectedScript = pSelectedSurface->GetScript<CSurfaceScript>();
-        if (pSelectedScript != nullptr &&
-            pSelectedScript->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::CIRCLE)
+        if (pSelectedScript != nullptr && IsCircleGeometry(pSelectedScript->GetGeometry()))
         {
             auto pGuide = EnsureCircleGuideScript(pSelectedSurface.Get(), false);
             if (pGuide == nullptr)
@@ -2520,18 +3260,17 @@ void MapEditorUI::Tick_UI()
                 ImGui::Text("Guide Radius : %.1f", circleRadius);
 
                 float entryAngle = pGuide->GetEntryAngleDeg();
-                float halfAngle = pGuide->GetHalfCheckAngleDeg();
                 float exitAngle = pGuide->GetExitAngleDeg();
                 if (ImGui::DragFloat("Entry Angle", &entryAngle, 0.5f, -180.f, 180.f))
                 {
                     pGuide->SetEntryAngleDeg(entryAngle);
                     changed = true;
                 }
-                if (ImGui::DragFloat("Half Angle", &halfAngle, 0.5f, -180.f, 180.f))
-                {
-                    pGuide->SetHalfCheckAngleDeg(halfAngle);
-                    changed = true;
-                }
+                const bool entryOnRight = cosf(DegreesToRadians(pGuide->GetEntryAngleDeg())) >= 0.f;
+                const ImVec4 halfUiColor = entryOnRight ? ImVec4(1.f, 0.35f, 0.35f, 1.f) : ImVec4(0.31f, 0.59f, 1.f, 1.f);
+                ImGui::TextColored(halfUiColor, entryOnRight
+                    ? "Half Check : red (right line open)"
+                    : "Half Check : blue (left line open)");
                 if (ImGui::DragFloat("Exit Angle", &exitAngle, 0.5f, -180.f, 180.f))
                 {
                     pGuide->SetExitAngleDeg(exitAngle);
@@ -2543,12 +3282,6 @@ void MapEditorUI::Tick_UI()
                     if (ImGui::Button("Set Entry From Cursor"))
                     {
                         pGuide->SetEntryAngleDeg(ComputeCircleAngleDegrees(circleCenter, mouseWorld));
-                        changed = true;
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Set Half From Cursor"))
-                    {
-                        pGuide->SetHalfCheckAngleDeg(ComputeCircleAngleDegrees(circleCenter, mouseWorld));
                         changed = true;
                     }
                     ImGui::SameLine();
@@ -2622,7 +3355,7 @@ void MapEditorUI::Tick_UI()
                     }
                 }
 
-                ImGui::TextWrapped("Guide overlay shows Entry / Half / Exit and Corr A / Corr B directly in the scene.");
+                ImGui::TextWrapped("Guide overlay shows only the visible arc, the A-B correction line, and blue/red Half state.");
 
                 if (changed)
                 {

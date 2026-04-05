@@ -21,6 +21,8 @@ private:
 
     int         m_OverlapCount;
     Matrix      m_matWorld;
+    Vec2        m_WorldAABBMin;
+    Vec2        m_WorldAABBMax;
        
     vector<COLLISION_DELEGATE> m_vecBeginDel;
     vector<COLLISION_DELEGATE> m_vecOverDel;
@@ -29,7 +31,8 @@ private:
 public:
     void AddDynamicBeginOverlap(CScript* _Inst, COLLISION_EVENT _MemFunc);    
     void AddDynamicOverlap(CScript* _Inst, COLLISION_EVENT _MemFunc);
-    void AddDynamicEndOverlap(CScript* _Inst, COLLISION_EVENT _MemFunc);        
+    void AddDynamicEndOverlap(CScript* _Inst, COLLISION_EVENT _MemFunc);
+    void RemoveDynamicDelegates(CScript* _Inst);
 
 public:
     GET_SET(Vec2, Offset);

@@ -10,6 +10,13 @@ private:
     void View();
     void GameObjectMenu();
     void Asset();
+    void CreateCylinderObject();
+    void CreateBlockObject();
+    void CreateMovingBlockObject();
+    void CreatePushingBlockObject();
+    void CreateSpikeObject(float _RotationZ, const wchar_t* _NamePrefix);
+    void CreateSpringObject(float _RotationZ, const wchar_t* _NamePrefix);
+    void DeleteSelectedObject();
 
 public:
     virtual void Tick() override;

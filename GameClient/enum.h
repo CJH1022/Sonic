@@ -53,6 +53,7 @@ enum class ASSET_TYPE
 	FLIPBOOK,
 	TILEMAP,
 	PREFAB,
+	SURFACESET,
 
 	END,
 };

@@ -4,7 +4,12 @@
 #include "GameObject.h"
 
 
-#define GET_OTHER_COMPONENT_BODY(COM_NAME) C##COM_NAME* Component::COM_NAME() { return GetOwner()->COM_NAME().Get(); }
+#define GET_OTHER_COMPONENT_BODY(COM_NAME) \
+	C##COM_NAME* Component::COM_NAME() \
+	{ \
+		GameObject* pOwner = GetOwner(); \
+		return (nullptr != pOwner) ? pOwner->COM_NAME().Get() : nullptr; \
+	}
 
 
 Component::Component(COMPONENT_TYPE _Type)

@@ -6,10 +6,20 @@
 #include "ContentUI.h"
 #include "LevelMgr.h"
 
+#include "CCollider2D.h"
+#include "CFlipbookRender.h"
+#include "CSpriteRender.h"
+#include "CTransform.h"
 #include "Inspector.h"
 #include "GameObject.h"
 
 #include "Source/ScriptMgr.h"
+#include "Source/Scripts/CBlockMovingScript.h"
+#include "Source/Scripts/CBlockPushingScript.h"
+#include "Source/Scripts/CBlockScript.h"
+#include "Source/Scripts/CCylinderScript.h"
+#include "Source/Scripts/CSpikeScript.h"
+#include "Source/Scripts/CSpringScript.h"
 #include "func.h"
 
 namespace
@@ -45,6 +55,27 @@ namespace
 		}
 
 		return RelativePath;
+	}
+
+	bool CanEditSceneObjects()
+	{
+		return (nullptr != LevelMgr::GetInst()->GetCurLevel())
+			&& (LevelMgr::GetInst()->GetLevelState() == LEVEL_STATE::STOP);
+	}
+
+	bool ObjectHasScriptNamed(Ptr<GameObject> _Object, const wstring& _ScriptName)
+	{
+		if (nullptr == _Object)
+			return false;
+
+		const vector<Ptr<CScript>>& vecScripts = _Object->GetScripts();
+		for (size_t i = 0; i < vecScripts.size(); ++i)
+		{
+			if (_ScriptName == ScriptMgr::GetScriptName(vecScripts[i].Get()))
+				return true;
+		}
+
+		return false;
 	}
 }
 
@@ -235,24 +266,97 @@ void Menu::GameObjectMenu()
 {
 	if (ImGui::BeginMenu("GameObject"))
 	{
+		const bool canEditObjects = CanEditSceneObjects();
+		Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+		Ptr<GameObject> pObject = (nullptr != pInspector) ? pInspector->GetTargetObject() : nullptr;
+
+		if (ImGui::MenuItem("Create Block", nullptr, nullptr, canEditObjects))
+		{
+			CreateBlockObject();
+		}
+
+		if (ImGui::MenuItem("Create Moving Block", nullptr, nullptr, canEditObjects))
+		{
+			CreateMovingBlockObject();
+		}
+
+		if (ImGui::MenuItem("Create Pushing Block", nullptr, nullptr, canEditObjects))
+		{
+			CreatePushingBlockObject();
+		}
+
+		if (ImGui::BeginMenu("Create Spike"))
+		{
+			if (ImGui::MenuItem("Up", nullptr, nullptr, canEditObjects))
+			{
+				CreateSpikeObject(0.f, L"SpikeUp_");
+			}
+
+			if (ImGui::MenuItem("Left", nullptr, nullptr, canEditObjects))
+			{
+				CreateSpikeObject(XM_PIDIV2, L"SpikeLeft_");
+			}
+
+			if (ImGui::MenuItem("Right", nullptr, nullptr, canEditObjects))
+			{
+				CreateSpikeObject(-XM_PIDIV2, L"SpikeRight_");
+			}
+
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::BeginMenu("Create Spring"))
+		{
+			if (ImGui::MenuItem("Up", nullptr, nullptr, canEditObjects))
+			{
+				CreateSpringObject(XM_PIDIV2, L"SpringUp_");
+			}
+
+			if (ImGui::MenuItem("Left", nullptr, nullptr, canEditObjects))
+			{
+				CreateSpringObject(XM_PI, L"SpringLeft_");
+			}
+
+			if (ImGui::MenuItem("Right", nullptr, nullptr, canEditObjects))
+			{
+				CreateSpringObject(0.f, L"SpringRight_");
+			}
+
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::MenuItem("Create Cylinder", nullptr, nullptr, canEditObjects))
+		{
+			CreateCylinderObject();
+		}
+
+		ImGui::Separator();
+
+		if (ImGui::MenuItem("Delete Selected Object", "Del", nullptr, canEditObjects && nullptr != pObject))
+		{
+			DeleteSelectedObject();
+		}
+
 		if (ImGui::BeginMenu("Add Script"))
 		{
 			vector<wstring> vecScriptName;
 			ScriptMgr::GetScriptInfo(vecScriptName);
 
 			for (const auto& ScriptName : vecScriptName)
-			{				
-				if (ImGui::MenuItem(string(ScriptName.begin(), ScriptName.end()).c_str()))
-				{					
-					Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
-					Ptr<GameObject> pObject = pInspector->GetTargetObject();
-
-					if (nullptr != pObject)
+			{
+				const bool canAddScript = canEditObjects && nullptr != pObject && !ObjectHasScriptNamed(pObject, ScriptName);
+				if (ImGui::MenuItem(string(ScriptName.begin(), ScriptName.end()).c_str(), nullptr, nullptr, canAddScript))
+				{
+					CScript* pNewScript = ScriptMgr::GetScript(ScriptName);
+					if (nullptr != pNewScript)
 					{
-						CScript* pNewScript = ScriptMgr::GetScript(ScriptName);
 						pObject->AddComponent(pNewScript);
-					}					
-				}				
+						pObject->RegisterAsParent();
+						LevelMgr::GetInst()->GetCurLevel()->SetChanged();
+						if (nullptr != pInspector)
+							pInspector->SetTargetObject(pObject);
+					}
+				}
 			}
 
 			ImGui::EndMenu();
@@ -260,6 +364,227 @@ void Menu::GameObjectMenu()
 
 		ImGui::EndMenu();
 	}
+}
+
+void Menu::CreateCylinderObject()
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pCylinder = new GameObject;
+	pCylinder->SetName(L"Cylinder_" + std::to_wstring(pCylinder->GetID()));
+	pCylinder->AddComponent(new CTransform);
+	pCylinder->AddComponent(new CCollider2D);
+	pCylinder->AddComponent(new CSpriteRender);
+	pCylinder->AddComponent(new CCylinderScript);
+
+	pCylinder->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pCylinder->Transform()->SetRelativeScale(Vec3(260.f, 420.f, 1.f));
+	pCylinder->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pCylinder->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+	Ptr<ASprite> pCylinderSprite = LOAD(ASprite, L"Sprite\\Sonic_CylinderTree.sprite");
+	if (pCylinderSprite != nullptr)
+	{
+		pCylinder->SpriteRender()->SetSprite(pCylinderSprite);
+	}
+
+	pLevel->AddObject(5, pCylinder);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (pInspector != nullptr)
+		pInspector->SetTargetObject(pCylinder);
+}
+
+void Menu::CreateBlockObject()
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pBlock = new GameObject;
+	pBlock->SetName(L"Block_" + std::to_wstring(pBlock->GetID()));
+	pBlock->AddComponent(new CTransform);
+	pBlock->AddComponent(new CCollider2D);
+	pBlock->AddComponent(new CSpriteRender);
+	pBlock->AddComponent(new CBlockScript);
+
+	pBlock->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pBlock->Transform()->SetRelativeScale(Vec3(128.f, 128.f, 1.f));
+	pBlock->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pBlock->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+	Ptr<ASprite> pSprite = LOAD(ASprite, L"Sprite\\Block_Mid.sprite");
+	if (nullptr != pSprite)
+	{
+		pBlock->SpriteRender()->SetSprite(pSprite);
+	}
+
+	pLevel->AddObject(5, pBlock);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pBlock);
+}
+
+void Menu::CreateMovingBlockObject()
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pBlock = new GameObject;
+	pBlock->SetName(L"MovingBlock_" + std::to_wstring(pBlock->GetID()));
+	pBlock->AddComponent(new CTransform);
+	pBlock->AddComponent(new CCollider2D);
+	pBlock->AddComponent(new CSpriteRender);
+
+	CBlockMovingScript* pMovingScript = new CBlockMovingScript;
+	pMovingScript->SetStartPos(Vec3(0.f, 0.f, 0.f));
+	pMovingScript->SetEndPos(Vec3(250.f, 0.f, 0.f));
+	pMovingScript->SetVelocity(Vec2(120.f, 0.f));
+	pBlock->AddComponent(pMovingScript);
+
+	pBlock->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pBlock->Transform()->SetRelativeScale(Vec3(160.f, 64.f, 1.f));
+	pBlock->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pBlock->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+	Ptr<ASprite> pSprite = LOAD(ASprite, L"Sprite\\Block_Move.sprite");
+	if (nullptr != pSprite)
+	{
+		pBlock->SpriteRender()->SetSprite(pSprite);
+	}
+
+	pLevel->AddObject(5, pBlock);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pBlock);
+}
+
+void Menu::CreatePushingBlockObject()
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pBlock = new GameObject;
+	pBlock->SetName(L"PushingBlock_" + std::to_wstring(pBlock->GetID()));
+	pBlock->AddComponent(new CTransform);
+	pBlock->AddComponent(new CCollider2D);
+	pBlock->AddComponent(new CSpriteRender);
+	pBlock->AddComponent(new CBlockPushingScript);
+
+	pBlock->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pBlock->Transform()->SetRelativeScale(Vec3(128.f, 128.f, 1.f));
+	pBlock->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pBlock->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+	Ptr<ASprite> pSprite = LOAD(ASprite, L"Sprite\\Block_Tall.sprite");
+	if (nullptr != pSprite)
+	{
+		pBlock->SpriteRender()->SetSprite(pSprite);
+	}
+
+	pLevel->AddObject(5, pBlock);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pBlock);
+}
+
+void Menu::CreateSpikeObject(float _RotationZ, const wchar_t* _NamePrefix)
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pSpike = new GameObject;
+	pSpike->SetName(wstring(_NamePrefix) + std::to_wstring(pSpike->GetID()));
+	pSpike->AddComponent(new CTransform);
+	pSpike->AddComponent(new CCollider2D);
+	pSpike->AddComponent(new CSpriteRender);
+	pSpike->AddComponent(new CSpikeScript);
+
+	pSpike->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pSpike->Transform()->SetRelativeScale(Vec3(150.f, 150.f, 1.f));
+	pSpike->Transform()->SetRelativeRot(Vec3(0.f, 0.f, _RotationZ));
+	pSpike->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pSpike->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+	Ptr<ASprite> pSprite = LOAD(ASprite, L"Sprite\\Spike.sprite");
+	if (nullptr != pSprite)
+	{
+		pSpike->SpriteRender()->SetSprite(pSprite);
+	}
+
+	pLevel->AddObject(5, pSpike);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pSpike);
+}
+
+void Menu::CreateSpringObject(float _RotationZ, const wchar_t* _NamePrefix)
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pSpring = new GameObject;
+	pSpring->SetName(wstring(_NamePrefix) + std::to_wstring(pSpring->GetID()));
+	pSpring->AddComponent(new CTransform);
+	pSpring->AddComponent(new CCollider2D);
+	pSpring->AddComponent(new CFlipbookRender);
+	pSpring->AddComponent(new CSpringScript);
+
+	pSpring->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pSpring->Transform()->SetRelativeScale(Vec3(96.f, 96.f, 1.f));
+	pSpring->Transform()->SetRelativeRot(Vec3(0.f, 0.f, _RotationZ));
+	pSpring->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pSpring->Collider2D()->SetScale(Vec2(0.9f, 0.9f));
+
+	Ptr<AFlipbook> pFlipbook = LOAD(AFlipbook, L"Flipbook\\Spring.flip");
+	if (nullptr == pFlipbook)
+	{
+		pFlipbook = LOAD(AFlipbook, L"Flipbook\\Default Flipbook_0.flip");
+	}
+
+	if (nullptr != pFlipbook)
+	{
+		pSpring->FlipbookRender()->SetFlipbook(0, pFlipbook);
+	}
+
+	pLevel->AddObject(5, pSpring);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pSpring);
+}
+
+void Menu::DeleteSelectedObject()
+{
+	if (!CanEditSceneObjects())
+		return;
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr == pInspector)
+		return;
+
+	Ptr<GameObject> pTarget = pInspector->GetTargetObject();
+	if (nullptr == pTarget)
+		return;
+
+	pTarget->Destroy();
+	pInspector->SetTargetObject(nullptr);
 }
 
 void Menu::Asset()
@@ -324,6 +649,17 @@ void Menu::Asset()
 				if (pInspector != nullptr) pInspector->SetTargetAsset(pTileMap.Get());
 			}
 
+			if (ImGui::MenuItem("Create Surface Set"))
+			{
+				CreateDirectoryW((wstring(CONTENT_PATH) + L"SurfaceSet").c_str(), nullptr);
+				Ptr<ASurfaceSet> pSurfaceSet = new ASurfaceSet;
+				wstring Key = GetAssetName(ASSET_TYPE::SURFACESET, L"SurfaceSet\\Default Surface Set");
+				AssetMgr::GetInst()->AddAsset(Key, pSurfaceSet.Get());
+
+				pSurfaceSet->Save(wstring(CONTENT_PATH) + Key);
+				if (pInspector != nullptr) pInspector->SetTargetAsset(pSurfaceSet.Get());
+			}
+
 			if (ImGui::MenuItem("Create Prefab", nullptr, nullptr, nullptr != pTargetObject))
 			{
 				CreateDirectoryW((wstring(CONTENT_PATH) + L"Prefab").c_str(), nullptr);
@@ -375,6 +711,9 @@ wstring Menu::GetAssetName(ASSET_TYPE _Type, const wstring& _Name)
 		break;
 	case ASSET_TYPE::PREFAB:
 		Ext = L".pref";
+		break;
+	case ASSET_TYPE::SURFACESET:
+		Ext = L".sset";
 		break;
 	case ASSET_TYPE::LEVEL:
 		Ext = L".lv";

@@ -1,10 +1,28 @@
 #include "pch.h"
 #include "Inspector.h"
 
+#include "EditorMgr.h"
 #include "LevelMgr.h"
 #include "GameObject.h"
+#include "Source/ScriptMgr.h"
 
+namespace
+{
+	bool ObjectHasScriptNamed(Ptr<GameObject> _Object, const wstring& _ScriptName)
+	{
+		if (nullptr == _Object)
+			return false;
 
+		const vector<Ptr<CScript>>& vecScripts = _Object->GetScripts();
+		for (size_t i = 0; i < vecScripts.size(); ++i)
+		{
+			if (_ScriptName == ScriptMgr::GetScriptName(vecScripts[i].Get()))
+				return true;
+		}
+
+		return false;
+	}
+}
 
 Inspector::Inspector()
 	: EditorUI("Inspector")
@@ -100,6 +118,11 @@ void Inspector::SetTargetAsset(Ptr<Asset> _Asset)
 
 void Inspector::Tick_UI()
 {
+	if (nullptr != m_TargetObject && m_TargetObject->IsDead())
+	{
+		SetTargetObject(nullptr);
+	}
+
 	if (nullptr == m_TargetObject)
 	{
 		if (nullptr == m_TargetAsset)
@@ -119,6 +142,61 @@ void Inspector::Tick_UI()
 		strName = "No Name";
 
 	ImGui::Button(strName.c_str());
+
+	const bool canEditObject =
+		(nullptr != LevelMgr::GetInst()->GetCurLevel()) &&
+		(LevelMgr::GetInst()->GetLevelState() == LEVEL_STATE::STOP);
+
+	ImGui::SameLine();
+	if (!canEditObject)
+		ImGui::BeginDisabled();
+	if (ImGui::Button("Add Script"))
+	{
+		ImGui::OpenPopup("InspectorAddScriptPopup");
+	}
+
+	if (ImGui::BeginPopup("InspectorAddScriptPopup"))
+	{
+		vector<wstring> vecScriptName;
+		ScriptMgr::GetScriptInfo(vecScriptName);
+
+		for (size_t i = 0; i < vecScriptName.size(); ++i)
+		{
+			const wstring& scriptName = vecScriptName[i];
+			const bool canAddScript = !ObjectHasScriptNamed(m_TargetObject, scriptName);
+			if (ImGui::MenuItem(string(scriptName.begin(), scriptName.end()).c_str(), nullptr, nullptr, canAddScript))
+			{
+				CScript* pNewScript = ScriptMgr::GetScript(scriptName);
+				if (nullptr != pNewScript)
+				{
+					m_TargetObject->AddComponent(pNewScript);
+					if (nullptr != LevelMgr::GetInst()->GetCurLevel())
+					{
+						LevelMgr::GetInst()->GetCurLevel()->SetChanged();
+					}
+					SetTargetObject(m_TargetObject);
+				}
+			}
+		}
+
+		ImGui::EndPopup();
+	}
+
+	if (!canEditObject)
+		ImGui::EndDisabled();
+
+	ImGui::SameLine();
+	if (!canEditObject)
+		ImGui::BeginDisabled();
+	if (ImGui::Button("Delete Object"))
+	{
+		Ptr<GameObject> pDeleteTarget = m_TargetObject;
+		SetTargetObject(nullptr);
+		pDeleteTarget->Destroy();
+		return;
+	}
+	if (!canEditObject)
+		ImGui::EndDisabled();
 
 	ImGui::Separator();
 }

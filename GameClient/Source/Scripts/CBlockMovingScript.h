@@ -23,6 +23,7 @@ private:
 
     Vec3 m_vPrevPos;                 // 이전 프레임의 위치
     Ptr<CPlayerScript> m_pOnPlayer; // 발판에 올라탄 플레이어 포인터
+    void RegisterScriptParams();
 public:
     virtual void Begin();
     virtual void Tick() override;
@@ -37,6 +38,7 @@ public:
 public:
     CLONE(CBlockMovingScript);
     CBlockMovingScript();
+    CBlockMovingScript(const CBlockMovingScript& _Origin);
     virtual ~CBlockMovingScript();
 };
 

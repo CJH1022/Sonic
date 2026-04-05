@@ -12,6 +12,7 @@
 class CTileRender;
 class CCamera;
 class CSurfaceCircleGuideScript;
+class ASurfaceSet;
 struct ImDrawList;
 
 class MapEditorUI
@@ -64,6 +65,7 @@ private:
         FLAT,
         ARC,
         CIRCLE,
+        FULL_CIRCLE,
     };
 
     enum class FREEFORM_ROLE
@@ -71,7 +73,15 @@ private:
         SURFACE = 0,
         CORRECTION,
         WALL,
+        VERTICAL_ENTRY,
         ERASE,
+    };
+
+    enum class GUIDE_DRAG_HANDLE
+    {
+        NONE = 0,
+        CORR_START,
+        CORR_END,
     };
 
 private:
@@ -93,6 +103,7 @@ private:
     FREEFORM_ROLE           m_FreeformRole;
     bool                    m_UseCircleRadius;
     float                   m_CircleRadius;
+    Ptr<ASurfaceSet>        m_SurfaceSetAsset;
 
     bool                    m_HasStartVertex;
     GRID_VERTEX             m_StartVertex;
@@ -101,6 +112,7 @@ private:
     bool                    m_HasLastCreatedSegment;
     Vec2                    m_LastCreatedStart;
     Vec2                    m_LastCreatedEnd;
+    GUIDE_DRAG_HANDLE       m_GuideDragHandle;
 
     int                     m_Row;
     int                     m_Col;
@@ -125,18 +137,23 @@ private:
     bool GetSurfaceEndpointPair(CSurfaceScript* _Script, Vec2& _OutStart, Vec2& _OutEnd) const;
     Ptr<GameObject> FindNearestSurfaceObject(const Vec2& _WorldPos, float& _OutDistance) const;
     bool FindSnapPoint(const Vec2& _WorldPos, Vec2& _OutSnapPoint) const;
+    void RefreshCircleGuideCorrectionLines();
     void BuildQuarterSurfaceBounds(const Vec2& _StartWorld, const Vec2& _EndWorld, bool _UseCircleRadius, Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter, float& _OutRadius) const;
+    void BuildFullCircleBounds(const Vec2& _StartWorld, const Vec2& _EndWorld, Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter, float& _OutRadius) const;
     Ptr<GameObject> GetSelectedSurfaceObject() const;
     void SelectSurfaceObject(Ptr<GameObject> _Object) const;
     CSurfaceCircleGuideScript* EnsureCircleGuideScript(GameObject* _SurfaceObject, bool _ApplyDefaults = false) const;
     void ApplyCircleGuideToMatchingSurfaces(GameObject* _AnchorObject);
     void CreateOrUpdateCircleGuideCorrectionLine(GameObject* _CircleSurfaceObject);
+    bool HandleSelectedCircleGuideDrag(const Vec2& _MouseWorld);
     void HandleFreeformInput();
     void DrawFreeformOverlay();
+    void DrawCircleGuideOverlayForSurface(ImDrawList* _Draw, GameObject* _SurfaceObject, bool _ShowLabels);
     void DrawSelectedCircleGuideOverlay(ImDrawList* _Draw);
     void CreateLineSurfaceObject(const Vec2& _StartWorld, const Vec2& _EndWorld);
     void CreateArcSurfaceObject(const Vec2& _StartWorld, const Vec2& _EndWorld);
     void CreateCircleSurfaceObject(const Vec2& _StartWorld, const Vec2& _EndWorld);
+    void CreateFullCircleSurfaceObject(const Vec2& _StartWorld, const Vec2& _EndWorld);
     void DeleteNearestSurfaceObject(const Vec2& _WorldPos);
 
     Ptr<GameObject> ResolveTargetObject() const;

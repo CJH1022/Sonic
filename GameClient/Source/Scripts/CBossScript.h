@@ -1,10 +1,11 @@
-#pragma once
+﻿#pragma once
 #include "CScript.h"
 
 class CCollider2D;
 
 enum class BOSS_STATE
 {
+    ENTER,      // 등장 연출 
     IDLE,
     ATTACK1,
     ATTACK2,
@@ -33,10 +34,20 @@ private:
     float       m_IdleTime;
     float       m_AttackStateTime;
     float       m_AttackBurstTime;
-    int         m_AttackBurstCount;
+    int         m_AttackBurstCount = 2;
     bool        m_AttackBurstActive;
     float       m_HitFlashTime;
     float       m_BodyBlinkTime;
+
+    float       m_MoveSpeed;
+    Vec2        Target_1;
+    Vec2        Target_2;
+    Vec2        Target_3;
+    Vec2        Target_4;
+
+    int         m_Dir;
+    int         m_PatternPhase;
+    int         m_MoveStep;
     
 public:
     virtual void Begin();
@@ -52,6 +63,10 @@ public:
     BOSS_STATE GetState() const { return m_State; }
     int GetStateIndex() const { return (int)m_State; }
     void SetStateByIndex(int _StateIndex);
+    void MoveUp();
+    void MoveDown();
+    void MoveLeft();
+    void MoveRight();
 
 public:
     virtual void SaveToLevelFile(FILE* _File) override;
@@ -61,11 +76,19 @@ private:
     void ResetAttackSequence();
     void StartAttackBurst();
     void StopAttackBurst();
+    void UpdateFacing();
+    void TickIdle();
+    void TickMove();
     void TickAttack1();
     void TickBodyBlink();
     void TriggerHitFlash(Vec3 _HitWorldPos);
     void TickHitFlash();
     void DestroyHitFlash();
+    bool TryGetMovementBounds(float _Margin,
+                              float& _OutLeftTargetX,
+                              float& _OutRightTargetX,
+                              float& _OutUpTargetY,
+                              float& _OutDownTargetY) const;
 
 public:
     CLONE(CBossScript);

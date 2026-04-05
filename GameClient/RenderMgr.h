@@ -23,9 +23,21 @@ private:
 public:
 	void RegisterCamera(Ptr<CCamera> _Cam) { m_MainCam = _Cam; }
 	void RegisterEditorCamera(Ptr<CCamera> _Cam) { m_EditorCam = _Cam; }
+	void ClearMainCamera() { m_MainCam = nullptr; }
 
-	Ptr<CCamera> GetPOVCamera() { return m_MainCam; }
-	Ptr<CCamera> GetEditorCamera() { return m_EditorCam; }
+	Ptr<CCamera> GetPOVCamera()
+	{
+		if (m_MainCam != nullptr && m_MainCam->GetOwner() == nullptr)
+			m_MainCam = nullptr;
+		return m_MainCam;
+	}
+
+	Ptr<CCamera> GetEditorCamera()
+	{
+		if (m_EditorCam != nullptr && m_EditorCam->GetOwner() == nullptr)
+			m_EditorCam = nullptr;
+		return m_EditorCam;
+	}
 	bool IsDebugRender() const { return m_bDebugRender; }
 	void AddDebugInfo(const DbgInfo& _Info)  {  if(m_bDebugRender) m_DbgInfoList.push_back(_Info); }
 	void RegisterLight2D(Ptr<CLight2D> _Light2D) { m_vecLight2D.push_back(_Light2D); }

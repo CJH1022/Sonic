@@ -3,10 +3,28 @@
 
 #include "LevelMgr.h"
 #include "TaskMgr.h"
+#include "CCollider2D.h"
 #include "Source/ScriptMgr.h"
 
 namespace
 {
+	void RemoveScriptDelegatesRecursive(GameObject* _Object, CScript* _Script)
+	{
+		if (nullptr == _Object || nullptr == _Script)
+			return;
+
+		if (_Object->Collider2D() != nullptr)
+		{
+			_Object->Collider2D()->RemoveDynamicDelegates(_Script);
+		}
+
+		const vector<Ptr<GameObject>>& vecChild = _Object->GetChild();
+		for (size_t i = 0; i < vecChild.size(); ++i)
+		{
+			RemoveScriptDelegatesRecursive(vecChild[i].Get(), _Script);
+		}
+	}
+
 	bool IsAutoplayTraceEnabled()
 	{
 		static const bool enabled = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay"));
@@ -87,6 +105,26 @@ GameObject::GameObject(const GameObject& _Origin)
 
 GameObject::~GameObject()
 {
+	for (UINT i = 0; i < (UINT)COMPONENT_TYPE::END; ++i)
+	{
+		if (nullptr != m_Com[i])
+			m_Com[i]->m_Owner = nullptr;
+	}
+
+	for (size_t i = 0; i < m_vecScripts.size(); ++i)
+	{
+		if (nullptr != m_vecScripts[i])
+			m_vecScripts[i]->m_Owner = nullptr;
+	}
+
+	for (size_t i = 0; i < m_vecChild.size(); ++i)
+	{
+		if (nullptr != m_vecChild[i])
+		{
+			m_vecChild[i]->m_Parent = nullptr;
+			m_vecChild[i]->m_LayerIdx = -1;
+		}
+	}
 }
 
 void GameObject::Begin()
@@ -225,6 +263,32 @@ void GameObject::AddComponent(Ptr<Component> _Com)
 	_Com->m_Owner = this;
 
 	_Com->Init();
+}
+
+void GameObject::RemoveScript(CScript* _Script)
+{
+	if (nullptr == _Script)
+		return;
+
+	for (vector<Ptr<CScript>>::iterator iter = m_vecScripts.begin(); iter != m_vecScripts.end(); ++iter)
+	{
+		if (iter->Get() != _Script)
+			continue;
+
+		RemoveScriptDelegatesRecursive(this, _Script);
+		_Script->m_Owner = nullptr;
+		m_vecScripts.erase(iter);
+
+		if (m_LayerIdx != -1)
+		{
+			Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+			if (nullptr != pCurLevel)
+			{
+				pCurLevel->SetChanged();
+			}
+		}
+		return;
+	}
 }
 
 bool GameObject::IsDescendantOf(Ptr<GameObject> _Object) const

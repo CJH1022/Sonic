@@ -185,10 +185,37 @@ CBlockMovingScript::CBlockMovingScript()
     , m_vPrevPos(Vec3(0.f, 0.f, 0.f))
     , m_pOnPlayer(nullptr)
 {
+    RegisterScriptParams();
+}
+
+CBlockMovingScript::CBlockMovingScript(const CBlockMovingScript& _Origin)
+    : CScript(_Origin)
+    , curState(_Origin.curState)
+    , vstartPos(_Origin.vstartPos)
+    , vendPos(_Origin.vendPos)
+    , vVelocity(_Origin.vVelocity)
+    , vDir(_Origin.vDir)
+    , curvDir(_Origin.curvDir)
+    , m_speed(_Origin.m_speed)
+    , Dist(_Origin.Dist)
+    , curDist(_Origin.curDist)
+    , m_vPrevPos(_Origin.m_vPrevPos)
+    , m_pOnPlayer(nullptr)
+{
+    RegisterScriptParams();
 }
 
 CBlockMovingScript::~CBlockMovingScript()
 {
+}
+
+void CBlockMovingScript::RegisterScriptParams()
+{
+    AddScriptParam(SCRIPT_PARAM::FLOAT, &vstartPos.x, L"Start X", false, 1.f);
+    AddScriptParam(SCRIPT_PARAM::FLOAT, &vstartPos.y, L"Start Y", false, 1.f);
+    AddScriptParam(SCRIPT_PARAM::FLOAT, &vendPos.x, L"End X", false, 1.f);
+    AddScriptParam(SCRIPT_PARAM::FLOAT, &vendPos.y, L"End Y", false, 1.f);
+    AddScriptParam(SCRIPT_PARAM::VEC2, &vVelocity, L"Move Velocity", false, 1.f);
 }
 
 void CBlockMovingScript::Begin()

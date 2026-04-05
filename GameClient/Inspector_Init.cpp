@@ -19,6 +19,7 @@
 #include "SpriteUI.h"
 #include "FlipbookUI.h"
 #include "PrefabUI.h"
+#include "SurfaceSetUI.h"
 
 #define ADD_COMPONENT_UI(ComponentType, type, Size) m_arrComUI[(UINT)ComponentType] = new type;\
 													m_arrComUI[(UINT)ComponentType]->SetSizeAsChild(Size);\
@@ -49,4 +50,5 @@ void Inspector::CreateChildUI()
 	ADD_ASSET_UI(ASSET_TYPE::SPRITE, SpriteUI);
 	ADD_ASSET_UI(ASSET_TYPE::FLIPBOOK, FlipbookUI);
 	ADD_ASSET_UI(ASSET_TYPE::PREFAB, PrefabUI);
+	ADD_ASSET_UI(ASSET_TYPE::SURFACESET, SurfaceSetUI);
 }

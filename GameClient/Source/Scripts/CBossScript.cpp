@@ -4,6 +4,7 @@
 #include "AssetMgr.h"
 #include "CCollider2D.h"
 #include "CBackScript.h"
+#include "Engine.h"
 #include "CFireScript.h"
 #include "CFlipbookRender.h"
 #include "CMeshRender.h"
@@ -12,17 +13,19 @@
 #include <TimeMgr.h>
 #include <cmath>
 #include <algorithm>
+#include "RenderMgr.h"
+
 #include "Source/Scripts/CKnockbackScript.h"
 namespace
 {
     constexpr int kBossMoveFlipbookIndex = 0;
-    constexpr int kBossStateCount = 7;
+    constexpr int kBossStateCount = 8;
     const Vec3 kBossFireOffset = Vec3(-120.f, 10.f, 0.f);
     const Vec2 kBossFireBaseScale = Vec2(150.f, 110.f);
     const Vec2 kBossFireDir = Vec2(-1.f, 0.f);
     constexpr float kBossFireLength = 250.f;
     constexpr float kBossFireLifeTime = 0.75f;
-    constexpr float kBossAttack1GapTime = 0.45f;
+    constexpr float kBossAttack1GapTime = 1.0f;
     constexpr int kBossAttack1RepeatCount = 2;
     constexpr float kBossAttack1SequenceDuration
         = (kBossFireLifeTime * kBossAttack1RepeatCount)
@@ -33,6 +36,9 @@ namespace
     const Vec3 kBossHitFlashBaseScale = Vec3(95.f, 95.f, 1.f);
     const Vec3 kBossHitFlashScaleGrow = Vec3(35.f, 35.f, 0.f);
     const wchar_t* kBossHitFlashName = L"BossHitFlash";
+
+
+    constexpr float kBossSpeed = 200.f;
 
     int ClampBossStateIndex(int _StateIndex)
     {
@@ -167,6 +173,9 @@ CBossScript::CBossScript()
     , m_AttackBurstActive(false)
     , m_HitFlashTime(0.f)
     , m_BodyBlinkTime(0.f)
+    , m_Dir(-1)
+    , m_PatternPhase(0)
+    , m_MoveStep(0)
 {
     AddScriptParam(SCRIPT_PARAM::INT, &m_Life, L"Life", false, 1.f);
     AddScriptParam(SCRIPT_PARAM::FLOAT, &m_MoveFlipFPS, L"MoveFlipFPS", false, 1.f);
@@ -240,63 +249,45 @@ void CBossScript::Begin()
             pBossMtrl->SetScalar(VEC4_0, Vec4(1.f, 1.f, 1.f, 0.f));
     }
 
+
+    CreateBossHitFlashObject(GetOwner());
     if (Collider2D() != nullptr)
         Collider2D()->AddDynamicBeginOverlap(this, (COLLISION_EVENT)&CBossScript::BeginOverlap);
 
     ResetAttackSequence();
     if (m_State == BOSS_STATE::ATTACK1)
         StartAttackBurst();
+
+    UpdateFacing();
 }
 
 void CBossScript::Tick()
 {
-    if (m_Life < 1)
-        m_State = BOSS_STATE::DEAD;
+    if (m_Life < 1) m_State = BOSS_STATE::DEAD;
 
-    Vec3 vMyPos = Transform()->GetRelativePos();
-
-    if (m_State == BOSS_STATE::ATTACK1)
-        TickAttack1();
-    else if (m_AttackBurstActive || FindBossFireObject(GetOwner()) != nullptr)
-        StopAttackBurst();
-
-    TickHitFlash();
-    TickBodyBlink();
-
-    if (FlipbookRender() == nullptr)
-        return;
-
+    // 상태에 따라 업데이트 함수 분배
     switch (m_State)
     {
     case BOSS_STATE::IDLE:
-    {
-        // 1. 상태가 유지되는 동안 시간을 계속 누적합니다.
-        m_IdleTime += DT;
-
-        // 2. 움직임의 속도와 폭을 설정합니다.
-        float frequency = 10.0f; // 위아래로 움직이는 빠르기 (주기)
-        float amplitude = 20.0f; // 한 프레임당 이동할 수 있는 최대 속도 (폭)
-
-        // 3. sinf()를 통해 -1 ~ 1 사이를 부드럽게 오가는 값을 얻어 Y축에 더해줍니다.
-        vMyPos.y += sinf(m_IdleTime * frequency) * amplitude * DT;
-        Transform()->SetRelativePos(vMyPos);
-        [[fallthrough]];
-    }
-
-    case BOSS_STATE::ATTACK1:
+        TickIdle();
+        break;
     case BOSS_STATE::MOVE:
-        if (FlipbookRender()->GetFlipbook(kBossMoveFlipbookIndex) != nullptr)
+        TickMove();
+        if (FlipbookRender() != nullptr
+            && FlipbookRender()->GetFlipbook(kBossMoveFlipbookIndex) != nullptr)
             FlipbookRender()->Play(kBossMoveFlipbookIndex, m_MoveFlipFPS, -1);
         break;
-
+    case BOSS_STATE::ATTACK1:
+        TickAttack1();
+        break;
     case BOSS_STATE::DEAD:
         GetOwner()->Destroy();
-        // 죽음 애니메이션, Destroy()
-
-        break;
-    default:
         break;
     }
+
+    UpdateFacing();
+    TickHitFlash();
+    TickBodyBlink();
 }
 
 void CBossScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
@@ -333,11 +324,187 @@ void CBossScript::SetState(BOSS_STATE _State)
 
     if (m_State == BOSS_STATE::ATTACK1)
         StartAttackBurst();
+
 }
 
 void CBossScript::SetStateByIndex(int _StateIndex)
 {
     SetState((BOSS_STATE)ClampBossStateIndex(_StateIndex));
+}
+
+bool CBossScript::TryGetMovementBounds(float _Margin,
+                                       float& _OutLeftTargetX,
+                                       float& _OutRightTargetX,
+                                       float& _OutUpTargetY,
+                                       float& _OutDownTargetY) const
+{
+    Ptr<CCamera> pCamera = RenderMgr::GetInst()->GetPOVCamera();
+    if (pCamera == nullptr)
+        pCamera = RenderMgr::GetInst()->GetEditorCamera();
+
+    if (pCamera == nullptr || pCamera->Transform() == nullptr)
+        return false;
+
+    const Vec3 cameraWorldPos = pCamera->Transform()->GetWorldPos();
+    const Vec2 resol = Engine::GetInst()->GetResolution();
+
+    _OutLeftTargetX = cameraWorldPos.x - (resol.x * 0.5f) + _Margin;
+    _OutRightTargetX = cameraWorldPos.x + (resol.x * 0.5f) - _Margin;
+
+    // 🚨 [수정됨] 엔진 좌표계에 맞춰 위쪽이 (+), 아래쪽이 (-)가 됩니다!
+    _OutUpTargetY = cameraWorldPos.y + (resol.y * 0.5f) - _Margin;
+    _OutDownTargetY = cameraWorldPos.y - (resol.y * 0.5f) + _Margin;
+    return true;
+}
+
+void CBossScript::UpdateFacing()
+{
+    GameObject* pOwner = GetOwner();
+    if (pOwner == nullptr || pOwner->Transform() == nullptr)
+        return;
+
+    Vec3 ownerScale = pOwner->Transform()->GetRelativeScale();
+    float scaleX = fabsf(ownerScale.x);
+    if (scaleX <= 0.0001f)
+        scaleX = 250.f;
+
+    ownerScale.x = (m_Dir < 0) ? scaleX : -scaleX;
+    pOwner->Transform()->SetRelativeScale(ownerScale);
+
+    GameObject* pBossFireObject = FindBossFireObject(pOwner);
+    if (pBossFireObject == nullptr || pBossFireObject->Transform() == nullptr)
+        return;
+
+    const float fireDirSign = (m_Dir < 0) ? -1.f : 1.f;
+    Vec3 fireOffset = kBossFireOffset;
+    fireOffset.x = fabsf(kBossFireOffset.x) * fireDirSign;
+    pBossFireObject->Transform()->SetRelativePos(fireOffset);
+
+    Ptr<CFireScript> pFireScript = pBossFireObject->GetScript<CFireScript>();
+    if (pFireScript != nullptr)
+        pFireScript->SetMoveDir(Vec2(fireDirSign, 0.f));
+}
+
+void CBossScript::MoveUp()
+{
+    SetState(BOSS_STATE::MOVE);
+
+    const float margin = 150.f;
+    float leftTargetX = 0.f;
+    float rightTargetX = 0.f;
+    float upTargetY = 0.f;
+    float downTargetY = 0.f;
+    if (!TryGetMovementBounds(margin, leftTargetX, rightTargetX, upTargetY, downTargetY))
+        return;
+   
+    Vec3 vMyPos = Transform()->GetRelativePos();
+    vMyPos.y += kBossSpeed * DT;
+
+    if (vMyPos.y >= upTargetY)
+    {
+        vMyPos.y = upTargetY;
+        if (m_Dir == -1)
+        {
+            MoveLeft();
+            return;
+        }
+        else
+        {
+            MoveRight();
+            return;
+        }
+    }
+    Transform()->SetRelativePos(vMyPos);
+}
+
+void CBossScript::MoveDown()
+{
+    SetState(BOSS_STATE::MOVE);
+
+    const float margin = 150.f;
+    float leftTargetX = 0.f;
+    float rightTargetX = 0.f;
+    float upTargetY = 0.f;
+    float downTargetY = 0.f;
+    if (!TryGetMovementBounds(margin, leftTargetX, rightTargetX, upTargetY, downTargetY))
+        return;
+
+    Vec3 vMyPos = Transform()->GetRelativePos();
+    vMyPos.y -= kBossSpeed * DT;
+
+    if (vMyPos.y <= downTargetY)
+    {
+        vMyPos.y = downTargetY;
+        SetState(BOSS_STATE::IDLE);
+        return;
+    }
+    Transform()->SetRelativePos(vMyPos);
+}
+
+void CBossScript::MoveLeft()
+{
+    SetState(BOSS_STATE::MOVE);
+
+    const float margin = 150.f;
+    float leftTargetX = 0.f;
+    float rightTargetX = 0.f;
+    float upTargetY = 0.f;
+    float downTargetY = 0.f;
+    if (!TryGetMovementBounds(margin, leftTargetX, rightTargetX, upTargetY, downTargetY))
+        return;
+
+    Vec3 vMyPos = Transform()->GetRelativePos();
+    vMyPos.x -= kBossSpeed * DT;
+
+    if (vMyPos.x < leftTargetX)
+    {
+        m_Dir = 1;
+        vMyPos.x = leftTargetX;
+        MoveDown();
+        return;
+    }
+
+    m_IdleTime += DT;
+
+    float frequency = 10.0f; 
+    float amplitude = 30.0f; 
+
+
+    vMyPos.y += sinf(m_IdleTime * frequency) * amplitude * DT;
+    Transform()->SetRelativePos(vMyPos);
+}
+
+void CBossScript::MoveRight()
+{
+    SetState(BOSS_STATE::MOVE);
+
+    const float margin = 150.f;
+    float leftTargetX = 0.f;
+    float rightTargetX = 0.f;
+    float upTargetY = 0.f;
+    float downTargetY = 0.f;
+    if (!TryGetMovementBounds(margin, leftTargetX, rightTargetX, upTargetY, downTargetY))
+        return;
+
+    Vec3 vMyPos = Transform()->GetRelativePos();
+    vMyPos.x += kBossSpeed * DT;
+
+    if (vMyPos.x > rightTargetX)
+    {
+        m_Dir = -1;
+        vMyPos.x = rightTargetX;
+        MoveDown();
+        return;
+    }
+
+
+    m_IdleTime += DT;
+
+    float frequency = 10.0f; 
+    float amplitude = 30.0f; 
+
+    vMyPos.y += sinf(m_IdleTime * frequency) * amplitude * DT;
+    Transform()->SetRelativePos(vMyPos);
 }
 
 void CBossScript::SaveToLevelFile(FILE* _File)
@@ -376,6 +543,7 @@ void CBossScript::StartAttackBurst()
     m_AttackBurstTime = 0.f;
     m_AttackBurstActive = true;
     CreateBossFireScript(GetOwner());
+    UpdateFacing();
 }
 
 void CBossScript::StopAttackBurst()
@@ -385,13 +553,101 @@ void CBossScript::StopAttackBurst()
     m_AttackBurstTime = 0.f;
 }
 
+void CBossScript::TickIdle()
+{
+    m_IdleTime += DT;
+
+    // 1. 제자리에서 위아래로 둥둥 떠다니기
+    float frequency = 10.0f;
+    float amplitude = 20.0f;
+    Vec3 pos = Transform()->GetRelativePos();
+    pos.y += sinf(m_IdleTime * frequency) * amplitude * DT;
+    Transform()->SetRelativePos(pos);
+
+    // 2. 2초 동안 대기했다면, 다음 패턴으로 전이!
+    if (m_IdleTime > 2.0f)
+    {
+        if (m_PatternPhase == 0) // 패턴 0: 왼쪽으로 이동
+        {
+            m_Dir = -1;
+            m_MoveStep = 0;
+            m_PatternPhase = 1; // 다음엔 패턴 1을 실행해라
+            SetState(BOSS_STATE::MOVE);
+        }
+        else if (m_PatternPhase == 1) // 패턴 1: 왼쪽에서 공격
+        {
+            m_PatternPhase = 2; // 다음엔 패턴 2를 실행해라
+            SetState(BOSS_STATE::ATTACK1);
+        }
+        else if (m_PatternPhase == 2) // 패턴 2: 오른쪽으로 이동
+        {
+            m_Dir = 1;
+            m_MoveStep = 0;
+            m_PatternPhase = 3; // 다음엔 패턴 3을 실행해라
+            SetState(BOSS_STATE::MOVE);
+        }
+        else if (m_PatternPhase == 3) // 패턴 3: 오른쪽에서 공격
+        {
+            m_PatternPhase = 0; // 다음엔 처음(패턴 0)으로 돌아가라
+            SetState(BOSS_STATE::ATTACK1);
+        }
+    }
+}
+void CBossScript::TickMove()
+{
+    Vec3 pos = Transform()->GetRelativePos();
+    const float margin = 150.f;
+    float leftTargetX = 0.f, rightTargetX = 0.f, upTargetY = 0.f, downTargetY = 0.f;
+    if (!TryGetMovementBounds(margin, leftTargetX, rightTargetX, upTargetY, downTargetY))
+        return;
+
+    // [Step 0: 위로 이동]
+    if (m_MoveStep == 0)
+    {
+        pos.y += kBossSpeed * DT;
+        if (pos.y >= upTargetY)
+        {
+            pos.y = upTargetY;
+            m_MoveStep = 1;
+        }
+    }
+    // [Step 1: 좌우로 이동]
+    else if (m_MoveStep == 1)
+    {
+        if (m_Dir == -1) // 왼쪽으로
+        {
+            pos.x -= kBossSpeed * DT;
+            if (pos.x <= leftTargetX) { pos.x = leftTargetX; m_MoveStep = 2; m_Dir = 1; }
+        }
+        else if (m_Dir == 1) // 오른쪽으로
+        {
+            pos.x += kBossSpeed * DT;
+            if (pos.x >= rightTargetX) { pos.x = rightTargetX; m_MoveStep = 2; m_Dir = -1; }
+        }
+    }
+    // [Step 2: 아래로 이동]
+    else if (m_MoveStep == 2)
+    {
+        pos.y -= kBossSpeed * DT;
+        if (pos.y <= downTargetY)
+        {
+            pos.y = downTargetY;
+
+            // 🚨 누가 다음에 실행될지 고민하지 않고, 무조건 IDLE로 던집니다.
+            SetState(BOSS_STATE::IDLE);
+        }
+    }
+
+    Transform()->SetRelativePos(pos);
+}
 void CBossScript::TickAttack1()
 {
     m_AttackStateTime += DT;
 
+    // 1. 전체 공격 지속 시간이 끝났을 때
     if (m_AttackStateTime >= (kBossAttack1SequenceDuration + 0.1f))
     {
-        SetState(BOSS_STATE::IDLE);
+        SetState(BOSS_STATE::IDLE); // 공격 끝 -> 대기!
         return;
     }
 
@@ -402,19 +658,21 @@ void CBossScript::TickAttack1()
         if (m_AttackBurstTime < kBossFireLifeTime)
             return;
 
+        // 불꽃 발사 종료
         DestroyBossFireObject(GetOwner());
         m_AttackBurstActive = false;
         m_AttackBurstTime = 0.f;
         ++m_AttackBurstCount;
 
+        // 2. 정해진 발사 횟수를 모두 채웠을 때
         if (m_AttackBurstCount >= kBossAttack1RepeatCount)
         {
-            SetState(BOSS_STATE::IDLE);
+            SetState(BOSS_STATE::IDLE); // 공격 끝 -> 대기!
         }
-
         return;
     }
 
+    // 3. 다음 불꽃 발사 타이밍
     const float nextBurstStartTime = (float)m_AttackBurstCount * (kBossFireLifeTime + kBossAttack1GapTime);
     if (m_AttackBurstCount < kBossAttack1RepeatCount && m_AttackStateTime >= nextBurstStartTime)
     {
@@ -457,7 +715,7 @@ void CBossScript::TickBodyBlink()
 
 void CBossScript::TriggerHitFlash(Vec3 _HitWorldPos)
 {
-    if (GetOwner() == nullptr)
+    if (GetOwner() == nullptr || GetOwner()->Transform() == nullptr)
         return;
 
     GameObject* pHitFlashObject = CreateBossHitFlashObject(GetOwner());
@@ -484,6 +742,12 @@ void CBossScript::TriggerHitFlash(Vec3 _HitWorldPos)
 
 void CBossScript::TickHitFlash()
 {
+    if (GetOwner() == nullptr || GetOwner()->IsDead())
+    {
+        m_HitFlashTime = 0.f;
+        return;
+    }
+
     GameObject* pHitFlashObject = FindBossHitFlashObject(GetOwner());
     if (pHitFlashObject == nullptr)
     {
@@ -515,6 +779,20 @@ void CBossScript::TickHitFlash()
 void CBossScript::DestroyHitFlash()
 {
     GameObject* pHitFlashObject = FindBossHitFlashObject(GetOwner());
-    if (pHitFlashObject != nullptr)
-        pHitFlashObject->Destroy();
+    if (pHitFlashObject == nullptr)
+        return;
+
+    if (pHitFlashObject->Transform() != nullptr)
+    {
+        pHitFlashObject->Transform()->SetRelativePos(Vec3(0.f, 0.f, -0.1f));
+        pHitFlashObject->Transform()->SetRelativeScale(kBossHitFlashBaseScale);
+    }
+
+    if (pHitFlashObject->MeshRender() != nullptr)
+    {
+        Ptr<AMaterial> pFlashMtrl = pHitFlashObject->MeshRender()->GetMaterial();
+        if (pFlashMtrl != nullptr)
+            pFlashMtrl->SetScalar(VEC4_0, Vec4(1.f, 1.f, 1.f, 0.f));
+    }
 }
+

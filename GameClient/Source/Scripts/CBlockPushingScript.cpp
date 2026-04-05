@@ -11,11 +11,39 @@
 
 #include <cmath>
 
+namespace
+{
+    bool IsWithinHorizontalRange(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider, float _Margin)
+    {
+        if (_OwnCollider == nullptr || _OtherCollider == nullptr)
+            return false;
+
+        Vec3 myTransformPos = _OwnCollider->GetOwner()->Transform()->GetRelativePos();
+        Vec3 myTransformScale = _OwnCollider->GetOwner()->Transform()->GetRelativeScale();
+        Vec3 otherTransformPos = _OtherCollider->GetOwner()->Transform()->GetRelativePos();
+        Vec3 otherTransformScale = _OtherCollider->GetOwner()->Transform()->GetRelativeScale();
+
+        Vec2 myColOffset = _OwnCollider->GetOffset();
+        Vec2 myColScale = _OwnCollider->GetScale();
+        Vec2 otherColOffset = _OtherCollider->GetOffset();
+        Vec2 otherColScale = _OtherCollider->GetScale();
+
+        float myCenterX = myTransformPos.x + myColOffset.x;
+        float otherCenterX = otherTransformPos.x + otherColOffset.x;
+        float myHalfX = fabsf(myTransformScale.x * myColScale.x) * 0.5f;
+        float otherHalfX = fabsf(otherTransformScale.x * otherColScale.x) * 0.5f;
+
+        float dx = fabsf(otherCenterX - myCenterX);
+        return dx <= (myHalfX + otherHalfX + _Margin);
+    }
+}
+
 CBlockPushingScript::CBlockPushingScript()
     : CScript(SCRIPT_TYPE::BLOCKPUSHINGSCRIPT)
     , vNormal(Vec2(0.f, 0.f))
     , bIsMovePossible(true)
     , IsPushing(0)
+    , m_pOnPlayer(nullptr)
 {
 }
 
@@ -39,27 +67,25 @@ void CBlockPushingScript::Tick()
 
 void CBlockPushingScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
-
-    if (nullptr == _OtherCollider)
+    if (_OtherCollider == nullptr)
         return;
+
+    Overlap(_OwnCollider, _OtherCollider);
 }
 
 void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
-    // 1. 타일과 충돌한 경우의 처리
+    if (_OwnCollider == nullptr || _OtherCollider == nullptr)
+        return;
+
     Ptr<CTileScript> pTile = _OtherCollider->GetOwner()->GetScript<CTileScript>();
     if (pTile != nullptr)
     {
-        // 바닥이 밀 수 있는 블럭인지 판단하여 멤버 변수 갱신
         if (pTile->GetTileType() == TILETYPE::LINE_BLOCK_3 || pTile->GetTileType() == TILETYPE::LINE_BLOCK_6)
-        {
             bIsMovePossible = true;
-        }
         else
-        {
             bIsMovePossible = false;
-        }
-        return; // 타일과의 충돌 처리는 여기서 끝
+        return;
     }
 
     Ptr<CPlayerScript> pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
@@ -68,12 +94,8 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
 
     const float epsilon = 0.01f;
 
-    // =========================
-    // 박스 정보
-    // =========================
     Vec3 blockPos = Transform()->GetRelativePos();
     Vec3 blockScale = Transform()->GetRelativeScale();
-
     Vec2 blockColOffset = _OwnCollider->GetOffset();
     Vec2 blockColScale = _OwnCollider->GetScale();
 
@@ -81,12 +103,8 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
     float blockHalfX = fabsf(blockScale.x * blockColScale.x) * 0.5f;
     float blockHalfY = fabsf(blockScale.y * blockColScale.y) * 0.5f;
 
-    // =========================
-    // 플레이어 정보
-    // =========================
     Vec3 playerPos = pPlayer->Transform()->GetRelativePos();
     Vec3 playerScale = pPlayer->Transform()->GetRelativeScale();
-
     Vec2 playerColOffset = _OtherCollider->GetOffset();
     Vec2 playerColScale = _OtherCollider->GetScale();
 
@@ -94,9 +112,6 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
     float playerHalfX = fabsf(playerScale.x * playerColScale.x) * 0.5f;
     float playerHalfY = fabsf(playerScale.y * playerColScale.y) * 0.5f;
 
-    // =========================
-    // AABB 충돌량 계산
-    // =========================
     float dx = playerCenter.x - blockCenter.x;
     float dy = playerCenter.y - blockCenter.y;
 
@@ -109,47 +124,43 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
     Vec2 vVelocity = pPlayer->GetVelocity();
     const bool bBreakOrRoll = pPlayer->IsBreakOrRollAction();
 
-    // ==================================
-    // 가로 충돌
-    // ==================================
     if (overlapX < overlapY)
     {
-    if (bBreakOrRoll)
-    {
-        IsPushing = 0;
+        if (m_pOnPlayer == pPlayer.Get())
+            m_pOnPlayer = nullptr;
 
-        if (pPlayer->GetAction() == ActionState::Break)
+        if (bBreakOrRoll)
         {
+            IsPushing = 0;
+
+            if (pPlayer->GetAction() == ActionState::Break)
+            {
+                vVelocity = Vec2(0.f, 0.f);
+                pPlayer->SetVelocity(vVelocity);
+                pPlayer->RequestBreakWallStop();
+                return;
+            }
+
+            if (dx >= 0.f)
+                playerPos.x += overlapX + epsilon;
+            else
+                playerPos.x -= overlapX + epsilon;
+
             vVelocity.x = 0.f;
-            vVelocity.y = 0.f;
+            pPlayer->Transform()->SetRelativePos(playerPos);
             pPlayer->SetVelocity(vVelocity);
-            pPlayer->RequestBreakWallStop();
+            pPlayer->StopBlockedAction();
             return;
         }
-
-        if (dx >= 0.f)
-            playerPos.x += overlapX + epsilon;
-        else
-            playerPos.x -= overlapX + epsilon;
-
-        vVelocity.x = 0.f;
-        pPlayer->Transform()->SetRelativePos(playerPos);
-        pPlayer->SetVelocity(vVelocity);
-        pPlayer->StopBlockedAction();
-
-        return;
-    }
 
         bool bPushRight = false;
         bool bPushLeft = false;
 
-        // 플레이어가 박스의 왼쪽에 있고, 오른쪽으로 움직이는 중
         if (pPlayer->GetIsGround() && bIsMovePossible && dx < 0.f && pPlayer->GetFacing() == 1)
         {
             bPushRight = true;
             IsPushing = 1;
         }
-        // 플레이어가 박스의 오른쪽에 있고, 왼쪽으로 움직이는 중
         else if (pPlayer->GetIsGround() && bIsMovePossible && dx > 0.f && pPlayer->GetFacing() == -1)
         {
             bPushLeft = true;
@@ -158,7 +169,6 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
 
         if (bPushRight)
         {
-            // 박스를 오른쪽으로 민다
             IsPushing = 1;
             blockPos.x += overlapX + epsilon;
             Transform()->SetRelativePos(blockPos);
@@ -166,7 +176,6 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
         }
         else if (bPushLeft)
         {
-            // 박스를 왼쪽으로 민다
             IsPushing = -1;
             blockPos.x -= overlapX + epsilon;
             Transform()->SetRelativePos(blockPos);
@@ -174,7 +183,6 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
         }
         else
         {
-            // 못 미는 상황이면 플레이어만 밀어낸다
             const bool bBreakContact = (pPlayer->GetAction() == ActionState::Break);
             if (dx >= 0.f)
             {
@@ -207,22 +215,20 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
         return;
     }
 
-    // ==================================
-    // 세로 충돌
-    // ==================================
     if (dy >= 0.f)
     {
-        // 플레이어가 박스 위에 있음
         playerPos.y += overlapY + epsilon;
-
         pPlayer->ForceFlatGroundContact(0.12f);
+        m_pOnPlayer = pPlayer.Get();
 
         if (vVelocity.y < 0.f)
             vVelocity.y = 0.f;
     }
     else
     {
-        // 플레이어가 박스 아래에서 머리 부딪힘
+        if (m_pOnPlayer == pPlayer.Get())
+            m_pOnPlayer = nullptr;
+
         playerPos.y -= overlapY + epsilon;
 
         if (vVelocity.y > 0.f)
@@ -235,15 +241,27 @@ void CBlockPushingScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _Other
 
 void CBlockPushingScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
+    if (_OtherCollider == nullptr)
+        return;
+
     Ptr<CPlayerScript> pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
-    if (pPlayer != nullptr)
+    if (pPlayer == nullptr)
+        return;
+
+    IsPushing = 0;
+
+    if (m_pOnPlayer == pPlayer.Get())
     {
-        IsPushing = 0;
-        return;
+        const float jumpDetachVel = 80.f;
+        const float horizontalMargin = 8.f;
+
+        bool bJumpDetach = (pPlayer->GetVelocity().y > jumpDetachVel);
+        bool bInsideX = IsWithinHorizontalRange(_OwnCollider, _OtherCollider, horizontalMargin);
+
+        if (bJumpDetach || !bInsideX)
+        {
+            pPlayer->SetIsGround(false);
+            m_pOnPlayer = nullptr;
+        }
     }
-
-    if (nullptr == _OtherCollider)
-        return;
-
-    // 여기서 플레이어 SetIsGround(true) 하면 안 됨
 }

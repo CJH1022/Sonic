@@ -2,6 +2,10 @@
 
 #include "CScript.h"
 
+#include <vector>
+
+class GameObject;
+
 class CSurfaceScript
     : public CScript
 {
@@ -11,6 +15,7 @@ public:
         LINE = 0,
         ARC,
         CIRCLE,
+        FULL_CIRCLE,
     };
 
     enum class SURFACE_ROLE
@@ -18,6 +23,7 @@ public:
         SURFACE = 0,
         CORRECTION,
         WALL,
+        VERTICAL_ENTRY,
     };
 
     enum class ARC_CORNER
@@ -39,6 +45,9 @@ private:
     bool                m_FillAbove;
     bool                m_FillInside;
     bool                m_Attachable;
+    std::vector<long long> m_SpatialCellKeys;
+    Vec2                m_LastSpatialWorldPos;
+    bool                m_bSpatialRegistered;
 
 public:
     struct CONTACT_PROBE
@@ -69,13 +78,19 @@ public:
     void ConfigureLine(const Vec2& _LocalStart, const Vec2& _LocalEnd, SURFACE_ROLE _Role, bool _FillAbove, bool _Attachable);
     void ConfigureArc(const Vec2& _LocalStart, const Vec2& _LocalEnd, SURFACE_ROLE _Role, ARC_CORNER _Corner, bool _FillInside, bool _Attachable);
     void ConfigureCircle(const Vec2& _LocalStart, const Vec2& _LocalEnd, SURFACE_ROLE _Role, ARC_CORNER _Corner, bool _FillInside, bool _Attachable);
+    void ConfigureFullCircle(float _Radius, SURFACE_ROLE _Role, bool _FillInside, bool _Attachable);
 
     SURFACE_GEOMETRY GetGeometry() const { return m_Geometry; }
     SURFACE_ROLE GetRole() const { return m_Role; }
     ARC_CORNER GetArcCorner() const { return m_ArcCorner; }
-    bool IsAttachable() const { return m_Attachable; }
+    bool IsAttachable() const { return m_Attachable && m_Role != SURFACE_ROLE::WALL; }
     bool GetFillAbove() const { return m_FillAbove; }
     bool GetFillInside() const { return m_FillInside; }
+    bool IntersectsWorldBounds(const Vec2& _Min, const Vec2& _Max, float _Margin = 0.f);
+    static void ResetSpatialIndex();
+    static void QueryNearbySurfaceObjects(const Vec2& _Min, const Vec2& _Max,
+                                          std::vector<GameObject*>& _OutObjects,
+                                          float _Margin = 0.f, bool _IncludeWalls = false);
 
     void GetWorldEndpoints(Vec2& _OutStart, Vec2& _OutEnd);
     void GetArcWorldData(Vec2& _OutCenter, float& _OutRadius, Vec2& _OutBoxMin, Vec2& _OutBoxMax);
@@ -94,6 +109,8 @@ public:
 private:
     void UpdateBounds();
     void GetWorldBounds(Vec2& _OutMin, Vec2& _OutMax);
+    void RefreshSpatialRegistration();
+    void UnregisterSpatialRegistration();
     bool EvaluateWallProbe(CCollider2D* _OtherCollider, Vec2& _OutNormal, float& _OutSignedDistance);
     bool EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround);
     bool EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, Vec2& _OutContactPoint, bool _WasGround);

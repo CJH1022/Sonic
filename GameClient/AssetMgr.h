@@ -106,6 +106,8 @@ ASSET_TYPE GetAssetType()
 		return ASSET_TYPE::LEVEL;
 	else if constexpr (std::is_same_v<T, APrefab>)
 		return ASSET_TYPE::PREFAB;
+	else if constexpr (std::is_same_v<T, ASurfaceSet>)
+		return ASSET_TYPE::SURFACESET;
 
 	return ASSET_TYPE::END;
 }

@@ -1,6 +1,8 @@
 ﻿#include "pch.h"
 #include "PathMgr.h"
 
+#include <algorithm>
+
 vector<wstring> g_vecName;
 
 int main()
@@ -64,6 +66,51 @@ int main()
 	}
 
 	FindClose(handle);
+
+	// Keep legacy script ids stable so previously saved levels keep loading the
+	// same script types. New scripts are appended after the original Sonic++
+	// order instead of being inserted by filesystem enumeration order.
+	const vector<wstring> legacyScriptOrder =
+	{
+		L"CBackgroundScript",
+		L"CBlockMovingScript",
+		L"CBlockPushingScript",
+		L"CBlockScript",
+		L"CCamMoveScript",
+		L"CDestroyBlockScript",
+		L"CKnockbackScript",
+		L"CMissileScript",
+		L"CMonsterScript",
+		L"CPlayerScript",
+		L"CSpringScript",
+		L"CSurfaceCircleGuideScript",
+		L"CSurfaceScript",
+		L"CTileScript",
+	};
+
+	const auto getScriptOrder = [&](const wstring& _ScriptName)
+	{
+		for (size_t i = 0; i < legacyScriptOrder.size(); ++i)
+		{
+			if (legacyScriptOrder[i] == _ScriptName)
+				return i;
+		}
+
+		return legacyScriptOrder.size();
+	};
+
+	sort(g_vecName.begin(), g_vecName.end(),
+		[&](const wstring& _Left, const wstring& _Right)
+		{
+			const size_t leftOrder = getScriptOrder(_Left);
+			const size_t rightOrder = getScriptOrder(_Right);
+			if (leftOrder != rightOrder)
+				return leftOrder < rightOrder;
+
+			return _Left < _Right;
+		});
+
+	g_vecName.erase(unique(g_vecName.begin(), g_vecName.end()), g_vecName.end());
 
 	FILE* pFile = NULL;
 
