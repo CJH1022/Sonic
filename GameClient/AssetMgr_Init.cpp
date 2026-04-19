@@ -1179,7 +1179,7 @@ void AssetMgr::CreateEnginePrefab()
 
 		Ptr<CItemScript> pItemScript = new CItemScript;
 		pPrefabObject->AddComponent(pItemScript.Get());
-		pPrefabObject->Transform()->SetRelativeScale(Vec3(100.f, 120.f, 1.f));
+		pPrefabObject->Transform()->SetRelativeScale(Vec3(58.f, 76.f, 1.f));
 		pItemScript->SetBoxType(_Type);
 		pItemScript->ApplyEditorBoxSetup();
 
@@ -1238,7 +1238,7 @@ void AssetMgr::CreateEnginePrefab()
 	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_WATER.pref", L"ITEMBOX_WATER", CItemScript::ITEMBOX::WATERBOX);
 	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_STAR.pref", L"ITEMBOX_STAR", CItemScript::ITEMBOX::STARBOX);
 	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_COIN.pref", L"ITEMBOX_COIN", CItemScript::ITEMBOX::COINBOX);
-	SaveSpritePrefabAsset(L"Prefab\\ITEMBOX_DEAD.pref", L"ITEMBOX_DEAD", L"Sprite\\ItemBox_Dead.sprite", Vec3(100.f, 120.f, 1.f), nullptr);
+	SaveSpritePrefabAsset(L"Prefab\\ITEMBOX_DEAD.pref", L"ITEMBOX_DEAD", L"Sprite\\ItemBox_Dead.sprite", Vec3(58.f, 76.f, 1.f), nullptr);
 
 	const wstring coinPrefabPath = wstring(CONTENT_PATH) + L"Prefab\\Coin.pref";
 	const bool coinPrefabMissing = (GetFileAttributesW(coinPrefabPath.c_str()) == INVALID_FILE_ATTRIBUTES);

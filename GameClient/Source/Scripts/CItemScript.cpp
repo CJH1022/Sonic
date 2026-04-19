@@ -21,11 +21,11 @@ namespace
     constexpr const wchar_t* kItemBoxDeadSpritePath = L"Sprite\\ItemBox_Dead.sprite";
     constexpr const wchar_t* kItemBoxLidChildName = L"ItemBox_Visual_Lid";
     constexpr const wchar_t* kItemBoxIconChildName = L"ItemBox_Visual_Icon";
-    const Vec3 kItemBoxDefaultScale = Vec3(100.f, 120.f, 1.f);
-    const Vec3 kItemBoxLidLocalPos = Vec3(0.f, 34.f, -0.1f);
-    const Vec3 kItemBoxLidLocalScale = Vec3(100.f, 40.f, 1.f);
-    const Vec3 kItemBoxIconLocalPos = Vec3(0.f, 12.f, -0.05f);
-    const Vec3 kItemBoxIconLocalScale = Vec3(48.f, 48.f, 1.f);
+    const Vec3 kItemBoxDefaultScale = Vec3(58.f, 76.f, 1.f);
+    const Vec3 kItemBoxLidLocalPos = Vec3(0.f, 24.f, -0.1f);
+    const Vec3 kItemBoxLidLocalScale = Vec3(58.f, 28.f, 1.f);
+    const Vec3 kItemBoxIconLocalPos = Vec3(0.f, 8.f, -0.05f);
+    const Vec3 kItemBoxIconLocalScale = Vec3(32.f, 32.f, 1.f);
 
     struct ItemBoxVisualInfo
     {
@@ -127,6 +127,19 @@ namespace
         return pSprite;
     }
 
+    bool ShouldResetItemBoxScaleToDefault(const Vec3& _Scale)
+    {
+        const float absX = fabsf(_Scale.x);
+        const float absY = fabsf(_Scale.y);
+
+        const bool bUnconfiguredScale = (absX <= 5.f || absY <= 5.f);
+        const bool bLegacyOversizedScale =
+            fabsf(absX - 100.f) <= 5.f &&
+            fabsf(absY - 120.f) <= 5.f;
+
+        return bUnconfiguredScale || bLegacyOversizedScale;
+    }
+
 }
 
 CItemScript::CItemScript()
@@ -221,7 +234,7 @@ bool CItemScript::ApplyEditorBoxSetup()
         return false;
 
     Vec3 ownerScale = pOwner->Transform()->GetRelativeScale();
-    if (fabsf(ownerScale.x) <= 5.f || fabsf(ownerScale.y) <= 5.f)
+    if (ShouldResetItemBoxScaleToDefault(ownerScale))
         pOwner->Transform()->SetRelativeScale(kItemBoxDefaultScale);
 
     Ptr<ASprite> pBaseSprite = LoadSpriteWithFallback(kItemBoxBaseSpritePath, kItemBoxDeadSpritePath);
