@@ -180,7 +180,6 @@ void CItemScript::LoadFromLevelFile(FILE* _File)
         boxType = (int)ITEMBOX::COINBOX;
 
     m_Curstate = (ITEMBOX)boxType;
-    ApplyEditorBoxSetup();
 }
 
 void CItemScript::SetBoxType(ITEMBOX _Type)

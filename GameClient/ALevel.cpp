@@ -3,6 +3,8 @@
 
 namespace
 {
+	constexpr size_t kMaxSerializedParentCount = 8192;
+
 	bool IsAutoplayTraceEnabled()
 	{
 		static const bool enabled = (nullptr != wcsstr(GetCommandLineW(), L"-autoplay"));
@@ -235,6 +237,11 @@ int ALevel::Load(const wstring& _FilePath)
 		size_t ParentCount = 0;
 		fread(&ParentCount, sizeof(size_t), 1, pFile);
 		AppendAutoplayTrace(L"layer=%u name=%ls parents=%zu", i, LayerName.c_str(), ParentCount);
+		if (ParentCount > kMaxSerializedParentCount)
+		{
+			fclose(pFile);
+			return E_FAIL;
+		}
 
 		for (size_t j = 0; j < ParentCount; ++j)
 		{

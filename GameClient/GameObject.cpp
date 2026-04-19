@@ -5,9 +5,13 @@
 #include "TaskMgr.h"
 #include "CCollider2D.h"
 #include "Source/ScriptMgr.h"
+#include "Source/Scripts/CItemScript.h"
 
 namespace
 {
+	constexpr size_t kMaxSerializedScriptCount = 128;
+	constexpr size_t kMaxSerializedChildCount = 8192;
+
 	void RemoveScriptDelegatesRecursive(GameObject* _Object, CScript* _Script)
 	{
 		if (nullptr == _Object || nullptr == _Script)
@@ -635,6 +639,11 @@ void GameObject::LoadFromLevelFile(FILE* _File)
 	size_t ScriptCount = 0;
 	fread(&ScriptCount, sizeof(size_t), 1, _File);
 	AppendAutoplayTrace(L"object=%ls script_count=%zu", GetName().c_str(), ScriptCount);
+	if (ScriptCount > kMaxSerializedScriptCount)
+	{
+		AppendRuntimeComponentTrace(L"invalid_script_count object=%ls count=%zu", GetName().c_str(), ScriptCount);
+		return;
+	}
 
 	for (size_t i = 0; i < ScriptCount; ++i)
 	{
@@ -654,6 +663,11 @@ void GameObject::LoadFromLevelFile(FILE* _File)
 	size_t ChildCount = 0;
 	fread(&ChildCount, sizeof(size_t), 1, _File);
 	AppendAutoplayTrace(L"object=%ls child_count=%zu", GetName().c_str(), ChildCount);
+	if (ChildCount > kMaxSerializedChildCount)
+	{
+		AppendRuntimeComponentTrace(L"invalid_child_count object=%ls count=%zu", GetName().c_str(), ChildCount);
+		return;
+	}
 
 	for (size_t i = 0; i < ChildCount; ++i)
 	{
@@ -662,6 +676,12 @@ void GameObject::LoadFromLevelFile(FILE* _File)
 		AddChild(ChildObject);
 		ChildObject->LoadFromLevelFile(_File);
 		AppendAutoplayTrace(L"object=%ls child_index=%zu end child=%ls", GetName().c_str(), i, ChildObject->GetName().c_str());
+	}
+
+	Ptr<CItemScript> pItemScript = GetScript<CItemScript>();
+	if (nullptr != pItemScript)
+	{
+		pItemScript->ApplyEditorBoxSetup();
 	}
 
 	AppendAutoplayTrace(L"object_end name=%ls", GetName().c_str());
