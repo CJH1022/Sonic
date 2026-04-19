@@ -168,7 +168,6 @@ void LevelMgr::ChangeLevelState(LEVEL_STATE _NextState)
 		CSurfaceScript::ResetSpatialIndex();
 		RenderMgr::GetInst()->ClearMainCamera();
 		m_CurLevel = m_SharedLevel->Clone();
-		m_CurLevel->SetChanged();
 		m_LevelState = _NextState;
 		m_CurLevel->Begin();
 		// Prime transforms and collision once before the first gameplay tick so
@@ -184,10 +183,6 @@ void LevelMgr::ChangeLevelState(LEVEL_STATE _NextState)
 		CSurfaceScript::ResetSpatialIndex();
 		RenderMgr::GetInst()->ClearMainCamera();
 		m_CurLevel = m_SharedLevel;
-		if (nullptr != m_CurLevel)
-		{
-			m_CurLevel->SetChanged();
-		}
 	}
 
 	m_LevelState = _NextState;
