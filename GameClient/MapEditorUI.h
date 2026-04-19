@@ -74,6 +74,7 @@ private:
         CORRECTION,
         WALL,
         VERTICAL_ENTRY,
+        VERTICAL_STICKY_ENTRY,
         ERASE,
     };
 
@@ -138,6 +139,7 @@ private:
     Ptr<GameObject> FindNearestSurfaceObject(const Vec2& _WorldPos, float& _OutDistance) const;
     bool FindSnapPoint(const Vec2& _WorldPos, Vec2& _OutSnapPoint) const;
     void RefreshCircleGuideCorrectionLines();
+    void BuildArcSurfaceBounds(const Vec2& _StartWorld, const Vec2& _EndWorld, Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter) const;
     void BuildQuarterSurfaceBounds(const Vec2& _StartWorld, const Vec2& _EndWorld, bool _UseCircleRadius, Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter, float& _OutRadius) const;
     void BuildFullCircleBounds(const Vec2& _StartWorld, const Vec2& _EndWorld, Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter, float& _OutRadius) const;
     Ptr<GameObject> GetSelectedSurfaceObject() const;

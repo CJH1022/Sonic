@@ -17,22 +17,21 @@ private:
     bool        m_bBounceStarted;
     bool        m_bFallingInside;
     int         m_SpiralDir;
-    Vec2        m_EntryDoorSize;
-    Vec2        m_EntryDoorOffset;
     Vec2        m_ExitDoorSize;
     Vec2        m_ExitDoorOffset;
     GameObject* m_pRidingPlayer;
+    GameObject* m_pIgnoreOverlapPlayer;
 
 public:
     virtual void Begin() override;
     virtual void Tick() override;
+    void DrawExitDoorDebug();
 
     void BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
     void Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
     void EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
 
 public:
-    void PossibleAttatchTreeWall(CCollider2D* _OtherCollider);
     Vec2 FallingTree();
 
 public:
@@ -51,7 +50,6 @@ private:
     bool GetOtherColliderWorldRect(CCollider2D* _OtherCollider, Vec2& _OutCenter,
                                    float& _OutHalfWidth, float& _OutHalfHeight) const;
     bool TryBeginRide(CPlayerScript* _Player, const Vec2& _PlayerCenter,
-                      float _PlayerHalfWidth, float _PlayerHalfHeight,
                       const Vec2& _CylinderCenter, float _HalfWidth, float _HalfHeight);
     void UpdateRide(CPlayerScript* _Player, const Vec2& _CylinderCenter,
                     float _HalfWidth, float _HalfHeight);

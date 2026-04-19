@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "Menu.h"
 
+#include "APrefab.h"
 #include "AssetMgr.h"
 #include "EditorMgr.h"
 #include "ContentUI.h"
@@ -12,12 +13,15 @@
 #include "CTransform.h"
 #include "Inspector.h"
 #include "GameObject.h"
+#include "RenderMgr.h"
 
 #include "Source/ScriptMgr.h"
 #include "Source/Scripts/CBlockMovingScript.h"
 #include "Source/Scripts/CBlockPushingScript.h"
 #include "Source/Scripts/CBlockScript.h"
+#include "Source/Scripts/CBossScript.h"
 #include "Source/Scripts/CCylinderScript.h"
+#include "Source/Scripts/CItemScript.h"
 #include "Source/Scripts/CSpikeScript.h"
 #include "Source/Scripts/CSpringScript.h"
 #include "func.h"
@@ -76,6 +80,67 @@ namespace
 		}
 
 		return false;
+	}
+
+	void InitializeItemScript(CScript* _Script)
+	{
+		CItemScript* pItemScript = dynamic_cast<CItemScript*>(_Script);
+		if (nullptr == pItemScript)
+			return;
+
+		if (pItemScript->GetBoxType() == CItemScript::ITEMBOX::NONE)
+			pItemScript->SetBoxType(CItemScript::ITEMBOX::COINBOX);
+
+		pItemScript->ApplyEditorBoxSetup();
+	}
+
+	Vec3 GetEditorSpawnPos(float _Z = 9.f)
+	{
+		Vec3 vPos = Vec3(0.f, 0.f, _Z);
+
+		Ptr<CCamera> pCam = RenderMgr::GetInst()->GetEditorCamera();
+		if (nullptr == pCam)
+			pCam = RenderMgr::GetInst()->GetPOVCamera();
+
+		if (nullptr != pCam && nullptr != pCam->GetOwner() && nullptr != pCam->GetOwner()->Transform())
+		{
+			Vec3 vCamPos = pCam->GetOwner()->Transform()->GetRelativePos();
+			vPos.x = vCamPos.x;
+			vPos.y = vCamPos.y;
+		}
+
+		return vPos;
+	}
+
+	Ptr<AFlipbook> ResolveSpringFlipbook()
+	{
+		Ptr<AFlipbook> pFlipbook = FIND(AFlipbook, L"Spring");
+		if (nullptr != pFlipbook && 0 < pFlipbook->GetSpriteCount())
+			return pFlipbook;
+
+		pFlipbook = FIND(AFlipbook, L"Flipbook\\Spring.flip");
+		if (nullptr != pFlipbook && 0 < pFlipbook->GetSpriteCount())
+			return pFlipbook;
+
+		pFlipbook = LOAD(AFlipbook, L"Flipbook\\Spring.flip");
+		if (nullptr != pFlipbook && 0 < pFlipbook->GetSpriteCount())
+			return pFlipbook;
+
+		Ptr<AFlipbook> pRuntimeFlipbook = new AFlipbook;
+		for (int i = 0; i < 5; ++i)
+		{
+			wchar_t szName[32] = {};
+			swprintf_s(szName, L"Spring_%d", i);
+
+			Ptr<ASprite> pSprite = FIND(ASprite, szName);
+			if (nullptr != pSprite)
+				pRuntimeFlipbook->AddSprite(pSprite);
+		}
+
+		if (0 < pRuntimeFlipbook->GetSpriteCount())
+			return pRuntimeFlipbook;
+
+		return nullptr;
 	}
 }
 
@@ -267,8 +332,14 @@ void Menu::GameObjectMenu()
 	if (ImGui::BeginMenu("GameObject"))
 	{
 		const bool canEditObjects = CanEditSceneObjects();
+		const bool hasCoinPrefab = FileExists(wstring(CONTENT_PATH) + L"Prefab\\Coin.pref");
 		Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
 		Ptr<GameObject> pObject = (nullptr != pInspector) ? pInspector->GetTargetObject() : nullptr;
+
+		if (ImGui::MenuItem("Create Empty", nullptr, nullptr, canEditObjects))
+		{
+			CreateEmptyObject();
+		}
 
 		if (ImGui::MenuItem("Create Block", nullptr, nullptr, canEditObjects))
 		{
@@ -325,6 +396,16 @@ void Menu::GameObjectMenu()
 			ImGui::EndMenu();
 		}
 
+		if (ImGui::MenuItem("Create Coin", nullptr, nullptr, canEditObjects && hasCoinPrefab))
+		{
+			CreateCoinObject();
+		}
+
+		if (ImGui::MenuItem("Create Boss", nullptr, nullptr, canEditObjects))
+		{
+			CreateBossObject();
+		}
+
 		if (ImGui::MenuItem("Create Cylinder", nullptr, nullptr, canEditObjects))
 		{
 			CreateCylinderObject();
@@ -351,6 +432,7 @@ void Menu::GameObjectMenu()
 					if (nullptr != pNewScript)
 					{
 						pObject->AddComponent(pNewScript);
+						InitializeItemScript(pNewScript);
 						pObject->RegisterAsParent();
 						LevelMgr::GetInst()->GetCurLevel()->SetChanged();
 						if (nullptr != pInspector)
@@ -366,6 +448,64 @@ void Menu::GameObjectMenu()
 	}
 }
 
+void Menu::CreateEmptyObject()
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pObject = new GameObject;
+	pObject->SetName(L"Empty_" + std::to_wstring(pObject->GetID()));
+	pObject->AddComponent(new CTransform);
+	pObject->AddComponent(new CCollider2D);
+	pObject->Transform()->SetRelativePos(GetEditorSpawnPos());
+	pObject->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pObject->Collider2D()->SetScale(Vec2(1.f, 1.f));
+
+	pLevel->AddObject(5, pObject);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pObject);
+}
+
+void Menu::CreateBossObject()
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<GameObject> pBoss = new GameObject;
+	pBoss->SetName(L"Boss_" + std::to_wstring(pBoss->GetID()));
+	pBoss->AddComponent(new CTransform);
+	pBoss->AddComponent(new CFlipbookRender);
+	pBoss->AddComponent(new CCollider2D);
+
+	CBossScript* pBossScript = new CBossScript;
+	pBossScript->SetState(BOSS_STATE::IDLE);
+	pBoss->AddComponent(pBossScript);
+
+	pBoss->Transform()->SetRelativePos(GetEditorSpawnPos(1.f));
+	pBoss->Transform()->SetRelativeScale(Vec3(220.f, 220.f, 1.f));
+	pBoss->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+	pBoss->Collider2D()->SetScale(Vec2(0.5f, 0.7f));
+
+	Ptr<AFlipbook> pBossMoveFlipbook = LOAD(AFlipbook, L"Flipbook\\Boss_Move.flip");
+	if (nullptr != pBossMoveFlipbook)
+	{
+		pBoss->FlipbookRender()->SetFlipbook(0, pBossMoveFlipbook);
+		pBoss->FlipbookRender()->Play(0, 10.f, -1);
+	}
+
+	pLevel->AddObject(5, pBoss);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pBoss);
+}
+
 void Menu::CreateCylinderObject()
 {
 	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
@@ -379,7 +519,7 @@ void Menu::CreateCylinderObject()
 	pCylinder->AddComponent(new CSpriteRender);
 	pCylinder->AddComponent(new CCylinderScript);
 
-	pCylinder->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pCylinder->Transform()->SetRelativePos(GetEditorSpawnPos());
 	pCylinder->Transform()->SetRelativeScale(Vec3(260.f, 420.f, 1.f));
 	pCylinder->Collider2D()->SetOffset(Vec2(0.f, 0.f));
 	pCylinder->Collider2D()->SetScale(Vec2(1.f, 1.f));
@@ -411,7 +551,7 @@ void Menu::CreateBlockObject()
 	pBlock->AddComponent(new CSpriteRender);
 	pBlock->AddComponent(new CBlockScript);
 
-	pBlock->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pBlock->Transform()->SetRelativePos(GetEditorSpawnPos());
 	pBlock->Transform()->SetRelativeScale(Vec3(128.f, 128.f, 1.f));
 	pBlock->Collider2D()->SetOffset(Vec2(0.f, 0.f));
 	pBlock->Collider2D()->SetScale(Vec2(1.f, 1.f));
@@ -448,7 +588,7 @@ void Menu::CreateMovingBlockObject()
 	pMovingScript->SetVelocity(Vec2(120.f, 0.f));
 	pBlock->AddComponent(pMovingScript);
 
-	pBlock->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pBlock->Transform()->SetRelativePos(GetEditorSpawnPos());
 	pBlock->Transform()->SetRelativeScale(Vec3(160.f, 64.f, 1.f));
 	pBlock->Collider2D()->SetOffset(Vec2(0.f, 0.f));
 	pBlock->Collider2D()->SetScale(Vec2(1.f, 1.f));
@@ -480,7 +620,7 @@ void Menu::CreatePushingBlockObject()
 	pBlock->AddComponent(new CSpriteRender);
 	pBlock->AddComponent(new CBlockPushingScript);
 
-	pBlock->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pBlock->Transform()->SetRelativePos(GetEditorSpawnPos());
 	pBlock->Transform()->SetRelativeScale(Vec3(128.f, 128.f, 1.f));
 	pBlock->Collider2D()->SetOffset(Vec2(0.f, 0.f));
 	pBlock->Collider2D()->SetScale(Vec2(1.f, 1.f));
@@ -512,7 +652,7 @@ void Menu::CreateSpikeObject(float _RotationZ, const wchar_t* _NamePrefix)
 	pSpike->AddComponent(new CSpriteRender);
 	pSpike->AddComponent(new CSpikeScript);
 
-	pSpike->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pSpike->Transform()->SetRelativePos(GetEditorSpawnPos());
 	pSpike->Transform()->SetRelativeScale(Vec3(150.f, 150.f, 1.f));
 	pSpike->Transform()->SetRelativeRot(Vec3(0.f, 0.f, _RotationZ));
 	pSpike->Collider2D()->SetOffset(Vec2(0.f, 0.f));
@@ -545,13 +685,13 @@ void Menu::CreateSpringObject(float _RotationZ, const wchar_t* _NamePrefix)
 	pSpring->AddComponent(new CFlipbookRender);
 	pSpring->AddComponent(new CSpringScript);
 
-	pSpring->Transform()->SetRelativePos(Vec3(0.f, 0.f, 9.f));
+	pSpring->Transform()->SetRelativePos(GetEditorSpawnPos());
 	pSpring->Transform()->SetRelativeScale(Vec3(96.f, 96.f, 1.f));
 	pSpring->Transform()->SetRelativeRot(Vec3(0.f, 0.f, _RotationZ));
 	pSpring->Collider2D()->SetOffset(Vec2(0.f, 0.f));
 	pSpring->Collider2D()->SetScale(Vec2(0.9f, 0.9f));
 
-	Ptr<AFlipbook> pFlipbook = LOAD(AFlipbook, L"Flipbook\\Spring.flip");
+	Ptr<AFlipbook> pFlipbook = ResolveSpringFlipbook();
 	if (nullptr == pFlipbook)
 	{
 		pFlipbook = LOAD(AFlipbook, L"Flipbook\\Default Flipbook_0.flip");
@@ -568,6 +708,35 @@ void Menu::CreateSpringObject(float _RotationZ, const wchar_t* _NamePrefix)
 	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
 	if (nullptr != pInspector)
 		pInspector->SetTargetObject(pSpring);
+}
+
+void Menu::CreateCoinObject()
+{
+	Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+	if (nullptr == pLevel || LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::STOP)
+		return;
+
+	Ptr<APrefab> pCoinPrefab = LOAD(APrefab, L"Prefab\\Coin.pref");
+	if (nullptr == pCoinPrefab)
+		return;
+
+	Ptr<GameObject> pCoin = pCoinPrefab->Instantiate();
+	if (nullptr == pCoin)
+		return;
+
+	pCoin->SetName(L"Coin_" + std::to_wstring(pCoin->GetID()));
+
+	if (nullptr != pCoin->Transform())
+	{
+		pCoin->Transform()->SetRelativePos(GetEditorSpawnPos());
+	}
+
+	pLevel->AddObject(5, pCoin);
+	pLevel->SetChanged();
+
+	Ptr<Inspector> pInspector = (Inspector*)EditorMgr::GetInst()->FindUI("Inspector").Get();
+	if (nullptr != pInspector)
+		pInspector->SetTargetObject(pCoin);
 }
 
 void Menu::DeleteSelectedObject()

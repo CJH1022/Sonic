@@ -11,14 +11,18 @@ private:
 	HWND		m_hWnd;
 	Vec2		m_Resolution;
 
+	FMOD::System* m_FMODSystem;
 	bool		m_EditorMode;
 
 public:
 	HINSTANCE GetInstance() { return m_hInst; }	
 	HWND GetMainWndHwnd() { return m_hWnd; }
 	Vec2 GetResolution() { return m_Resolution; }
+	FMOD::System* GetFMODSystem() { return m_FMODSystem; }
 
 public:
 	int Init(HINSTANCE _hInst, UINT _Width, UINT _Height, bool _EditorMode);
 	int Progress();
 };
+
+#define FMOD_SYSTEM Engine::GetInst()->GetFMODSystem()

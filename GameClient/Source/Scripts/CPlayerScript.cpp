@@ -1,29 +1,330 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "CPlayerScript.h"
+
+int CPlayerScript::m_PlayerLife = 0;
 
 #include "KeyMgr.h"
 #include "TimeMgr.h"
 #include "RenderMgr.h"
+#include "ALevel.h"
+#include "Layer.h"
+#include "CCamera.h"
 #include "CTransform.h"
+#include "CFlipbookRender.h"
 #include "LevelMgr.h"
 #include "GameObject.h"
 #include "CCollider2D.h"
 #include "TaskMgr.h"
 #include "CTileScript.h"
+#include "CBossScript.h"
 #include "CSurfaceCircleGuideScript.h"
 #include "CSurfaceScript.h"
+#include "CUIMgrScript.h"
 #include "CBlockScript.h"
 #include "CBlockMovingScript.h"
+#include "CEffectScript.h"
 #include "func.h"
 
 #include <cmath> // fabsf
+#include <filesystem>
 #include "CBlockPushingScript.h"
 #include "AssetMgr.h"
 
 namespace
 {
+    constexpr float kBossAutoSpawnTriggerPlayerX = 16200.f;
+    constexpr float kBossAutoSpawnTargetCameraX = 16200.f;
+    constexpr float kBossAutoSpawnAheadX = 280.f;
+    constexpr float kBossAutoSpawnYOffset = 80.f;
+    constexpr float kBossAutoSpawnEnterOffsetY = 900.f;
+    constexpr int kBossAutoSpawnLayerIdx = 5;
+    ALevel* g_pBossAutoSpawnLevel = nullptr;
+    bool g_bBossAutoSpawnTriggered = false;
+
+    void ResetBossAutoSpawnState(ALevel* _Level)
+    {
+        if (g_pBossAutoSpawnLevel == _Level)
+            return;
+
+        g_pBossAutoSpawnLevel = _Level;
+        g_bBossAutoSpawnTriggered = false;
+    }
+
+    GameObject* FindBossObjectInLevel(ALevel* _Level)
+    {
+        if (_Level == nullptr)
+            return nullptr;
+
+        for (int layerIdx = 0; layerIdx < MAX_LAYER; ++layerIdx)
+        {
+            Layer* pLayer = _Level->GetLayer(layerIdx);
+            if (pLayer == nullptr)
+                continue;
+
+            const vector<Ptr<GameObject>>& vecObjects = pLayer->GetAllObjects();
+            for (size_t i = 0; i < vecObjects.size(); ++i)
+            {
+                if (vecObjects[i] == nullptr)
+                    continue;
+
+                if (vecObjects[i]->GetScript<CBossScript>() != nullptr)
+                    return vecObjects[i].Get();
+            }
+        }
+
+        return nullptr;
+    }
+
+    void TryAutoSpawnBossForTrigger(CPlayerScript* _Player)
+    {
+        if (_Player == nullptr || _Player->GetOwner() == nullptr || _Player->GetOwner()->IsDead())
+            return;
+
+        if (LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::PLAY)
+            return;
+
+        Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+        if (pCurLevel == nullptr)
+            return;
+
+        ResetBossAutoSpawnState(pCurLevel.Get());
+
+        if (FindBossObjectInLevel(pCurLevel.Get()) != nullptr)
+        {
+            g_bBossAutoSpawnTriggered = true;
+            return;
+        }
+
+        if (_Player->Transform() == nullptr)
+            return;
+
+        const Vec3 playerPos = _Player->Transform()->GetWorldPos();
+        if (g_bBossAutoSpawnTriggered)
+        {
+            if (playerPos.x < (kBossAutoSpawnTriggerPlayerX - 1000.f))
+                g_bBossAutoSpawnTriggered = false;
+            else
+                return;
+        }
+
+        if (playerPos.x < kBossAutoSpawnTriggerPlayerX)
+            return;
+
+        GameObject* pBoss = new GameObject;
+        pBoss->SetName(L"Boss_AutoSpawn");
+        pBoss->AddComponent(new CTransform);
+        pBoss->AddComponent(new CFlipbookRender);
+        pBoss->AddComponent(new CCollider2D);
+
+        CBossScript* pBossScript = new CBossScript;
+        pBossScript->SetState(BOSS_STATE::IDLE);
+        pBossScript->SetTargetCameraX(kBossAutoSpawnTargetCameraX);
+        pBossScript->SetEnterStartOffsetY(kBossAutoSpawnEnterOffsetY);
+        pBoss->AddComponent(pBossScript);
+
+        const float targetX = max(kBossAutoSpawnTriggerPlayerX + 260.f, playerPos.x + kBossAutoSpawnAheadX);
+        const float targetY = playerPos.y + kBossAutoSpawnYOffset;
+        pBoss->Transform()->SetRelativePos(Vec3(targetX, targetY, 1.f));
+        pBoss->Transform()->SetRelativeScale(Vec3(220.f, 220.f, 1.f));
+        pBoss->Collider2D()->SetOffset(Vec2(0.f, 0.f));
+        pBoss->Collider2D()->SetScale(Vec2(0.5f, 0.7f));
+
+        Ptr<AFlipbook> pBossMoveFlipbook = LOAD(AFlipbook, L"Flipbook\\Boss_Move.flip");
+        if (nullptr != pBossMoveFlipbook)
+        {
+            pBoss->FlipbookRender()->SetFlipbook(0, pBossMoveFlipbook);
+            pBoss->FlipbookRender()->Play(0, 10.f, -1);
+        }
+
+        CreateObject(pBoss, kBossAutoSpawnLayerIdx);
+        g_bBossAutoSpawnTriggered = true;
+    }
+
+    CUIMgrScript* FindStageUIManagerInLevel(ALevel* _Level)
+    {
+        if (_Level == nullptr)
+            return nullptr;
+
+        for (int layerIdx = 0; layerIdx < MAX_LAYER; ++layerIdx)
+        {
+            Layer* pLayer = _Level->GetLayer(layerIdx);
+            if (pLayer == nullptr)
+                continue;
+
+            const vector<Ptr<GameObject>>& vecObjects = pLayer->GetAllObjects();
+            for (size_t i = 0; i < vecObjects.size(); ++i)
+            {
+                if (vecObjects[i] == nullptr || vecObjects[i]->IsDead())
+                    continue;
+
+                Ptr<CUIMgrScript> pUI = vecObjects[i]->GetScript<CUIMgrScript>();
+                if (nullptr != pUI)
+                    return pUI.Get();
+            }
+        }
+
+        return nullptr;
+    }
+
+    void ClampPlayerInsideStageUIScreen(CPlayerScript* _Player)
+    {
+        if (_Player == nullptr || _Player->GetOwner() == nullptr || _Player->Transform() == nullptr)
+            return;
+
+        if (LevelMgr::GetInst()->GetLevelState() != LEVEL_STATE::PLAY)
+            return;
+
+        Ptr<ALevel> pCurLevel = LevelMgr::GetInst()->GetCurLevel();
+        if (pCurLevel == nullptr)
+            return;
+
+        CUIMgrScript* pUI = FindStageUIManagerInLevel(pCurLevel.Get());
+        if (pUI == nullptr)
+            return;
+
+        const CUIMgrScript::STAGESTATE stageState = pUI->GetStageState();
+        if (stageState != CUIMgrScript::STAGESTATE::START
+            && stageState != CUIMgrScript::STAGESTATE::END)
+        {
+            return;
+        }
+
+        Ptr<CCamera> pCamera = RenderMgr::GetInst()->GetPOVCamera();
+        if (pCamera == nullptr || pCamera->GetProjType() != PROJ_TYPE::ORTHOGRAPHIC)
+            return;
+
+        GameObject* pCameraOwner = pCamera->GetOwner();
+        if (pCameraOwner == nullptr || pCameraOwner->Transform() == nullptr)
+            return;
+
+        Vec3 playerPos = _Player->Transform()->GetRelativePos();
+        const Vec3 cameraPos = pCameraOwner->Transform()->GetRelativePos();
+        const float halfWidth = max(1.f, pCamera->GetWidth() * pCamera->GetOrthoScale() * 0.5f);
+        const float halfHeight = max(1.f, halfWidth / max(0.01f, pCamera->GetAspectRatio()));
+
+        const Vec3 ownerScale = _Player->Transform()->GetRelativeScale();
+        float halfPlayerWidth = max(28.f, fabsf(ownerScale.x) * 0.18f);
+        float halfPlayerHeight = max(28.f, fabsf(ownerScale.y) * 0.30f);
+
+        if (_Player->GetOwner()->Collider2D() != nullptr)
+        {
+            const Vec2 colliderScale = _Player->GetOwner()->Collider2D()->GetScale();
+            halfPlayerWidth = max(halfPlayerWidth, fabsf(ownerScale.x * colliderScale.x) * 0.5f + 8.f);
+            halfPlayerHeight = max(halfPlayerHeight, fabsf(ownerScale.y * colliderScale.y) * 0.5f + 8.f);
+        }
+
+        const float minX = cameraPos.x - halfWidth + halfPlayerWidth;
+        const float maxX = cameraPos.x + halfWidth - halfPlayerWidth;
+        const float minY = cameraPos.y - halfHeight + halfPlayerHeight;
+        const float maxY = cameraPos.y + halfHeight - halfPlayerHeight;
+
+        bool bClampedX = false;
+        bool bClampedY = false;
+
+        if (playerPos.x < minX)
+        {
+            playerPos.x = minX;
+            bClampedX = true;
+        }
+        else if (playerPos.x > maxX)
+        {
+            playerPos.x = maxX;
+            bClampedX = true;
+        }
+
+        if (playerPos.y < minY)
+        {
+            playerPos.y = minY;
+            bClampedY = true;
+        }
+        else if (playerPos.y > maxY)
+        {
+            playerPos.y = maxY;
+            bClampedY = true;
+        }
+
+        if (!bClampedX && !bClampedY)
+            return;
+
+        _Player->Transform()->SetRelativePos(playerPos);
+
+        Vec2 velocity = _Player->GetVelocity();
+        if (bClampedX)
+            velocity.x = 0.f;
+        if (bClampedY)
+            velocity.y = 0.f;
+        _Player->SetVelocity(velocity);
+    }
+
+    bool TryRestartMostRecentPlayableLevel()
+    {
+        namespace fs = std::filesystem;
+
+        fs::path selectedLevelPath;
+        fs::file_time_type selectedWriteTime{};
+        bool foundSavedLevel = false;
+
+        std::error_code ec;
+        const fs::path levelDir = fs::path(CONTENT_PATH) / L"Level";
+        if (fs::exists(levelDir, ec))
+        {
+            for (const fs::directory_entry& entry : fs::directory_iterator(levelDir, ec))
+            {
+                if (ec)
+                    break;
+
+                if (!entry.is_regular_file(ec) || ec)
+                    continue;
+
+                if (entry.path().extension() != L".lv")
+                    continue;
+
+                if (entry.path().filename() == L"OpenLevel.lv")
+                    continue;
+
+                const fs::file_time_type writeTime = entry.last_write_time(ec);
+                if (ec)
+                    continue;
+
+                if (!foundSavedLevel || selectedWriteTime < writeTime)
+                {
+                    selectedWriteTime = writeTime;
+                    selectedLevelPath = entry.path();
+                    foundSavedLevel = true;
+                }
+            }
+        }
+
+        if (!foundSavedLevel)
+            return false;
+
+        const wstring levelFileName = selectedLevelPath.filename().wstring();
+        const wstring levelKey = L"OpeningStartLevel";
+        const wstring relativePath = L"Level\\" + levelFileName;
+
+        AssetMgr::GetInst()->Load<ALevel>(levelKey, relativePath);
+        ChangeLevel(levelKey);
+        ChangeLevelState(LEVEL_STATE::PLAY);
+        return true;
+    }
+
+    void RestartGameplayLevelAfterPlayerDeath()
+    {
+        if (TryRestartMostRecentPlayableLevel())
+            return;
+
+        if (nullptr == AssetMgr::GetInst()->Find<ALevel>(L"TestLevel"))
+            CreateTestLevel();
+        else
+            ChangeLevel(L"TestLevel");
+
+        ChangeLevelState(LEVEL_STATE::PLAY);
+    }
+    constexpr float kPlayerDeadEffectLifeTime = 5.f;
     constexpr int kPushingFlipbookIndex = 20;
     constexpr int kKnockBackFlipbookIndex = 21;
+    constexpr int kCylinderFlipbookIndex = 22;
+    constexpr float kCylinderFlipbookFPS = 12.f;
     constexpr float kKnockBackBlinkInterval = 0.08f;
     constexpr float kKnockBackMinGroundRecoverTime = 0.25f;
     constexpr float kKnockBackMaxDuration = 0.45f;
@@ -57,19 +358,43 @@ constexpr float kSurfaceLineSeamRisingSlopeSnapMaxDistance = 10.f;
 constexpr float kSurfaceLineSeamRisingSlopeMoveMin = 5.f;
 constexpr float kSurfaceLineSeamRisingSlopeSpeedMin = 70.f;
     constexpr float kSurfaceLineSeamRisingSlopeEntryBlendMin = 0.12f;
+    constexpr float kSurfaceLineSeamSlopeToFlatScoreFavor = 0.35f;
+    constexpr float kSurfaceLineSeamSlopeToFlatBlendFloor = 0.82f;
+    constexpr float kSurfaceLineSeamSlopeToFlatSnapMaxDistance = 6.f;
     constexpr float kSurfaceLineSeamConnectionMaxDistance = 6.f;
     constexpr float kSurfaceLineSeamEndpointMatchDistance = 4.f;
     constexpr float kSurfaceLineSeamEntryProjectionMinDistance = 0.75f;
     constexpr float kSurfaceLineSeamEntrySnapMinDistance = 1.0f;
     constexpr float kSurfaceLineUnconnectedPositiveRejectDistance = 0.25f;
     constexpr float kSurfaceLineRelaxedDownwardSeamBiasMin = 0.15f;
+    constexpr float kSurfaceLineRelaxedDownwardMoveMin = 1.f;
+    constexpr float kSurfaceLineRelaxedDownwardScoreMax = 16.f;
+    constexpr float kSurfaceLineDownwardTransitionSnapMaxDistance = 16.f;
+    constexpr float kSurfaceLineDownwardTransitionScoreFavor = 4.f;
     constexpr float kSurfaceSceneProbeMargin = 32.f;
     constexpr float kSurfaceDetachedLinePositiveThreshold = 0.05f;
     constexpr float kSurfaceDetachedLineFallSpeedMin = 10.f;
+    constexpr float kSurfaceCurrentLinePositiveRejectDistance = 3.f;
+    constexpr float kSurfaceCurrentLinePositiveScorePenaltySpeedMin = 120.f;
+    constexpr float kSurfaceCurrentLinePositiveScorePenaltySpeedMax = 480.f;
+    constexpr float kSurfaceCurrentLinePositiveScorePenaltyScale = 3.f;
+    constexpr float kSurfaceCurrentLinePositiveTransitionPenalty = 2.f;
+    constexpr float kSurfaceLineUnresolvedPositiveGapDetachDistance = 0.75f;
 
     constexpr float kSurfaceLineAttachSnapMaxDistance = 2.5f;  // line 표면은 현재/전이 라인일 때만 짧게 스냅한다
+    constexpr float kSurfaceVerticalRoleLineScoreFavor = 0.55f;
+    constexpr float kSurfaceVerticalRoleLineTransferAlignMin = 0.72f;
+    constexpr float kSurfaceVerticalRoleLineNormalAlignMin = 0.68f;
+    constexpr float kSurfaceVerticalRoleLineTransferSpeedMin = 14.f;
+    constexpr float kSurfaceVerticalRoleLineTransferScoreFavor = 2.4f;
+    constexpr float kSurfaceVerticalEntryLineTransferScoreFavor = 1.25f;
+    constexpr float kSurfaceVerticalEntryAlignedScoreFavor = 3.25f;
+    constexpr float kSurfaceVerticalRoleLineProjectionMaxDistance = 12.f;
+    constexpr float kSurfaceVerticalRoleLineSnapMaxDistance = 12.f;
+    constexpr float kSurfaceVerticalRoleLineKeepVnTolerance = 220.f;
+    constexpr float kSurfaceVerticalRoleLineGroundHoldTime = 0.12f;
     constexpr float kSurfaceLineStableProjectionMaxDistance = 2.5f;
-    constexpr float kSurfaceLinePenetrationPushMaxDistance = 1.5f;
+    constexpr float kSurfaceLinePenetrationPushMaxDistance = 6.f;
     constexpr float kSurfaceGuidedLineProjectionMaxDistance = 18.f;
     constexpr float kSurfaceGuidedLineDeepProjectionMaxDistance = 64.f;
     constexpr float kSurfaceGuidedLineForceProjectionMaxDistance = 96.f;
@@ -83,6 +408,13 @@ constexpr float kSurfaceLineSeamRisingSlopeSpeedMin = 70.f;
     constexpr float kSurfaceCircleGroundHoldTime = 0.14f;
     constexpr float kSurfaceCircleStickMinY = 0.02f;
     constexpr float kSurfaceCircleStickSpeedMin = 40.f;
+    constexpr float kSurfaceCircleSlopeGravityForce = 500.f;
+    constexpr float kSurfaceCircleSlopeSlipMinGravityTangent = 0.12f;
+    constexpr float kSurfaceCircleLowerHalfStallMinNormalY = 0.28f;
+    constexpr float kSurfaceCircleLowerHalfStallSpeedMax = 150.f;
+    constexpr float kSurfaceCircleLowerHalfInputMinTangent = 0.05f;
+    constexpr float kSurfaceInwardCircleSlopeFallNormalY = -0.5f;
+    constexpr float kSurfaceInwardCircleSlopeFallMinSpeed = 250.f;
     constexpr float kSurfaceCircleLowSpeedFallMinNormalY = 0.22f;
     constexpr float kSurfaceCircleLowSpeedFallSpeedMin = 180.f;
     constexpr float kSurfaceJumpDetachSpeedMin = 60.f;
@@ -104,6 +436,7 @@ constexpr float kSurfaceLineSeamRisingSlopeSpeedMin = 70.f;
     constexpr float kSurfaceGuidedHalfCrossAngleEpsilon = XMConvertToRadians(3.f);
     constexpr float kSurfaceGuidedHalfTouchRadiusMin = 10.f;
     constexpr float kSurfaceGuidedHalfTouchRadiusScale = 0.06f;
+    constexpr float kSurfaceInwardCircleHalfCheckerSwitchFallSpeed = 40.f;
     constexpr float kSurfaceGuidedCorrectionLineTransferHoldTime = 0.18f;
     constexpr float kSurfaceGuidedLineRotationSnapTime = 0.10f;
     constexpr float kSurfaceInwardCircleTopHalfSwitchEpsilon = 1.5f;
@@ -119,7 +452,15 @@ constexpr float kSurfaceLineSeamRisingSlopeSpeedMin = 70.f;
     constexpr float kSurfaceInwardCircleBackSlipWalkSpeedMin = 55.f;
     constexpr float kSurfaceInwardCircleBackSlipWalkSpeedMax = 130.f;
     constexpr float kSurfaceInwardCircleBackSlipAccelScale = 0.55f;
+    constexpr float kSurfaceSteepLineBackSlipMaxNormalY = 0.7071f;
+    constexpr float kSurfaceSteepLineBackSlipMinNormalY = 0.20f;
+    constexpr float kSurfaceSteepLineBackSlipWalkSpeedMin = 45.f;
+    constexpr float kSurfaceSteepLineBackSlipWalkSpeedMax = 140.f;
+    constexpr float kSurfaceSteepLineBackSlipAccelScale = 0.55f;
     constexpr float kSurfaceLineOverTopHalfInwardCircleDistanceMargin = 1.5f;
+    constexpr float kPhysicalGroundAnimGraceDuration = 0.06f;
+    constexpr float kPhysicalGroundAnimGraceMoveSpeedMin = 80.f;
+    constexpr float kPhysicalGroundAnimGraceVerticalSpeedMax = 120.f;
     constexpr float kAutoplaySampleInterval = 0.10f;
     constexpr float kAutoplayDefaultTotalDuration = 15.35f;
     constexpr float kAutoplaySurfaceTotalDuration = 9.20f;
@@ -129,6 +470,60 @@ constexpr float kSurfaceLineSeamRisingSlopeSpeedMin = 70.f;
     constexpr float kAutoplaySurfaceTopJumpTotalDuration = 2.20f;
     constexpr float kAutoplaySurfaceSlowFallTotalDuration = 2.20f;
     constexpr float kAutoplaySurfaceLineUnderTotalDuration = 2.20f;
+    constexpr float kShieldFlipbookFPS = 20.f;
+    constexpr float kFireShieldDashSpeed = 1000.f;
+    constexpr float kWaterShieldDropSpeed = -1000.f;
+    constexpr float kWaterShieldBounceSpeed = 800.f;
+    constexpr float kElectricShieldJumpSpeed = 600.f;
+    constexpr float kStarShieldDuration = 10.f;
+    constexpr float kStarShieldBonusSpeed = 200.f;
+
+    GameObject* FindChildByName(GameObject* _Owner, const wchar_t* _Name)
+    {
+        if (_Owner == nullptr)
+            return nullptr;
+
+        const vector<Ptr<GameObject>>& children = _Owner->GetChild();
+        for (const auto& child : children)
+        {
+            if (child != nullptr && !child->IsDead() && child->GetName() == _Name)
+                return child.Get();
+        }
+
+        return nullptr;
+    }
+
+    void DestroyOwnedShieldChild(GameObject* _Owner, const wchar_t* _Name)
+    {
+        if (GameObject* pChild = FindChildByName(_Owner, _Name))
+            pChild->Destroy();
+    }
+
+    GameObject* CreateShieldVisualChild(GameObject* _Owner, const wchar_t* _ChildName, const wchar_t* _FlipbookPath, float _ScaleMultiplier)
+    {
+        if (_Owner == nullptr)
+            return nullptr;
+
+        GameObject* pShield = new GameObject;
+        pShield->SetName(_ChildName);
+        pShield->AddComponent(new CTransform);
+        pShield->AddComponent(new CFlipbookRender);
+        pShield->Transform()->SetRelativePos(Vec3(0.f, 0.f, -10.f));
+        pShield->Transform()->SetRelativeScale(Vec3(_ScaleMultiplier, _ScaleMultiplier, 1.f));
+
+        if (_FlipbookPath != nullptr && _FlipbookPath[0] != L'\0')
+        {
+            Ptr<AFlipbook> pFlipbook = LOAD(AFlipbook, _FlipbookPath);
+            if (pFlipbook != nullptr)
+            {
+                pShield->FlipbookRender()->SetFlipbook(0, pFlipbook);
+                pShield->FlipbookRender()->Play(0, kShieldFlipbookFPS, -1);
+            }
+        }
+
+        _Owner->AddChild(pShield);
+        return pShield;
+    }
 
     float WrapAngleRad(float _Angle)
     {
@@ -735,6 +1130,7 @@ CPlayerScript::CPlayerScript()
     AddScriptParam(SCRIPT_PARAM::FLOAT, &m_SkillDashSpeed, L"Skill Dash Speed", false, 10.f);
     AddScriptParam(SCRIPT_PARAM::FLOAT, &m_PushSpeed, L"Push Speed", false, 1.f);
     AddScriptParam(SCRIPT_PARAM::FLOAT, &m_AirAccelScale, L"Air Accel Scale", false, 0.05f);
+    AddScriptParam(SCRIPT_PARAM::FLOAT, &m_WaterAccelScale, L"Water Accel Scale", false, 0.05f);
     AddScriptParam(SCRIPT_PARAM::VEC2, &vAccel, L"Acceleration", false, 10.f);
     AddScriptParam(SCRIPT_PARAM::VEC2, &vFraction, L"Friction", false, 0.1f);
 
@@ -775,6 +1171,14 @@ CPlayerScript::CPlayerScript(const CPlayerScript& _Origin)
     , m_SkillDashSpeed(_Origin.m_SkillDashSpeed)
     , m_PushSpeed(_Origin.m_PushSpeed)
     , m_AirAccelScale(_Origin.m_AirAccelScale)
+    , m_WaterAccelScale(_Origin.m_WaterAccelScale)
+    , m_WaterVolumeCount(_Origin.m_WaterVolumeCount)
+    , m_eShieldType(_Origin.m_eShieldType)
+    , m_bIsFirebouncing(_Origin.m_bIsFirebouncing)
+    , m_bIsWaterbouncing(_Origin.m_bIsWaterbouncing)
+    , m_bIsElectricbouncing(_Origin.m_bIsElectricbouncing)
+    , m_StarShieldTime(_Origin.m_StarShieldTime)
+    , m_StoredMaxMoveSpeed(_Origin.m_StoredMaxMoveSpeed)
     , IsJump(_Origin.IsJump)
     , m_bNeedGravity(_Origin.m_bNeedGravity)
     , bIsBreak(_Origin.bIsBreak)
@@ -791,6 +1195,7 @@ CPlayerScript::CPlayerScript(const CPlayerScript& _Origin)
     , m_Facing(_Origin.m_Facing)
     , m_TurnTargetFacing(_Origin.m_TurnTargetFacing)
     , IsGround(_Origin.IsGround)
+    , m_bVerticalRoleLineAttached(_Origin.m_bVerticalRoleLineAttached)
     , m_PhysicalGroundOverlapCount(_Origin.m_PhysicalGroundOverlapCount)
     , m_AttachableSurfaceOverlapCount(_Origin.m_AttachableSurfaceOverlapCount)
     , m_bHasNearbyAttachableSurface(_Origin.m_bHasNearbyAttachableSurface)
@@ -804,12 +1209,17 @@ CPlayerScript::CPlayerScript(const CPlayerScript& _Origin)
     , m_bBreakWallLocked(_Origin.m_bBreakWallLocked)
     , m_LastTickPosX(_Origin.m_LastTickPosX)
     , m_LastFrameDeltaX(_Origin.m_LastFrameDeltaX)
+    , m_PhysicalGroundAnimGraceTime(_Origin.m_PhysicalGroundAnimGraceTime)
     , m_vecAttachBlockedSurfaces(_Origin.m_vecAttachBlockedSurfaces)
     , m_ForcedFlatGroundLockTime(_Origin.m_ForcedFlatGroundLockTime)
     , m_SurfaceGroundHoldTime(_Origin.m_SurfaceGroundHoldTime)
+    , m_ItemBoxBounceAttachIgnoreTime(_Origin.m_ItemBoxBounceAttachIgnoreTime)
     , m_SurfaceResolveFrame(_Origin.m_SurfaceResolveFrame)
     , m_SurfaceResolveScore(_Origin.m_SurfaceResolveScore)
     , m_LastSceneSurfaceProbeFrame(_Origin.m_LastSceneSurfaceProbeFrame)
+    , m_LastSceneSurfaceQueryMin(_Origin.m_LastSceneSurfaceQueryMin)
+    , m_LastSceneSurfaceQueryMax(_Origin.m_LastSceneSurfaceQueryMax)
+    , m_bHasLastSceneSurfaceQueryBounds(_Origin.m_bHasLastSceneSurfaceQueryBounds)
     , m_pResolvedSurface(_Origin.m_pResolvedSurface)
     , m_bInwardCircleLoopTracked(_Origin.m_bInwardCircleLoopTracked)
     , m_bInwardCirclePassedLowerHalf(_Origin.m_bInwardCirclePassedLowerHalf)
@@ -845,6 +1255,7 @@ CPlayerScript::CPlayerScript(const CPlayerScript& _Origin)
     , m_bHasCurrentSurfaceContact(_Origin.m_bHasCurrentSurfaceContact)
     , m_CurrentSurfaceContact(_Origin.m_CurrentSurfaceContact)
     , m_vecActiveSurfaceObjects(_Origin.m_vecActiveSurfaceObjects)
+    , m_setActiveSurfaceObjects(_Origin.m_setActiveSurfaceObjects)
     , m_bAutoplayInitialized(_Origin.m_bAutoplayInitialized)
     , m_bAutoplayFinished(_Origin.m_bAutoplayFinished)
     , m_bAutoplayWasGround(_Origin.m_bAutoplayWasGround)
@@ -871,6 +1282,7 @@ CPlayerScript::CPlayerScript(const CPlayerScript& _Origin)
     AddScriptParam(SCRIPT_PARAM::FLOAT, &m_SkillDashSpeed, L"Skill Dash Speed", false, 10.f);
     AddScriptParam(SCRIPT_PARAM::FLOAT, &m_PushSpeed, L"Push Speed", false, 1.f);
     AddScriptParam(SCRIPT_PARAM::FLOAT, &m_AirAccelScale, L"Air Accel Scale", false, 0.05f);
+    AddScriptParam(SCRIPT_PARAM::FLOAT, &m_WaterAccelScale, L"Water Accel Scale", false, 0.05f);
     AddScriptParam(SCRIPT_PARAM::VEC2, &vAccel, L"Acceleration", false, 10.f);
     AddScriptParam(SCRIPT_PARAM::VEC2, &vFraction, L"Friction", false, 0.1f);
 }
@@ -883,8 +1295,10 @@ void CPlayerScript::Begin()
 
     FlipbookRender()->SetFlipbook(kPushingFlipbookIndex, LOAD(AFlipbook, L"Flipbook\\Sonic_Pushing.flip"));
     FlipbookRender()->SetFlipbook(kKnockBackFlipbookIndex, LOAD(AFlipbook, L"Flipbook\\Sonic_Hurt.flip"));
+    FlipbookRender()->SetFlipbook(kCylinderFlipbookIndex, LOAD(AFlipbook, L"Flipbook\\Sonic_Cylinder.flip"));
     m_LastTickPosX = Transform()->GetRelativePos().x;
     m_LastFrameDeltaX = 0.f;
+    OnEatShield();
 }
 
 CPlayerScript::~CPlayerScript()
@@ -893,6 +1307,33 @@ CPlayerScript::~CPlayerScript()
     {
         fclose(m_pAutoplayLog);
         m_pAutoplayLog = nullptr;
+    }
+}
+
+void CPlayerScript::EnterWaterVolume(float _AccelScale)
+{
+    ++m_WaterVolumeCount;
+
+    if (m_WaterVolumeCount <= 0)
+        m_WaterVolumeCount = 1;
+
+    if (_AccelScale <= 0.f)
+        _AccelScale = 1.f;
+
+    if (m_WaterVolumeCount == 1)
+        m_WaterAccelScale = _AccelScale;
+    else
+        m_WaterAccelScale = min(m_WaterAccelScale, _AccelScale);
+}
+
+void CPlayerScript::ExitWaterVolume()
+{
+    --m_WaterVolumeCount;
+
+    if (m_WaterVolumeCount <= 0)
+    {
+        m_WaterVolumeCount = 0;
+        m_WaterAccelScale = 1.f;
     }
 }
 
@@ -933,6 +1374,12 @@ CPlayerScript::PlayerInput CPlayerScript::ReadInput() const
 void CPlayerScript::Tick()
 {
     float dt = DT;
+
+    if (m_PlayerLife < 0)
+    {
+        Dead();
+    }
+
     if (IsAutoplayEnabled() && dt > (1.f / 60.f))
         dt = (1.f / 60.f);
     if (IsSurfaceAutoplayScenario() && m_AutoplayTime < 0.5f)
@@ -952,6 +1399,7 @@ void CPlayerScript::Tick()
 
     InitAutoplay();
     UpdateAutoplay(dt);
+    TryAutoSpawnBossForTrigger(this);
 
     if (!m_vecAttachBlockedSurfaces.empty())
     {
@@ -1019,6 +1467,16 @@ void CPlayerScript::Tick()
             m_SurfaceGroundHoldTime = 0.f;
     }
 
+    if (m_ItemBoxBounceAttachIgnoreTime > 0.f)
+    {
+        m_ItemBoxBounceAttachIgnoreTime -= dt;
+        if (m_ItemBoxBounceAttachIgnoreTime <= 0.f)
+        {
+            m_ItemBoxBounceAttachIgnoreTime = 0.f;
+            ClearPlainSurfaceAttachBlocks();
+        }
+    }
+
     if (m_KnockBackInvincibleTime > 0.f)
     {
         m_KnockBackInvincibleTime -= dt;
@@ -1042,6 +1500,7 @@ void CPlayerScript::Tick()
     }
 
     ResolveBufferedSurfaceContacts();
+    NormalizeStableSurfaceAttachmentState();
     if (IsSurfaceAutoplayScenario() && m_AutoplayTime < 0.5f)
         AppendSurfaceAutoplayDebug(L"tick after_resolve1 t=%.3f ground=%d", m_AutoplayTime, IsGround ? 1 : 0);
 
@@ -1059,6 +1518,7 @@ void CPlayerScript::Tick()
 
     // 2) 물리/이동(실행)
     Simulate(in, dt);
+    ClampPlayerInsideStageUIScreen(this);
     if (IsSurfaceAutoplayScenario() && m_AutoplayTime < 0.5f)
         AppendSurfaceAutoplayDebug(L"tick after_simulate t=%.3f pos=(%.2f,%.2f) vel=(%.2f,%.2f)",
                                    m_AutoplayTime, Transform()->GetRelativePos().x, Transform()->GetRelativePos().y, vVelocity.x, vVelocity.y);
@@ -1066,6 +1526,7 @@ void CPlayerScript::Tick()
     // 이동 직후 현재 위치 기준으로 다시 surface를 잡아, 새 평지/경사 전환이
     // 다음 프레임까지 밀리지 않도록 한다.
     ResolveBufferedSurfaceContacts();
+    NormalizeStableSurfaceAttachmentState();
     if (IsSurfaceAutoplayScenario() && m_AutoplayTime < 0.5f)
         AppendSurfaceAutoplayDebug(L"tick after_resolve2 t=%.3f ground=%d", m_AutoplayTime, IsGround ? 1 : 0);
 
@@ -1359,6 +1820,15 @@ void CPlayerScript::ResolveTransitions(const PlayerInput& in, float dt)
         IsGround &&
         inputDir != 0 &&
         (m_RecentGuidedCorrectionLineTime > 0.f || m_RecentReleasedInwardCircleTime > 0.f);
+    const bool bLowSpeedCircleFacingLock =
+        IsGround &&
+        m_bHasCurrentSurfaceContact &&
+        m_CurrentSurfaceContact.Surface != nullptr &&
+        m_CurrentSurfaceContact.Circle &&
+        m_CurrentSurfaceContact.Attachable &&
+        !m_CurrentSurfaceContact.WallLike &&
+        (fabsf(vVelocity.Dot(preferredGroundTangent)) < kSurfaceCircleLowSpeedFallSpeedMin) &&
+        (vNormal.y <= kSurfaceSteepLineBackSlipMaxNormalY);
 
     if (canPush)
     {
@@ -1377,14 +1847,17 @@ void CPlayerScript::ResolveTransitions(const PlayerInput& in, float dt)
 
     if (m_Action == ActionState::Break)
     {
-        if (suppressGuidedTransferBreak)
+        if (suppressGuidedTransferBreak || bLowSpeedCircleFacingLock)
         {
             m_Action = ActionState::None;
             m_bBreakWallLocked = false;
             m_fBreakSpeed = 0.f;
             m_BreakUngroundedTime = 0.f;
-            m_TurnTargetFacing = inputDir;
-            m_Facing = inputDir;
+            if (inputDir != 0)
+            {
+                m_TurnTargetFacing = inputDir;
+                m_Facing = inputDir;
+            }
         }
         else if (m_bBreakWallLocked &&
             ((m_iBreakDirection == 1 && wantsLeft) || (m_iBreakDirection == -1 && wantsRight)))
@@ -1491,6 +1964,9 @@ void CPlayerScript::ResolveTransitions(const PlayerInput& in, float dt)
         }
     }
 
+    if (bLowSpeedCircleFacingLock && inputDir != 0)
+        m_Facing = inputDir;
+
     bool isOpposite = false;
     // 반대 방향 입력 감지
     if (IsGround)
@@ -1514,6 +1990,7 @@ void CPlayerScript::ResolveTransitions(const PlayerInput& in, float dt)
 
     if (IsGround &&
         m_Action == ActionState::None &&
+        !bLowSpeedCircleFacingLock &&
         !suppressGuidedTransferBreak &&
         isOpposite &&
         breakEntrySpeed > 30.f)
@@ -1606,6 +2083,25 @@ void CPlayerScript::ResolveAction(const PlayerInput& in, float dt)
         }
 
         return;
+    }
+
+    switch (m_eShieldType)
+    {
+    case ITEM_STATE::FIRE:
+        Fire();
+        break;
+    case ITEM_STATE::WATER:
+        Water();
+        break;
+    case ITEM_STATE::ELECTRIC:
+        Electric();
+        break;
+    case ITEM_STATE::STAR:
+        Star();
+        break;
+    case ITEM_STATE::NONE:
+    default:
+        break;
     }
 
     // SkillDash는 이동 시뮬레이션에서 속도 보고 종료 처리
@@ -1703,6 +2199,57 @@ bool CPlayerScript::IsSameInwardCircleHalfChecker(const Vec2& _Center, float _Ra
     return (fabsf(m_InwardCircleHalfCheckerCenter.x - _Center.x) <= 0.5f)
         && (fabsf(m_InwardCircleHalfCheckerCenter.y - _Center.y) <= 0.5f)
         && (fabsf(m_InwardCircleHalfCheckerRadius - _Radius) <= 0.5f);
+}
+
+bool CPlayerScript::TryInferInwardCircleHalfOwnership(const Vec2& _Center, float _Radius, bool& _OutLineOwnsTopRight) const
+{
+    const auto inferFromContact = [&](const SurfaceContact& _Contact) -> bool
+    {
+        if (!_Contact.Circle || !_Contact.InwardCircle || _Contact.Surface == nullptr)
+            return false;
+
+        Vec2 contactCenter = {};
+        float contactRadius = 0.f;
+        if (!TryGetInwardCircleSurfaceData(_Contact, contactCenter, contactRadius))
+            return false;
+
+        if (fabsf(contactCenter.x - _Center.x) > 0.5f ||
+            fabsf(contactCenter.y - _Center.y) > 0.5f ||
+            fabsf(contactRadius - _Radius) > 0.5f)
+        {
+            return false;
+        }
+
+        auto pSurface = _Contact.Surface->GetScript<CSurfaceScript>();
+        if (pSurface == nullptr)
+            return false;
+
+        const CSurfaceScript::ARC_CORNER corner = pSurface->GetArcCorner();
+        if (corner == CSurfaceScript::ARC_CORNER::BOTTOM_LEFT)
+        {
+            _OutLineOwnsTopRight = true;
+            return true;
+        }
+
+        if (corner == CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT)
+        {
+            _OutLineOwnsTopRight = false;
+            return true;
+        }
+
+        return false;
+    };
+
+    if (inferFromContact(m_CurrentSurfaceContact))
+        return true;
+
+    if (inferFromContact(m_PendingSurfaceContact))
+        return true;
+
+    if (m_bHasRecentReleasedInwardCircleContact && inferFromContact(m_RecentReleasedInwardCircleContact))
+        return true;
+
+    return false;
 }
 
 bool CPlayerScript::TryGetInwardCircleSurfaceData(const SurfaceContact& _Contact, Vec2& _OutCenter, float& _OutRadius) const
@@ -1892,6 +2439,10 @@ bool CPlayerScript::ShouldLineOwnTopRightInwardCircleHalf(const Vec2& _Center, f
     if (m_bInwardCircleHalfCheckerTracked && IsSameInwardCircleHalfChecker(_Center, _Radius))
         return m_bInwardCircleLineOwnsTopRight;
 
+    bool inferredLineOwnsTopRight = false;
+    if (TryInferInwardCircleHalfOwnership(_Center, _Radius, inferredLineOwnsTopRight))
+        return inferredLineOwnsTopRight;
+
     float travelX = 0.f;
     if (fabsf(vVelocity.x) > 1.f)
         travelX = vVelocity.x;
@@ -1915,17 +2466,36 @@ bool CPlayerScript::ShouldLineOwnTopRightInwardCircleHalf(const Vec2& _Center, f
 
 void CPlayerScript::UpdateInwardCircleHalfChecker(const Vec2& _Center, float _Radius, const Vec2& _ContactPoint)
 {
+    if (ShouldFreezeInwardCircleHalfChecker())
+        return;
+
     if (!m_bInwardCircleHalfCheckerTracked || !IsSameInwardCircleHalfChecker(_Center, _Radius))
     {
+        const bool initialLineOwnsTopRight =
+            ShouldLineOwnTopRightInwardCircleHalf(_Center, _Radius, _ContactPoint);
+
         m_bInwardCircleHalfCheckerTracked = true;
         m_InwardCircleHalfCheckerCenter = _Center;
         m_InwardCircleHalfCheckerRadius = _Radius;
-        m_bInwardCircleLineOwnsTopRight = ShouldLineOwnTopRightInwardCircleHalf(_Center, _Radius, _ContactPoint);
+        m_bInwardCircleLineOwnsTopRight = initialLineOwnsTopRight;
+        return;
     }
 
     const float safeRadius = max(_Radius, 0.0001f);
     const float upperHalfRatio = (_Center.y - _ContactPoint.y) / safeRadius;
     if (upperHalfRatio < kSurfaceInwardCircleHalfCheckerSwitchUpperHalfMin)
+        return;
+
+    const Vec2 halfPoint = MakeCirclePointRad(_Center, _Radius, DegreesToRadians(kSurfaceGuidedHalfCheckTopAngleDeg));
+    const float halfTouchRadius = max(kSurfaceGuidedHalfTouchRadiusMin, _Radius * kSurfaceGuidedHalfTouchRadiusScale);
+    if (LengthVec2(_ContactPoint - halfPoint) > halfTouchRadius)
+        return;
+
+    const bool noHorizontalInput = !(KEY_PRESSED(KEY::LEFT)) && !(KEY_PRESSED(KEY::RIGHT));
+    if (noHorizontalInput && vVelocity.y <= 0.f)
+        return;
+
+    if (vVelocity.y < -kSurfaceInwardCircleHalfCheckerSwitchFallSpeed)
         return;
 
     float travelX = 0.f;
@@ -1946,7 +2516,24 @@ void CPlayerScript::UpdateInwardCircleHalfChecker(const Vec2& _Center, float _Ra
 
 void CPlayerScript::PrimeInwardCircleHalfCheckerFromLineContext(const SurfaceContact& _Contact)
 {
+    if (ShouldFreezeInwardCircleHalfChecker())
+        return;
+
     if (_Contact.Circle || _Contact.WallLike || !_Contact.Attachable)
+        return;
+
+    const bool hasStableLineContext =
+        (GetIsGround() || m_SurfaceGroundHoldTime > 0.f) ||
+        (m_bHasCurrentSurfaceContact &&
+         !m_CurrentSurfaceContact.Circle &&
+         !m_CurrentSurfaceContact.WallLike &&
+         m_CurrentSurfaceContact.Attachable) ||
+        (m_bHasPendingSurfaceContact &&
+         !m_PendingSurfaceContact.Circle &&
+         !m_PendingSurfaceContact.WallLike &&
+         m_PendingSurfaceContact.Attachable);
+
+    if (!hasStableLineContext)
         return;
 
     const auto primeFromCircleSurface = [&](GameObject* _SurfaceObject)
@@ -1969,8 +2556,8 @@ void CPlayerScript::PrimeInwardCircleHalfCheckerFromLineContext(const SurfaceCon
         if (pSurface->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::CIRCLE)
         {
             const CSurfaceScript::ARC_CORNER corner = pSurface->GetArcCorner();
-            if (corner != CSurfaceScript::ARC_CORNER::TOP_LEFT &&
-                corner != CSurfaceScript::ARC_CORNER::TOP_RIGHT)
+            if (corner != CSurfaceScript::ARC_CORNER::BOTTOM_LEFT &&
+                corner != CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT)
             {
                 return false;
             }
@@ -1981,7 +2568,26 @@ void CPlayerScript::PrimeInwardCircleHalfCheckerFromLineContext(const SurfaceCon
         Vec2 boxMin = {};
         Vec2 boxMax = {};
         pSurface->GetArcWorldData(center, radius, boxMin, boxMax);
-        UpdateInwardCircleHalfChecker(center, radius, _Contact.ContactPoint);
+
+        if (!m_bInwardCircleHalfCheckerTracked || !IsSameInwardCircleHalfChecker(center, radius))
+        {
+            m_bInwardCircleHalfCheckerTracked = true;
+            m_InwardCircleHalfCheckerCenter = center;
+            m_InwardCircleHalfCheckerRadius = radius;
+
+            const CSurfaceScript::ARC_CORNER corner = pSurface->GetArcCorner();
+            if (corner == CSurfaceScript::ARC_CORNER::BOTTOM_LEFT)
+                m_bInwardCircleLineOwnsTopRight = true;
+            else if (corner == CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT)
+                m_bInwardCircleLineOwnsTopRight = false;
+            else if (_Contact.ContactPoint.x < center.x - kSurfaceInwardCircleTopHalfSwitchEpsilon)
+                m_bInwardCircleLineOwnsTopRight = true;
+            else if (_Contact.ContactPoint.x > center.x + kSurfaceInwardCircleTopHalfSwitchEpsilon)
+                m_bInwardCircleLineOwnsTopRight = false;
+            else
+                m_bInwardCircleLineOwnsTopRight = (_Contact.ContactPoint.x >= center.x);
+        }
+
         return true;
     };
 
@@ -2125,6 +2731,9 @@ bool CPlayerScript::HasInwardCircleLineContext() const
         return true;
     }
 
+    if (!GetIsGround() && m_SurfaceGroundHoldTime <= 0.f)
+        return false;
+
     for (GameObject* pSurfaceObject : m_vecActiveSurfaceObjects)
     {
         if (IsAttachableLineSurfaceObject(pSurfaceObject))
@@ -2146,6 +2755,19 @@ bool CPlayerScript::IsAttachableLineSurfaceObject(GameObject* _SurfaceObject) co
     return pSurface->IsAttachable()
         && (pSurface->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::LINE)
         && (pSurface->GetRole() != CSurfaceScript::SURFACE_ROLE::WALL);
+}
+
+bool CPlayerScript::IsVerticalRoleLineSurfaceObject(GameObject* _SurfaceObject) const
+{
+    if (!IsAttachableLineSurfaceObject(_SurfaceObject))
+        return false;
+
+    auto pSurface = _SurfaceObject->GetScript<CSurfaceScript>();
+    if (pSurface == nullptr)
+        return false;
+
+    return pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY ||
+           pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
 }
 
 const CPlayerScript::SurfaceContact* CPlayerScript::GetReferenceAttachableLineContact() const
@@ -2189,6 +2811,14 @@ bool CPlayerScript::AreLineSurfaceEndpointsConnected(GameObject* _SurfaceA, Game
     auto pSurfaceB = _SurfaceB->GetScript<CSurfaceScript>();
     if (pSurfaceA == nullptr || pSurfaceB == nullptr)
         return false;
+
+    // Vertical entry lines should stay standalone at crossings, but vertical sticky
+    // lines must still be able to hand off to their connected exit line.
+    if (pSurfaceA->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY ||
+        pSurfaceB->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY)
+    {
+        return false;
+    }
 
     Vec2 aStart = {};
     Vec2 aEnd = {};
@@ -2346,10 +2976,80 @@ bool CPlayerScript::IsRelaxedDownwardTransitionLineContact(const SurfaceContact&
 
     const Vec2 nextTangent = Vec2(nextNormal.y, -nextNormal.x);
     const float nextTangentSpeed = DotVec2(vVelocity, nextTangent);
-    if (!(nextTangentSpeed * nextTangent.y < -kSurfaceLineSeamRisingSlopeMoveMin))
+    if (!(nextTangentSpeed * nextTangent.y < -kSurfaceLineRelaxedDownwardMoveMin))
         return false;
 
-    return (_Contact.Score <= kSurfaceLineSeamTransitionDepth * 2.5f);
+    return (_Contact.Score <= kSurfaceLineRelaxedDownwardScoreMax);
+}
+
+float CPlayerScript::ComputeVerticalRoleLineNormalAlignment(const SurfaceContact& _Contact) const
+{
+    if (!_Contact.Attachable ||
+        _Contact.WallLike ||
+        _Contact.Circle ||
+        _Contact.Surface == nullptr ||
+        !IsVerticalRoleLineSurfaceObject(_Contact.Surface))
+    {
+        return 0.f;
+    }
+
+    const Vec2 candidateTangent =
+        NormalizeSafeVec2(_Contact.Tangent, Vec2(_Contact.Normal.y, -_Contact.Normal.x));
+    const Vec2 candidateNormal =
+        NormalizeSafeVec2(_Contact.Normal, Vec2(-candidateTangent.y, candidateTangent.x));
+    const Vec2 currentNormal = NormalizeSafeVec2(vNormal, candidateNormal);
+    return max(0.f, DotVec2(currentNormal, candidateNormal));
+}
+
+float CPlayerScript::ComputeVerticalRoleLineTransferAlignment(const SurfaceContact& _Contact) const
+{
+    if (!_Contact.Attachable ||
+        _Contact.WallLike ||
+        _Contact.Circle ||
+        _Contact.Surface == nullptr ||
+        !IsVerticalRoleLineSurfaceObject(_Contact.Surface))
+    {
+        return 0.f;
+    }
+
+    const Vec2 candidateTangent =
+        NormalizeSafeVec2(_Contact.Tangent, Vec2(_Contact.Normal.y, -_Contact.Normal.x));
+    float bestAlignment = ComputeVerticalRoleLineNormalAlignment(_Contact);
+
+    const float speed = LengthVec2(vVelocity);
+    if (speed >= kSurfaceVerticalRoleLineTransferSpeedMin)
+    {
+        const Vec2 moveDir = NormalizeSafeVec2(vVelocity, candidateTangent);
+        bestAlignment = max(bestAlignment, fabsf(DotVec2(moveDir, candidateTangent)));
+    }
+
+    const bool hasLineContext =
+        (GetIsGround() || m_SurfaceGroundHoldTime > 0.f) ||
+        (m_bHasCurrentSurfaceContact && IsAttachableLineSurfaceObject(m_CurrentSurfaceContact.Surface)) ||
+        (m_bHasPendingSurfaceContact && IsAttachableLineSurfaceObject(m_PendingSurfaceContact.Surface));
+    if (hasLineContext)
+    {
+        const Vec2 groundTangent = NormalizeSafeVec2(vTangent, candidateTangent);
+        bestAlignment = max(bestAlignment, fabsf(DotVec2(groundTangent, candidateTangent)));
+    }
+
+    const SurfaceContact* pReferenceLineContact = GetReferenceAttachableLineContact();
+    if (pReferenceLineContact != nullptr &&
+        pReferenceLineContact->Surface != nullptr &&
+        pReferenceLineContact->Surface != _Contact.Surface)
+    {
+        const Vec2 referenceTangent =
+            NormalizeSafeVec2(pReferenceLineContact->Tangent, candidateTangent);
+        bestAlignment = max(bestAlignment, fabsf(DotVec2(referenceTangent, candidateTangent)));
+    }
+
+    return bestAlignment;
+}
+
+bool CPlayerScript::IsVerticalRoleLineTransferCandidate(const SurfaceContact& _Contact) const
+{
+    return ComputeVerticalRoleLineTransferAlignment(_Contact) >=
+        min(kSurfaceVerticalRoleLineTransferAlignMin, kSurfaceVerticalRoleLineNormalAlignMin);
 }
 
 bool CPlayerScript::ShouldIgnoreGuidedCircleWallContact(GameObject* _Surface, const Vec2& _ContactPoint)
@@ -2972,6 +3672,7 @@ void CPlayerScript::StartJump()
     IsJump = true;
     vVelocity += vNormal * m_JumpForce;
     IsGround = false;
+    m_bVerticalRoleLineAttached = false;
     m_SurfaceGroundHoldTime = 0.f;
 
     if (IsAutoplayEnabled())
@@ -3029,6 +3730,8 @@ void CPlayerScript::StartSkillDash()
     m_bBackReaction = false;
     m_ActionTime = 0.f;
     m_Pose = PoseState::None;
+
+    PlayGameSFX(L"Sound\\스킬 대쉬 점점 소리가 빨라짐.wav", 0.8f, true);
 
     vVelocity.x = m_SkillDashSpeed * (float)m_Facing;
 }
@@ -3287,12 +3990,12 @@ void CPlayerScript::SimulateHorizontal(const PlayerInput& in, float dt, Vec3& vP
                 if (wantsRight)
                 {
                     m_Facing = 1;
-                    vt += vAccel.x * dt;
+                    vt += vAccel.x * GetWaterAccelScale() * dt;
                 }
                 else if (wantsLeft)
                 {
                     m_Facing = -1;
-                    vt -= vAccel.x * dt;              
+                    vt -= vAccel.x * GetWaterAccelScale() * dt;              
                 }
                 else
                 {
@@ -3309,7 +4012,7 @@ void CPlayerScript::SimulateHorizontal(const PlayerInput& in, float dt, Vec3& vP
             else
             {
                 // 공중 제어 (약하게)
-                float airAccel = vAccel.x * m_AirAccelScale;
+                float airAccel = vAccel.x * m_AirAccelScale * GetWaterAccelScale();
                 float airFraction = 1.f;
 
                 if (wantsRight)
@@ -3342,6 +4045,13 @@ void CPlayerScript::SimulateHorizontal(const PlayerInput& in, float dt, Vec3& vP
 
 void CPlayerScript::SimulateVertical(float dt, Vec3& vPos)
 {
+    // 데드라인
+    if (vPos.y < -6000.f)
+    {
+        vPos.y = -6000.f;
+        Dead();
+    }
+
     if (m_Action == ActionState::Break && m_bBreakWallLocked)
     {
         vVelocity.x = 0.f;
@@ -3351,16 +4061,15 @@ void CPlayerScript::SimulateVertical(float dt, Vec3& vPos)
         return;
     }
 
-    if (IsGround)
+    if (IsGround || m_bVerticalRoleLineAttached)
     {
-        // 접선 속도의 y 성분만 반영
+        IsGround = true;
+        ClearStableAttachJumpState();
         vPos.y += vVelocity.y * dt;
-        IsJump = false;
-        bIsSpringJump = false;
         return;
     }
 
-    vVelocity.y -= vAccel.y * dt;
+    vVelocity.y -= vAccel.y * GetWaterAccelScale() * dt;
     vPos.y += vVelocity.y * dt;
 
     if (vVelocity.y > 600.f)
@@ -3378,7 +4087,26 @@ void CPlayerScript::UpdateTimers(float dt)
     // IdleLong 조건: 지상 + 액션 없음 + 포즈 없음 + 속도 매우 낮음
     const Vec2 preferredGroundTangent = vTangent;
 
+    if (m_PhysicalGroundAnimGraceTime > 0.f)
+    {
+        m_PhysicalGroundAnimGraceTime -= dt;
+        if (m_PhysicalGroundAnimGraceTime < 0.f)
+            m_PhysicalGroundAnimGraceTime = 0.f;
+    }
+
     const float absSpeed = IsGround ? fabsf(vVelocity.Dot(preferredGroundTangent)) : fabsf(vVelocity.x);
+    if (!IsJump &&
+        !bIsSpringJump &&
+        HasPhysicalGroundOverlap() &&
+        absSpeed >= kPhysicalGroundAnimGraceMoveSpeedMin)
+    {
+        m_PhysicalGroundAnimGraceTime = kPhysicalGroundAnimGraceDuration;
+    }
+    else if (IsJump || bIsSpringJump || fabsf(vVelocity.y) > kPhysicalGroundAnimGraceVerticalSpeedMax)
+    {
+        m_PhysicalGroundAnimGraceTime = 0.f;
+    }
+
     const bool idleCandidate =
         IsGround &&
         (m_Action == ActionState::None) &&
@@ -3447,6 +4175,12 @@ void CPlayerScript::UpdateAnimation(float dt)
     const Vec2 preferredGroundTangent = vTangent;
 
     const float absSpeed = IsGround ? fabsf(vVelocity.Dot(preferredGroundTangent)) : fabsf(vVelocity.x);
+    const bool bShortPhysicalGroundAirGrace =
+        !IsGround &&
+        !IsJump &&
+        !bIsSpringJump &&
+        (m_PhysicalGroundAnimGraceTime > 0.f) &&
+        (fabsf(vVelocity.y) <= kPhysicalGroundAnimGraceVerticalSpeedMax);
     if (m_Action == ActionState::KnockBack)
     {
         Ptr<AFlipbook> pKnockBackFlipbook = FlipbookRender()->GetFlipbook(kKnockBackFlipbookIndex);
@@ -3456,6 +4190,14 @@ void CPlayerScript::UpdateAnimation(float dt)
             if (FlipbookRender()->GetCurFlipbookIdx() != kKnockBackFlipbookIndex)
                 FlipbookRender()->Play(kKnockBackFlipbookIndex, knockBackAnimFPS, 0);
         }
+        return;
+    }
+
+    if (IsCylinderBounceState())
+    {
+        Ptr<AFlipbook> pCylinderFlipbook = FlipbookRender()->GetFlipbook(kCylinderFlipbookIndex);
+        if (nullptr != pCylinderFlipbook && 0 < pCylinderFlipbook->GetSpriteCount())
+            FlipbookRender()->Play(kCylinderFlipbookIndex, kCylinderFlipbookFPS, -1);
         return;
     }
 
@@ -3498,7 +4240,7 @@ void CPlayerScript::UpdateAnimation(float dt)
     }
 
     // 2) 공중(점프/낙하)
-    if (!IsGround)
+    if (!IsGround && !bShortPhysicalGroundAirGrace)
     {
         //Transform()->SetRelativeRot(Vec3(0.f, 0.f, 0.f));
         //float fAngle = atan2f(vNormal.y, vNormal.x);
@@ -3554,9 +4296,28 @@ void CPlayerScript::UpdateAnimation(float dt)
 
 }
 
+void CPlayerScript::NormalizeStableSurfaceAttachmentState()
+{
+    const bool bVerticalRoleLineContact =
+        m_bHasCurrentSurfaceContact &&
+        m_CurrentSurfaceContact.Surface != nullptr &&
+        !m_CurrentSurfaceContact.Circle &&
+        !m_CurrentSurfaceContact.WallLike &&
+        IsVerticalRoleLineSurfaceObject(m_CurrentSurfaceContact.Surface);
+
+    m_bVerticalRoleLineAttached = bVerticalRoleLineContact;
+
+    if (m_bVerticalRoleLineAttached)
+        IsGround = true;
+
+    if (IsGround || m_bVerticalRoleLineAttached)
+        ClearStableAttachJumpState();
+}
+
 void CPlayerScript::ResetGroundContact()
 {
     IsGround = false;
+    m_bVerticalRoleLineAttached = false;
     vNormal = Vec2(0.f, 1.f);
     vTangent = Vec2(1.f, 0.f);
     m_bHasCurrentSurfaceContact = false;
@@ -3592,8 +4353,8 @@ void CPlayerScript::ForceFlatGroundContact(float _HoldTime)
     m_pResolvedSurface = nullptr;
 
     IsGround = true;
-    IsJump = false;
-    bIsSpringJump = false;
+    m_bVerticalRoleLineAttached = false;
+    ClearStableAttachJumpState();
     vNormal = Vec2(0.f, 1.f);
     vTangent = Vec2(1.f, 0.f);
     if (_HoldTime > m_ForcedFlatGroundLockTime)
@@ -3601,6 +4362,80 @@ void CPlayerScript::ForceFlatGroundContact(float _HoldTime)
     RefreshSurfaceGroundHold(_HoldTime);
     ResetInwardCircleLoopState();
     ResetInwardCircleHalfCheckerState();
+}
+
+void CPlayerScript::ClearPlainSurfaceAttachBlocks()
+{
+    auto iter = m_vecAttachBlockedSurfaces.begin();
+    while (iter != m_vecAttachBlockedSurfaces.end())
+    {
+        GameObject* pSurfaceObject = iter->Surface;
+        Ptr<CSurfaceScript> pSurface = (pSurfaceObject != nullptr) ? pSurfaceObject->GetScript<CSurfaceScript>() : nullptr;
+        if (pSurface != nullptr && pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::SURFACE)
+            iter = m_vecAttachBlockedSurfaces.erase(iter);
+        else
+            ++iter;
+    }
+}
+
+void CPlayerScript::BeginItemBoxBounceDetach(float _BlockTime)
+{
+    if (_BlockTime <= 0.f)
+        return;
+
+    auto blockPlainSurface = [this, _BlockTime](GameObject* _SurfaceObject)
+    {
+        if (_SurfaceObject == nullptr)
+            return;
+
+        Ptr<CSurfaceScript> pSurface = _SurfaceObject->GetScript<CSurfaceScript>();
+        if (pSurface == nullptr || pSurface->GetRole() != CSurfaceScript::SURFACE_ROLE::SURFACE)
+            return;
+
+        BlockSurfaceAttach(_SurfaceObject, _BlockTime);
+    };
+
+    blockPlainSurface(m_bHasCurrentSurfaceContact ? m_CurrentSurfaceContact.Surface : nullptr);
+    blockPlainSurface(m_bHasPendingSurfaceContact ? m_PendingSurfaceContact.Surface : nullptr);
+
+    for (GameObject* pSurfaceObject : m_vecActiveSurfaceObjects)
+        blockPlainSurface(pSurfaceObject);
+
+    if (_BlockTime > m_ItemBoxBounceAttachIgnoreTime)
+        m_ItemBoxBounceAttachIgnoreTime = _BlockTime;
+}
+
+void CPlayerScript::SetItemBoxBounceState()
+{
+    BeginItemBoxBounceDetach();
+
+    m_bHasPendingSurfaceContact = false;
+    m_PendingSurfaceContact = SurfaceContact{};
+    m_SurfaceGroundHoldTime = 0.f;
+    ResetGroundContact();
+    ResetInwardCircleLoopState();
+    ResetInwardCircleHalfCheckerState();
+    ResetGuidedInwardCircleState();
+
+    IsJump = true;
+    m_Action = ActionState::Roll;
+    m_CylinderState = CylinderState::None;
+    m_bBackReaction = false;
+    bIsSpringJump = false;
+    bIsSpringDash = false;
+    IsGround = false;
+    m_bVerticalRoleLineAttached = false;
+    m_Pose = PoseState::None;
+    m_bPushContact = false;
+    m_PushContactDir = 0;
+    m_bPushing = false;
+    m_PushingDir = 0;
+    m_fBreakSpeed = 0.f;
+    m_bBreakWallLocked = false;
+    m_BreakUngroundedTime = 0.f;
+    m_IdleTime = 0.f;
+    m_ActionTime = 0.f;
+    m_KnockBackInvincibleTime = 0.f;
 }
 
 bool CPlayerScript::HasPushContactDir(int _Dir) const
@@ -3681,6 +4516,13 @@ bool CPlayerScript::IsSurfaceAttachBlocked(GameObject* _Surface) const
     if (_Surface == nullptr)
         return false;
 
+    if (m_ItemBoxBounceAttachIgnoreTime > 0.f)
+    {
+        Ptr<CSurfaceScript> pSurface = _Surface->GetScript<CSurfaceScript>();
+        if (pSurface != nullptr && pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::SURFACE)
+            return true;
+    }
+
     for (const SurfaceAttachBlock& block : m_vecAttachBlockedSurfaces)
     {
         if (block.Surface == _Surface && block.Time > 0.f)
@@ -3695,11 +4537,8 @@ void CPlayerScript::RegisterActiveSurface(GameObject* _SurfaceObject)
     if (_SurfaceObject == nullptr)
         return;
 
-    for (GameObject* pSurface : m_vecActiveSurfaceObjects)
-    {
-        if (pSurface == _SurfaceObject)
-            return;
-    }
+    if (!m_setActiveSurfaceObjects.insert(_SurfaceObject).second)
+        return;
 
     m_vecActiveSurfaceObjects.push_back(_SurfaceObject);
 }
@@ -3707,6 +4546,9 @@ void CPlayerScript::RegisterActiveSurface(GameObject* _SurfaceObject)
 void CPlayerScript::UnregisterActiveSurface(GameObject* _SurfaceObject)
 {
     if (_SurfaceObject == nullptr)
+        return;
+
+    if (m_setActiveSurfaceObjects.erase(_SurfaceObject) == 0)
         return;
 
     auto iter = m_vecActiveSurfaceObjects.begin();
@@ -3721,19 +4563,43 @@ void CPlayerScript::UnregisterActiveSurface(GameObject* _SurfaceObject)
 
 void CPlayerScript::RefreshNearbyAttachableSurfaces()
 {
-    m_bHasNearbyAttachableSurface = false;
-    m_vecActiveSurfaceObjects.clear();
-
     Vec2 queryMin = {};
     Vec2 queryMax = {};
     if (!GetColliderQueryBounds(Collider2D(), queryMin, queryMax))
+    {
+        m_bHasNearbyAttachableSurface = false;
+        m_vecActiveSurfaceObjects.clear();
+        m_setActiveSurfaceObjects.clear();
+        m_bHasLastSceneSurfaceQueryBounds = false;
         return;
+    }
+
+    const float currentProbeFrame = TIME;
+    const bool sameFrame = (fabsf(m_LastSceneSurfaceProbeFrame - currentProbeFrame) <= kSurfaceResolveFrameEpsilon);
+    const bool sameBounds =
+        m_bHasLastSceneSurfaceQueryBounds &&
+        fabsf(m_LastSceneSurfaceQueryMin.x - queryMin.x) <= kSurfaceResolveFrameEpsilon &&
+        fabsf(m_LastSceneSurfaceQueryMin.y - queryMin.y) <= kSurfaceResolveFrameEpsilon &&
+        fabsf(m_LastSceneSurfaceQueryMax.x - queryMax.x) <= kSurfaceResolveFrameEpsilon &&
+        fabsf(m_LastSceneSurfaceQueryMax.y - queryMax.y) <= kSurfaceResolveFrameEpsilon;
+    if (sameFrame && sameBounds)
+        return;
+
+    m_LastSceneSurfaceProbeFrame = currentProbeFrame;
+    m_LastSceneSurfaceQueryMin = queryMin;
+    m_LastSceneSurfaceQueryMax = queryMax;
+    m_bHasLastSceneSurfaceQueryBounds = true;
+    m_bHasNearbyAttachableSurface = false;
+    m_vecActiveSurfaceObjects.clear();
+    m_setActiveSurfaceObjects.clear();
 
     std::vector<GameObject*> nearbySurfaceObjects;
     // Active line candidates must include nearby seams before the collider
     // fully overlaps them, otherwise steep slope entry misses the transition
     // window and the player drops through before correction can run.
     CSurfaceScript::QueryNearbySurfaceObjects(queryMin, queryMax, nearbySurfaceObjects, kSurfaceSceneProbeMargin, false);
+    m_vecActiveSurfaceObjects.reserve(nearbySurfaceObjects.size());
+    m_setActiveSurfaceObjects.reserve(nearbySurfaceObjects.size());
 
     for (GameObject* pSurfaceObject : nearbySurfaceObjects)
     {
@@ -3744,7 +4610,8 @@ void CPlayerScript::RefreshNearbyAttachableSurfaces()
         if (pSurface == nullptr || !pSurface->IsAttachable())
             continue;
 
-        m_vecActiveSurfaceObjects.push_back(pSurfaceObject);
+        if (m_setActiveSurfaceObjects.insert(pSurfaceObject).second)
+            m_vecActiveSurfaceObjects.push_back(pSurfaceObject);
     }
 
     m_bHasNearbyAttachableSurface = !m_vecActiveSurfaceObjects.empty();
@@ -3755,19 +4622,55 @@ bool CPlayerScript::IsActiveSurfaceObject(GameObject* _SurfaceObject) const
     if (_SurfaceObject == nullptr)
         return false;
 
-    for (GameObject* pSurfaceObject : m_vecActiveSurfaceObjects)
-    {
-        if (pSurfaceObject == _SurfaceObject)
-            return true;
-    }
-
-    return false;
+    return (m_setActiveSurfaceObjects.find(_SurfaceObject) != m_setActiveSurfaceObjects.end());
 }
 
 float CPlayerScript::ComputeSurfaceCandidateScore(const SurfaceContact& _Contact, GameObject* _CurrentBestSurface) const
 {
     const bool wasGround = GetIsGround();
     float candidateScore = _Contact.Score;
+    const bool verticalRoleLineTransfer = IsVerticalRoleLineTransferCandidate(_Contact);
+    auto pContactSurface = (_Contact.Surface != nullptr)
+        ? _Contact.Surface->GetScript<CSurfaceScript>()
+        : nullptr;
+    const bool verticalEntryRoleLine =
+        pContactSurface != nullptr &&
+        pContactSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    const bool alignedVerticalEntryRoleLine =
+        verticalEntryRoleLine &&
+        ComputeVerticalRoleLineNormalAlignment(_Contact) >= kSurfaceVerticalRoleLineNormalAlignMin;
+    if (IsVerticalRoleLineSurfaceObject(_Contact.Surface))
+        candidateScore -= kSurfaceVerticalRoleLineScoreFavor;
+    if (verticalRoleLineTransfer)
+        candidateScore -= kSurfaceVerticalRoleLineTransferScoreFavor;
+    if (verticalRoleLineTransfer && verticalEntryRoleLine)
+        candidateScore -= kSurfaceVerticalEntryLineTransferScoreFavor;
+    if (alignedVerticalEntryRoleLine)
+        candidateScore -= kSurfaceVerticalEntryAlignedScoreFavor;
+
+    const bool currentAttachableLine =
+        m_bHasCurrentSurfaceContact &&
+        m_CurrentSurfaceContact.Surface != nullptr &&
+        m_CurrentSurfaceContact.Attachable &&
+        !m_CurrentSurfaceContact.WallLike &&
+        !m_CurrentSurfaceContact.Circle &&
+        (m_CurrentSurfaceContact.Surface == _Contact.Surface);
+    if (currentAttachableLine &&
+        !IsVerticalRoleLineSurfaceObject(_Contact.Surface) &&
+        !IsGuidedCorrectionLineContact(_Contact) &&
+        _Contact.SignedDistance > kSurfaceDetachedLinePositiveThreshold)
+    {
+        const float positiveGap = _Contact.SignedDistance - kSurfaceDetachedLinePositiveThreshold;
+        const float moveSpeed = fabsf(vVelocity.x);
+        const float speedRate = Clamp01f(
+            (moveSpeed - kSurfaceCurrentLinePositiveScorePenaltySpeedMin) /
+            (kSurfaceCurrentLinePositiveScorePenaltySpeedMax - kSurfaceCurrentLinePositiveScorePenaltySpeedMin));
+
+        candidateScore += positiveGap * (1.f + kSurfaceCurrentLinePositiveScorePenaltyScale * speedRate);
+        if (_Contact.TransitionSurface)
+            candidateScore += kSurfaceCurrentLinePositiveTransitionPenalty * (0.5f + 0.5f * speedRate);
+    }
+
     const bool connectedTransitionLine =
         IsConnectedTransitionLineContact(_Contact) ||
         IsRelaxedDownwardTransitionLineContact(_Contact);
@@ -3797,6 +4700,13 @@ float CPlayerScript::ComputeSurfaceCandidateScore(const SurfaceContact& _Contact
             const bool risingSlopeEntry =
                 (previousNormal.y > nextNormal.y + 0.01f) &&
                 (nextTangentSpeed * nextTangent.y > kSurfaceLineSeamRisingSlopeMoveMin);
+            const bool downwardSlopeEntry =
+                connectedTransitionLine &&
+                (previousNormal.y > nextNormal.y + kSurfaceLineSeamDownwardDelta) &&
+                (nextTangentSpeed * nextTangent.y < -kSurfaceLineRelaxedDownwardMoveMin) &&
+                (_Contact.Score <= kSurfaceLineRelaxedDownwardScoreMax);
+            const bool slopeToFlatEntry =
+                (nextNormal.y > previousNormal.y + kSurfaceLineSeamDownwardDelta);
 
             if (canPreferTransition && _CurrentBestSurface != _Contact.Surface && allowLineTransitionFavor)
                 candidateScore -= kSurfaceLineSeamTransitionScoreFavor;
@@ -3806,6 +4716,12 @@ float CPlayerScript::ComputeSurfaceCandidateScore(const SurfaceContact& _Contact
 
             if (risingSlopeEntry && allowLineTransitionFavor)
                 candidateScore -= kSurfaceLineSeamRisingSlopeScoreFavor;
+
+            if (downwardSlopeEntry && allowLineTransitionFavor)
+                candidateScore -= kSurfaceLineDownwardTransitionScoreFavor;
+
+            if (slopeToFlatEntry && allowLineTransitionFavor)
+                candidateScore -= kSurfaceLineSeamSlopeToFlatScoreFavor;
         }
         else if (canPreferTransition && _CurrentBestSurface != _Contact.Surface && allowLineTransitionFavor)
         {
@@ -3838,8 +4754,8 @@ bool CPlayerScript::IsTopHalfInwardCircleContact(const SurfaceContact& _Contact)
     if (pSurface->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::CIRCLE)
     {
         const CSurfaceScript::ARC_CORNER corner = pSurface->GetArcCorner();
-        if (corner != CSurfaceScript::ARC_CORNER::TOP_LEFT &&
-            corner != CSurfaceScript::ARC_CORNER::TOP_RIGHT)
+        if (corner != CSurfaceScript::ARC_CORNER::BOTTOM_LEFT &&
+            corner != CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT)
         {
             return false;
         }
@@ -3989,9 +4905,9 @@ bool CPlayerScript::ShouldIgnoreTopHalfInwardCircleContact(const SurfaceContact&
 
     const CSurfaceScript::ARC_CORNER corner = pSurface->GetArcCorner();
     if (lineOwnsTopRight)
-        return (corner == CSurfaceScript::ARC_CORNER::TOP_RIGHT);
+        return (corner == CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT);
 
-    return (corner == CSurfaceScript::ARC_CORNER::TOP_LEFT);
+    return (corner == CSurfaceScript::ARC_CORNER::BOTTOM_LEFT);
 }
 
 bool CPlayerScript::IsChordLineForInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact) const
@@ -4034,6 +4950,29 @@ bool CPlayerScript::IsChordLineForInwardCircle(const SurfaceContact& _LineContac
     return (startRadiusError <= endpointTolerance) &&
         (endRadiusError <= endpointTolerance) &&
         (midRadius < safeRadius - insideMargin);
+}
+
+bool CPlayerScript::IsPreservedInwardCircleContact(const SurfaceContact& _Contact) const
+{
+    if (!m_bHasRecentReleasedInwardCircleContact || m_RecentReleasedInwardCircleTime <= 0.f)
+        return false;
+
+    Vec2 center = {};
+    float radius = 0.f;
+    if (!TryGetInwardCircleSurfaceData(_Contact, center, radius))
+        return false;
+
+    if (m_bInwardCircleHalfCheckerTracked && IsSameInwardCircleHalfChecker(center, radius))
+        return true;
+
+    Vec2 recentCenter = {};
+    float recentRadius = 0.f;
+    if (!TryGetInwardCircleSurfaceData(m_RecentReleasedInwardCircleContact, recentCenter, recentRadius))
+        return false;
+
+    return (fabsf(recentCenter.x - center.x) <= 0.5f) &&
+        (fabsf(recentCenter.y - center.y) <= 0.5f) &&
+        (fabsf(recentRadius - radius) <= 0.5f);
 }
 
 bool CPlayerScript::ShouldPreferLineOverTopHalfInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact)
@@ -4328,6 +5267,109 @@ bool CPlayerScript::TrySelectSurfaceContact(SurfaceContact _Contact, SurfaceCont
 {
     _Contact.Score = ComputeSurfaceCandidateScore(_Contact, _BestSurface);
 
+    const auto isVerticalStickyRoleLineSurface = [this](GameObject* _Surface) -> bool
+    {
+        if (!IsAttachableLineSurfaceObject(_Surface) || _Surface == nullptr)
+            return false;
+
+        auto pSurface = _Surface->GetScript<CSurfaceScript>();
+        return pSurface != nullptr &&
+            pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
+    };
+
+    const auto shouldPreferDownwardTransitionLine = [&](const SurfaceContact& _Candidate,
+                                                        const SurfaceContact& _Other) -> bool
+    {
+        if (!_Candidate.Attachable ||
+            _Candidate.WallLike ||
+            _Candidate.Circle ||
+            _Candidate.Surface == nullptr ||
+            !_Candidate.TransitionSurface)
+        {
+            return false;
+        }
+
+        if (!_Other.Attachable ||
+            _Other.WallLike ||
+            _Other.Circle ||
+            _Other.Surface == nullptr ||
+            !_Other.TransitionSurface)
+        {
+            return false;
+        }
+
+        if (_Candidate.Surface == _Other.Surface)
+            return false;
+
+        if (!(m_bHasCurrentSurfaceContact &&
+              m_CurrentSurfaceContact.Surface != nullptr &&
+              m_CurrentSurfaceContact.Surface == _Other.Surface))
+        {
+            return false;
+        }
+
+        const bool connectedDownwardTransition =
+            IsConnectedTransitionLineContact(_Candidate) ||
+            IsRelaxedDownwardTransitionLineContact(_Candidate);
+        if (!connectedDownwardTransition)
+            return false;
+
+        const float seamDirBias = ComputeSeamDirectionBias(
+            _Candidate.SeamBlendT,
+            _Candidate.SeamBlendHasValue,
+            _Candidate.TransitionSurface,
+            vVelocity.x);
+        if (seamDirBias < kSurfaceLineRelaxedDownwardSeamBiasMin)
+            return false;
+
+        const Vec2 otherNormal = NormalizeSafeVec2(_Other.Normal, vNormal);
+        const Vec2 candidateNormal = NormalizeSafeVec2(_Candidate.Normal, otherNormal);
+        if (!(otherNormal.y > candidateNormal.y + kSurfaceLineSeamDownwardDelta))
+            return false;
+
+        const Vec2 candidateTangent = Vec2(candidateNormal.y, -candidateNormal.x);
+        const float candidateTangentSpeed = DotVec2(vVelocity, candidateTangent);
+        if (!(candidateTangentSpeed * candidateTangent.y < -kSurfaceLineRelaxedDownwardMoveMin))
+            return false;
+
+        return (_Candidate.SignedDistance <= kSurfaceLineDownwardTransitionSnapMaxDistance);
+    };
+
+    const auto shouldPreferVerticalStickyExitTransitionLine = [&](const SurfaceContact& _Candidate,
+                                                                  const SurfaceContact& _Other) -> bool
+    {
+        if (!_Candidate.Attachable ||
+            _Candidate.WallLike ||
+            _Candidate.Circle ||
+            _Candidate.Surface == nullptr ||
+            !_Candidate.TransitionSurface ||
+            IsVerticalRoleLineSurfaceObject(_Candidate.Surface))
+        {
+            return false;
+        }
+
+        if (!(_Other.Attachable &&
+              !_Other.WallLike &&
+              !_Other.Circle &&
+              _Other.Surface != nullptr &&
+              isVerticalStickyRoleLineSurface(_Other.Surface)))
+        {
+            return false;
+        }
+
+        if (!(m_bHasCurrentSurfaceContact &&
+              m_CurrentSurfaceContact.Surface != nullptr &&
+              m_CurrentSurfaceContact.Surface == _Other.Surface))
+        {
+            return false;
+        }
+
+        if (!IsConnectedTransitionLineContact(_Candidate))
+            return false;
+
+        return _Candidate.SignedDistance <= kSurfaceLineDownwardTransitionSnapMaxDistance;
+    };
+
     // =========================================================================
     // [🔥 핵심 방어 코드 🔥]
     // CBlockScript(일반 타일/블록)를 밟고 있을 때, 원형 지형이 억지로 끌어당기는 것을 막습니다.
@@ -4347,23 +5389,146 @@ bool CPlayerScript::TrySelectSurfaceContact(SurfaceContact _Contact, SurfaceCont
     if (!_Contact.Circle && !_Contact.WallLike && _Contact.Attachable)
         PrimeInwardCircleHalfCheckerFromLineContext(_Contact);
 
-    if (ShouldIgnoreTopHalfInwardCircleContact(_Contact))
+    const bool ignoreTopHalfContact = ShouldIgnoreTopHalfInwardCircleContact(_Contact);
+    if (ignoreTopHalfContact)
         return false;
 
+    const bool bestIgnoreTopHalfContact =
+        _HasBest && ShouldIgnoreTopHalfInwardCircleContact(_BestContact);
+    const bool preservedInwardCircleContact =
+        IsPreservedInwardCircleContact(_Contact) && !ignoreTopHalfContact;
+    const bool bestPreservedInwardCircleContact =
+        _HasBest && IsPreservedInwardCircleContact(_BestContact) && !bestIgnoreTopHalfContact;
     const bool guidedCorrectionLineContact = IsGuidedCorrectionLineContact(_Contact);
     const bool bestGuidedCorrectionLineContact =
         _HasBest && IsGuidedCorrectionLineContact(_BestContact);
+    const bool verticalRoleLineTransfer = IsVerticalRoleLineTransferCandidate(_Contact);
+    const bool bestVerticalRoleLineTransfer =
+        _HasBest && IsVerticalRoleLineTransferCandidate(_BestContact);
+    const auto isVerticalEntryRoleLineContact = [this](const SurfaceContact& _Candidate) -> bool
+    {
+        if (!IsVerticalRoleLineSurfaceObject(_Candidate.Surface) || _Candidate.Surface == nullptr)
+            return false;
 
+        auto pCandidateSurface = _Candidate.Surface->GetScript<CSurfaceScript>();
+        return pCandidateSurface != nullptr &&
+            pCandidateSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    };
+    const auto shouldPreferVerticalRoleLineTakeover = [&](const SurfaceContact& _Candidate,
+                                                          const SurfaceContact& _Other) -> bool
+    {
+        if (!(_Candidate.Attachable &&
+              !_Candidate.WallLike &&
+              !_Candidate.Circle &&
+              _Candidate.Surface != nullptr &&
+              IsVerticalRoleLineSurfaceObject(_Candidate.Surface)))
+        {
+            return false;
+        }
+
+        if (!(_Other.Attachable &&
+              !_Other.WallLike &&
+              !_Other.Circle &&
+              _Other.Surface != nullptr &&
+              !IsVerticalRoleLineSurfaceObject(_Other.Surface)))
+        {
+            return false;
+        }
+
+        if (!(m_bHasCurrentSurfaceContact &&
+              m_CurrentSurfaceContact.Surface != nullptr &&
+              m_CurrentSurfaceContact.Surface == _Other.Surface))
+        {
+            return false;
+        }
+
+        const bool connectedVerticalSeam =
+            _Candidate.TransitionSurface ||
+            AreLineSurfaceEndpointsConnected(_Candidate.Surface, _Other.Surface);
+        if (!connectedVerticalSeam)
+            return false;
+
+        if (fabsf(_Candidate.SignedDistance) > kSurfaceVerticalRoleLineSnapMaxDistance)
+            return false;
+
+        if (isVerticalStickyRoleLineSurface(_Candidate.Surface))
+            return true;
+
+        const float takeoverAlignment = max(ComputeVerticalRoleLineTransferAlignment(_Candidate),
+                                            ComputeVerticalRoleLineNormalAlignment(_Candidate));
+        return takeoverAlignment >= (kSurfaceVerticalRoleLineNormalAlignMin - 0.08f);
+    };
+    const bool verticalEntryRoleLineContact = isVerticalEntryRoleLineContact(_Contact);
+    const bool bestVerticalEntryRoleLineContact =
+        _HasBest && isVerticalEntryRoleLineContact(_BestContact);
+    const float verticalRoleLineNormalAlignment = ComputeVerticalRoleLineNormalAlignment(_Contact);
+    const float bestVerticalRoleLineNormalAlignment =
+        _HasBest ? ComputeVerticalRoleLineNormalAlignment(_BestContact) : 0.f;
+    const bool alignedVerticalEntryRoleLineContact =
+        verticalEntryRoleLineContact &&
+        verticalRoleLineNormalAlignment >= kSurfaceVerticalRoleLineNormalAlignMin;
+    const bool bestAlignedVerticalEntryRoleLineContact =
+        _HasBest &&
+        bestVerticalEntryRoleLineContact &&
+        bestVerticalRoleLineNormalAlignment >= kSurfaceVerticalRoleLineNormalAlignMin;
     bool accept = false;
     if (!_HasBest)
     {
         accept = true;
     }
+    else if (preservedInwardCircleContact != bestPreservedInwardCircleContact)
+    {
+        accept = preservedInwardCircleContact;
+    }
     else if (guidedCorrectionLineContact != bestGuidedCorrectionLineContact)
     {
         accept = guidedCorrectionLineContact;
     }
-    else if (ShouldIgnoreTopHalfInwardCircleContact(_BestContact))
+    else if (shouldPreferVerticalRoleLineTakeover(_Contact, _BestContact))
+    {
+        accept = true;
+    }
+    else if (shouldPreferVerticalRoleLineTakeover(_BestContact, _Contact))
+    {
+        accept = false;
+    }
+    else if (alignedVerticalEntryRoleLineContact != bestAlignedVerticalEntryRoleLineContact)
+    {
+        accept = alignedVerticalEntryRoleLineContact;
+    }
+    else if (alignedVerticalEntryRoleLineContact &&
+             bestAlignedVerticalEntryRoleLineContact &&
+             fabsf(verticalRoleLineNormalAlignment - bestVerticalRoleLineNormalAlignment) > 0.01f)
+    {
+        accept = verticalRoleLineNormalAlignment > bestVerticalRoleLineNormalAlignment;
+    }
+    else if (verticalRoleLineTransfer != bestVerticalRoleLineTransfer)
+    {
+        accept = verticalRoleLineTransfer;
+    }
+    else if (verticalRoleLineTransfer &&
+             bestVerticalRoleLineTransfer &&
+             verticalEntryRoleLineContact != bestVerticalEntryRoleLineContact)
+    {
+        accept = verticalEntryRoleLineContact;
+    }
+    else if (shouldPreferVerticalStickyExitTransitionLine(_Contact, _BestContact))
+    {
+        accept = true;
+    }
+    else if (shouldPreferVerticalStickyExitTransitionLine(_BestContact, _Contact))
+    {
+        accept = false;
+    }
+    else if (shouldPreferDownwardTransitionLine(_Contact, _BestContact))
+    {
+        accept = true;
+    }
+    else if (shouldPreferDownwardTransitionLine(_BestContact, _Contact))
+    {
+        accept = false;
+    }
+    else if (bestIgnoreTopHalfContact)
     {
         accept = true;
     }
@@ -4439,6 +5604,7 @@ bool CPlayerScript::ProbeSurfaceObject(GameObject* _SurfaceObject, bool _WasGrou
     const bool isCurrentSurface =
         m_bHasCurrentSurfaceContact &&
         (m_CurrentSurfaceContact.Surface == _SurfaceObject);
+    const bool isVerticalRoleLine = IsVerticalRoleLineSurfaceObject(_SurfaceObject);
     const bool inactiveLineSurface =
         contact.Attachable &&
         !contact.WallLike &&
@@ -4455,36 +5621,29 @@ bool CPlayerScript::ProbeSurfaceObject(GameObject* _SurfaceObject, bool _WasGrou
     const bool relaxedDownwardTransitionLine =
         !connectedTransitionLine &&
         IsRelaxedDownwardTransitionLineContact(contact);
+    const bool currentDetachedLineContact =
+        isCurrentSurface &&
+        contact.Attachable &&
+        !contact.WallLike &&
+        !contact.Circle &&
+        !isVerticalRoleLine &&
+        !IsGuidedCorrectionLineContact(contact) &&
+        (contact.SignedDistance > kSurfaceCurrentLinePositiveRejectDistance);
     const bool unrelatedGroundedPositiveLineContact =
         _WasGround &&
         contact.Attachable &&
         !contact.WallLike &&
         !contact.Circle &&
+        !isVerticalRoleLine &&
         !isCurrentSurface &&
         !connectedTransitionLine &&
         !relaxedDownwardTransitionLine &&
         (contact.SignedDistance > kSurfaceLineUnconnectedPositiveRejectDistance);
 
-    if (staleDetachedLineContact || unrelatedGroundedPositiveLineContact)
+    if (currentDetachedLineContact || staleDetachedLineContact || unrelatedGroundedPositiveLineContact)
         return false;
 
     return TrySelectSurfaceContact(contact, _BestContact, _BestScore, _BestSurface, _HasBest);
-}
-
-void CPlayerScript::ProbeSceneSurfaceContacts(bool _WasGround, SurfaceContact& _BestContact, float& _BestScore,
-                                              GameObject*& _BestSurface, bool& _HasBest)
-{
-    Vec2 queryMin = {};
-    Vec2 queryMax = {};
-    const bool hasQueryBounds = GetColliderQueryBounds(Collider2D(), queryMin, queryMax);
-    if (!hasQueryBounds)
-        return;
-
-    std::vector<GameObject*> nearbySurfaceObjects;
-    CSurfaceScript::QueryNearbySurfaceObjects(queryMin, queryMax, nearbySurfaceObjects, kSurfaceSceneProbeMargin, false);
-
-    for (GameObject* pSurfaceObject : nearbySurfaceObjects)
-        ProbeSurfaceObject(pSurfaceObject, _WasGround, _BestContact, _BestScore, _BestSurface, _HasBest);
 }
 
 void CPlayerScript::ResolveBufferedSurfaceContacts()
@@ -4508,12 +5667,6 @@ void CPlayerScript::ResolveBufferedSurfaceContacts()
 
     for (GameObject* pSurfaceObject : m_vecActiveSurfaceObjects)
         ProbeSurfaceObject(pSurfaceObject, wasGround, bestContact, bestScore, bestSurface, hasBest);
-
-    if (!hasBest &&
-        m_SurfaceGroundHoldTime <= 0.f)
-    {
-        ProbeSceneSurfaceContacts(wasGround, bestContact, bestScore, bestSurface, hasBest);
-    }
 
     m_bHasPendingSurfaceContact = false;
 
@@ -4542,7 +5695,8 @@ void CPlayerScript::ResolveBufferedSurfaceContacts()
 void CPlayerScript::SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Normal, float _SignedDistance,
                                          bool _TransitionSurface, bool _Attachable, bool _WallLike, bool _Circle, bool _InwardCircle, float _Score,
                                          float _SeamBlendT, bool _SeamBlendHasValue, const Vec2& _SeamStart,
-                                         const Vec2& _SeamEnd, const Vec2& _ContactPoint)
+                                         const Vec2& _SeamEnd, const Vec2& _ContactPoint,
+                                         const Vec2& _Tangent, float _SlopeAngle)
 {
     if (_Surface == nullptr)
         return;
@@ -4573,8 +5727,32 @@ void CPlayerScript::SubmitSurfaceContact(GameObject* _Surface, const Vec2& _Norm
     contact.SeamStart = _SeamStart;
     contact.SeamEnd = _SeamEnd;
     contact.ContactPoint = _ContactPoint;
+    contact.Tangent = _Tangent;
+    contact.SlopeAngle = _SlopeAngle;
 
     TrySelectSurfaceContact(contact, m_PendingSurfaceContact, m_SurfaceResolveScore, m_pResolvedSurface, m_bHasPendingSurfaceContact);
+}
+
+bool CPlayerScript::HandleCirclePhysics(const SurfaceContact& _Contact, const Vec2& _CurrentNormal,
+                                        bool _JumpPressed, bool _BlockedByWallLikeSurface,
+                                        bool _SuppressSlopeSlip,
+                                        float& _InOutTangentSpeed, bool& _OutForceFall)
+{
+    _OutForceFall = false;
+    UNREFERENCED_PARAMETER(_SuppressSlopeSlip);
+
+    if (!_Contact.Circle || !_Contact.Attachable || _JumpPressed || _BlockedByWallLikeSurface)
+        return false;
+
+    if (_Contact.InwardCircle &&
+        _CurrentNormal.y <= kSurfaceInwardCircleSlopeFallNormalY &&
+        fabsf(_InOutTangentSpeed) < kSurfaceInwardCircleSlopeFallMinSpeed)
+    {
+        _OutForceFall = true;
+        return true;
+    }
+
+    return false;
 }
 
 bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
@@ -4606,7 +5784,23 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     const bool wasGround = GetIsGround();
     const PlayerInput surfaceInput = ReadInput();
     const bool jumpPressed = surfaceInput.spacePressed || surfaceInput.spaceHeld || IsJump;
+    auto pContactSurface = (_Contact.Surface != nullptr)
+        ? _Contact.Surface->GetScript<CSurfaceScript>()
+        : nullptr;
     const bool isAttachableLineContact = _Contact.Attachable && !_Contact.WallLike && !_Contact.Circle;
+    const bool isVerticalEntryLineContact =
+        isAttachableLineContact &&
+        pContactSurface != nullptr &&
+        pContactSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    const bool isVerticalStickyLineContact =
+        isAttachableLineContact &&
+        pContactSurface != nullptr &&
+        pContactSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
+    const bool isVerticalRoleLineContact =
+        isVerticalEntryLineContact || isVerticalStickyLineContact;
+    const bool bVerticalRoleLineTransfer =
+        isVerticalRoleLineContact &&
+        IsVerticalRoleLineTransferCandidate(_Contact);
     const bool isCurrentAttachableLine =
         m_bHasCurrentSurfaceContact &&
         m_CurrentSurfaceContact.Surface != nullptr &&
@@ -4617,11 +5811,32 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         isAttachableLineContact &&
         isCurrentAttachableLine &&
         (m_CurrentSurfaceContact.Surface == _Contact.Surface);
+    const bool bVerticalLineAttachAssist = isVerticalRoleLineContact;
+    const bool bAllowVerticalRoleJumpReattach =
+        bVerticalLineAttachAssist &&
+        (bVerticalRoleLineTransfer || isSameCurrentLineSurface || m_bVerticalRoleLineAttached);
+    const bool currentVerticalStickyLine =
+        isCurrentAttachableLine &&
+        m_CurrentSurfaceContact.Surface != nullptr &&
+        !m_CurrentSurfaceContact.Circle &&
+        !m_CurrentSurfaceContact.WallLike &&
+        [this]() -> bool
+        {
+            auto pSurface = m_CurrentSurfaceContact.Surface != nullptr
+                ? m_CurrentSurfaceContact.Surface->GetScript<CSurfaceScript>()
+                : nullptr;
+            return pSurface != nullptr &&
+                pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
+        }();
     const bool isConnectedTransitionLineContact =
         isAttachableLineContact &&
         _Contact.TransitionSurface &&
         (IsConnectedTransitionLineContact(_Contact) ||
          IsRelaxedDownwardTransitionLineContact(_Contact));
+    const bool bVerticalStickyExitTransition =
+        isConnectedTransitionLineContact &&
+        currentVerticalStickyLine &&
+        !isVerticalRoleLineContact;
     float connectedTransitionLineEndpointGap = -1.f;
     if (isConnectedTransitionLineContact)
     {
@@ -4661,15 +5876,16 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
          (m_bHasPendingSurfaceContact && m_PendingSurfaceContact.Circle));
     const bool allowLineCorrection =
         isAttachableLineContact &&
-        (isSameCurrentLineSurface || isConnectedTransitionLineContact || isForcedChordCorrectionLineContact);
+        (isSameCurrentLineSurface ||
+         isConnectedTransitionLineContact ||
+         isForcedChordCorrectionLineContact ||
+         bVerticalLineAttachAssist);
 
     bool inwardCircleContact = false;
     Vec2 inwardCircleCenter = Vec2(0.f, 0.f);
     float inwardCircleRadius = 0.f;
     float inwardCircleUpperHalfRatio = 0.f;
     float inwardCircleLowerHalfRatio = 0.f;
-    bool inwardCircleSupportsImmediateLowSpeedFall = false;
-
     bool continuingCurrentInwardCircle =
         m_bHasCurrentSurfaceContact &&
         m_CurrentSurfaceContact.Surface != nullptr &&
@@ -4716,8 +5932,6 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
             inwardCircleContact = true;
             inwardCircleCenter = center;
             inwardCircleRadius = radius;
-            inwardCircleSupportsImmediateLowSpeedFall =
-                (pSurface->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE);
             const float safeRadius = max(radius, 0.0001f);
             inwardCircleUpperHalfRatio = (center.y - _Contact.ContactPoint.y) / safeRadius;
             inwardCircleLowerHalfRatio = (_Contact.ContactPoint.y - center.y) / safeRadius;
@@ -4801,21 +6015,7 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
 
     Vec2 candidateTangent = Vec2(normal.y, -normal.x);
     const float candidateTangentSpeed = DotVec2(vVelocity, candidateTangent);
-    const bool bLowSpeedInwardCircleDetachEligible =
-        inwardCircleContact &&
-        continuingCurrentInwardCircle &&
-        m_bInwardCircleLoopTracked &&
-        IsSameInwardCircleLoop(inwardCircleCenter, inwardCircleRadius) &&
-        (m_InwardCircleLoopAccumulatedAngle >= kSurfaceInwardCircleLowSpeedDetachMinAngle);
-    const bool bLowSpeedInwardCircleHighFallZone =
-        inwardCircleSupportsImmediateLowSpeedFall &&
-        (inwardCircleUpperHalfRatio >= kSurfaceInwardCircleLowSpeedFallUpperHalfMin) &&
-        (normal.y <= kSurfaceInwardCircleLowSpeedFallMaxNormalY);
-    const bool bLowSpeedInwardCircleDetach =
-        bLowSpeedInwardCircleDetachEligible &&
-        !jumpPressed &&
-        bLowSpeedInwardCircleHighFallZone &&
-        (fabsf(candidateTangentSpeed) < kSurfaceInwardCircleLowSpeedDetachSpeedMin);
+    const bool bLowSpeedInwardCircleDetach = false;
     const float seamBlend = ComputeLineSeamBlend(
         _Contact.SeamBlendT,
         _Contact.SeamBlendHasValue,
@@ -4852,7 +6052,11 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     const bool bDownwardSlopeTransition = bLineSeamCandidate &&
         wasGround &&
         (descendDeltaY > kSurfaceLineSeamDownwardDelta) &&
-        fabsf(_Contact.SignedDistance) <= kSurfaceLineSeamTransitionDepth;
+        (_Contact.SignedDistance <= kSurfaceLineDownwardTransitionSnapMaxDistance);
+    const bool bSlopeToFlatTransition = bLineSeamCandidate &&
+        wasGround &&
+        (normal.y > oldNormal.y + kSurfaceLineSeamDownwardDelta) &&
+        fabsf(_Contact.SignedDistance) <= (kSurfaceLineSeamTransitionDepth * 2.f);
 
     const bool bSteepDownSlopeTransition = bDownwardSlopeTransition && fabsf(vVelocity.x) > 30.f;
 
@@ -4867,6 +6071,10 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     else if (bDownwardSlopeTransition)
     {
         lineTransitionBlend = max(lineTransitionBlend, kSurfaceLineSeamDownwardBlendFloor);
+    }
+    else if (bSlopeToFlatTransition)
+    {
+        lineTransitionBlend = max(lineTransitionBlend, kSurfaceLineSeamSlopeToFlatBlendFloor);
     }
     else if (fabsf(vVelocity.x) > 20.f && descendDeltaY > 0.04f)
     {
@@ -4887,6 +6095,12 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     if (bAggressiveRisingSlopeTransition)
         lineTransitionBlend = max(lineTransitionBlend, kSurfaceLineSeamRisingSlopeBlendFloor);
 
+    if (bVerticalLineAttachAssist)
+        lineTransitionBlend = 1.f;
+
+    if (bVerticalStickyExitTransition)
+        lineTransitionBlend = 1.f;
+
     const bool bLineSeamStick =
         !jumpPressed &&
         bLineSeamCandidate &&
@@ -4897,12 +6111,16 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
 
     const bool bHoldLineSeam = bLineSeamStick &&
         !bDownwardSlopeTransition &&
+        !bSlopeToFlatTransition &&
         !bFlatToSlopeTransition &&
         !bSeamAngleShift;
 
     Vec2 curNormal = NormalizeSafeVec2(
         oldNormal * (1.f - normalBlend) + normal * normalBlend,
         normal);
+
+    if (bVerticalLineAttachAssist)
+        curNormal = normal;
 
     if (bLineSeamCandidate && _Contact.TransitionSurface)
     {
@@ -4911,6 +6129,9 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
             oldNormal * (1.f - blend) + normal * blend,
             (blend >= 0.5f) ? normal : oldNormal);
     }
+
+    if (bVerticalLineAttachAssist)
+        curNormal = normal;
 
     if (isGuideLinkedCorrectionLineContact || bForceGuidedCorrectionLineLock)
         curNormal = NormalizeSafeVec2(normal, curNormal);
@@ -4922,7 +6143,16 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     }
 
     const float jumpSeparatingSpeed = DotVec2(vVelocity, curNormal);
-    if (IsJump && !_Contact.WallLike && jumpSeparatingSpeed > kSurfaceJumpDetachSpeedMin)
+    const bool bVerticalRoleLineForceAttach =
+        bVerticalLineAttachAssist &&
+        _Contact.Attachable &&
+        !_Contact.WallLike &&
+        (fabsf(_Contact.SignedDistance) <= kSurfaceVerticalRoleLineSnapMaxDistance);
+    if (IsJump &&
+        !_Contact.WallLike &&
+        !bAllowVerticalRoleJumpReattach &&
+        !bVerticalRoleLineForceAttach &&
+        jumpSeparatingSpeed > kSurfaceJumpDetachSpeedMin)
     {
         SetIsGround(false);
         SetNormal(curNormal);
@@ -4936,8 +6166,37 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     if (bLineSeamCandidate && _Contact.TransitionSurface)
         positionResolveNormal = NormalizeSafeVec2(normal, curNormal);
 
+    if (bVerticalLineAttachAssist)
+        positionResolveNormal = normal;
+
     if (isGuideLinkedCorrectionLineContact || bForceGuidedCorrectionLineLock)
         positionResolveNormal = NormalizeSafeVec2(normal, curNormal);
+
+    const int circleInputDir = surfaceInput.rightHeld ? 1 : (surfaceInput.leftHeld ? -1 : 0);
+    const Vec2 circleIntentTangent = NormalizeSafeVec2(Vec2(curNormal.y, -curNormal.x), Vec2(1.f, 0.f));
+    const float circleIntentSpeed = DotVec2(vVelocity, circleIntentTangent);
+    const float circleGravityTangent = DotVec2(Vec2(0.f, -1.f), circleIntentTangent);
+    const float circleInputTangent =
+        (circleInputDir != 0) ? DotVec2(Vec2((float)circleInputDir, 0.f), circleIntentTangent) : 0.f;
+    const bool bCircleLowerHalfContact =
+        _Contact.Circle &&
+        _Contact.Attachable &&
+        !_Contact.WallLike &&
+        ((_Contact.InwardCircle && inwardCircleContact && inwardCircleLowerHalfRatio >= 0.12f) ||
+         (!_Contact.InwardCircle && curNormal.y >= kSurfaceCircleLowerHalfStallMinNormalY));
+    const bool bCircleLowerHalfUphillHold =
+        bCircleLowerHalfContact &&
+        !jumpPressed &&
+        (circleInputDir != 0) &&
+        (fabsf(circleGravityTangent) >= kSurfaceCircleSlopeSlipMinGravityTangent) &&
+        (fabsf(circleInputTangent) >= kSurfaceCircleLowerHalfInputMinTangent) &&
+        (circleInputTangent * circleGravityTangent < 0.f) &&
+        (fabsf(circleIntentSpeed) < kSurfaceCircleLowerHalfStallSpeedMax);
+    const bool bCircleLowerHalfExactProjection =
+        bCircleLowerHalfContact &&
+        !jumpPressed &&
+        (circleInputDir == 0) &&
+        (fabsf(circleGravityTangent) >= kSurfaceCircleSlopeSlipMinGravityTangent);
 
     float forcedGuidedLineFootCorrection = 0.f;
     if ((bForceGuidedCorrectionLineLock || bStrongSteepLineRecovery) &&
@@ -4977,8 +6236,10 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         }
     }
 
+    const float baseLineProjectionMaxDistance =
+        bVerticalLineAttachAssist ? kSurfaceVerticalRoleLineProjectionMaxDistance : kSurfaceLineStableProjectionMaxDistance;
     const float lineProjectionMaxDistance =
-        isGuideLinkedCorrectionLineContact ? kSurfaceGuidedLineProjectionMaxDistance : kSurfaceLineStableProjectionMaxDistance;
+        isGuideLinkedCorrectionLineContact ? max(kSurfaceGuidedLineProjectionMaxDistance, baseLineProjectionMaxDistance) : baseLineProjectionMaxDistance;
     const bool hasGroundedSurfaceContext = wasGround || m_SurfaceGroundHoldTime > 0.f;
     const float circleProjectionMaxDistance =
         hasGroundedSurfaceContext ? kSurfaceCircleProjectionMaxDistance : kSurfaceCircleAirAcquireMaxDistance;
@@ -5013,13 +6274,17 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
          (fabsf(_Contact.SignedDistance) <= lineProjectionMaxDistance || bDeepGuidedLineProjection)));
 
     bool bAppliedStableProjection = false;
+    float remainingPositiveGap = max(0.f, _Contact.SignedDistance);
     if (bProjectToStableSurface)
     {
         const float maxProjectionDistance =
             _Contact.Circle ? circleProjectionMaxDistance :
             ((bForceGuidedCorrectionLineLock || bStrongSteepLineRecovery) ? max(kSurfaceGuidedLineForceProjectionMaxDistance, forcedGuidedLineFootCorrection) :
              (bDeepGuidedLineProjection ? kSurfaceGuidedLineDeepProjectionMaxDistance : lineProjectionMaxDistance));
-        float correction = max(-maxProjectionDistance, min(maxProjectionDistance, -_Contact.SignedDistance));
+        float correction =
+            (bCircleLowerHalfExactProjection && _Contact.Circle)
+            ? -_Contact.SignedDistance
+            : max(-maxProjectionDistance, min(maxProjectionDistance, -_Contact.SignedDistance));
 
         if (bForceGuidedCorrectionLineLock || bStrongSteepLineRecovery)
             correction = max(correction, forcedGuidedLineFootCorrection);
@@ -5032,6 +6297,8 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
             Transform()->SetRelativePos(pos);
             bAppliedStableProjection = true;
         }
+
+        remainingPositiveGap = max(0.f, _Contact.SignedDistance - fabsf(correction));
     }
 
     const bool bAttachToLineSurface =
@@ -5042,10 +6309,19 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     if (!bAppliedStableProjection && bAttachToLineSurface && _Contact.SignedDistance > 0.f)
     {
         float snapDistance = _Contact.SignedDistance;
-        const float maxSnapDistance =
-            bAggressiveRisingSlopeTransition ? kSurfaceLineSeamRisingSlopeSnapMaxDistance : kSurfaceLineAttachSnapMaxDistance;
+        float maxSnapDistance = bVerticalLineAttachAssist ? kSurfaceVerticalRoleLineSnapMaxDistance : kSurfaceLineAttachSnapMaxDistance;
+        if (bAggressiveRisingSlopeTransition)
+            maxSnapDistance = kSurfaceLineSeamRisingSlopeSnapMaxDistance;
+        else if (bDownwardSlopeTransition)
+            maxSnapDistance = kSurfaceLineDownwardTransitionSnapMaxDistance;
+        else if (bSlopeToFlatTransition)
+            maxSnapDistance = kSurfaceLineSeamSlopeToFlatSnapMaxDistance;
+        if (bVerticalLineAttachAssist)
+            maxSnapDistance = max(maxSnapDistance, kSurfaceVerticalRoleLineSnapMaxDistance);
         float cappedSnapDistance = maxSnapDistance;
-        if (isConnectedTransitionLineContact && connectedTransitionLineEndpointGap >= 0.f)
+        if (isConnectedTransitionLineContact &&
+            connectedTransitionLineEndpointGap >= 0.f &&
+            !bDownwardSlopeTransition)
         {
             const float seamGapSnapLimit = connectedTransitionLineEndpointGap + 1.0f;
             cappedSnapDistance = min(cappedSnapDistance, seamGapSnapLimit);
@@ -5057,13 +6333,14 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         pos.x -= positionResolveNormal.x * snapDistance;
         pos.y -= positionResolveNormal.y * snapDistance;
         Transform()->SetRelativePos(pos);
+        remainingPositiveGap = max(0.f, _Contact.SignedDistance - snapDistance);
     }
     else if (!bAppliedStableProjection &&
              _Contact.SignedDistance < 0.f &&
              (!_Contact.Circle ? allowLineCorrection && fabsf(_Contact.SignedDistance) <= kSurfaceLinePenetrationPushMaxDistance : true))
     {
         float worldPush = -_Contact.SignedDistance + kSurfaceContactPushBias;
-        float maxPush = kSurfaceContactMaxPush;
+        float maxPush = _Contact.Circle ? kSurfaceContactMaxPush : kSurfaceLinePenetrationPushMaxDistance;
         if (bAggressiveRisingSlopeTransition)
         {
             maxPush = min(maxPush, kSurfaceLineSeamRisingSlopePushLimit);
@@ -5084,6 +6361,7 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         pos.x += positionResolveNormal.x * worldPush;
         pos.y += positionResolveNormal.y * worldPush;
         Transform()->SetRelativePos(pos);
+        remainingPositiveGap = 0.f;
     }
 
     if (isSameCurrentLineSurface &&
@@ -5115,7 +6393,12 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         m_SurfaceRotationSnapTime = max(m_SurfaceRotationSnapTime, kSurfaceGuidedLineRotationSnapTime);
     }
 
-    Vec2 tangent = Vec2(curNormal.y, -curNormal.x);
+    const bool preferContactTangent =
+        bVerticalLineAttachAssist ||
+        bVerticalStickyExitTransition;
+    Vec2 tangent = preferContactTangent
+        ? NormalizeSafeVec2(_Contact.Tangent, Vec2(curNormal.y, -curNormal.x))
+        : Vec2(curNormal.y, -curNormal.x);
     float rawVn = DotVec2(vVelocity, curNormal);
     const float incomingVn = rawVn;
     float vt = DotVec2(vVelocity, tangent);
@@ -5141,25 +6424,28 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     const float vnKeepTolerance = 80.f;
     const float normalThreshold = wasGround ? normalKeepY : normalEnterY;
     const float vnTolerance = wasGround ? vnKeepTolerance : vnEnterTolerance;
-    const float inwardCircleGravityTangent = inwardCircleContact ? DotVec2(Vec2(0.f, -1.f), tangent) : 0.f;
+    const bool isFlatSurfaceLine =
+        (pContactSurface != nullptr) &&
+        (pContactSurface->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::LINE) &&
+        (pContactSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::SURFACE) &&
+        !_Contact.TransitionSurface &&
+        (curNormal.y >= 0.98f);
+    bool bCircleForcedFall = false;
+    bool bCircleSlopeSlip =
+        HandleCirclePhysics(_Contact, curNormal, jumpPressed, blockedByWallLikeSurface,
+                            bCircleLowerHalfUphillHold, vt, bCircleForcedFall) &&
+        !bCircleForcedFall;
     const bool bLowSpeedOuterCircleFall =
         _Contact.Circle &&
         !_Contact.InwardCircle &&
         _Contact.Attachable &&
         !jumpPressed &&
         !blockedByWallLikeSurface &&
+        !bCircleForcedFall &&
+        !bCircleSlopeSlip &&
         (fabsf(_Contact.SignedDistance) <= circleProjectionMaxDistance) &&
         (curNormal.y <= kSurfaceCircleLowSpeedFallMinNormalY) &&
         (fabsf(vt) < kSurfaceCircleLowSpeedFallSpeedMin);
-    const bool bLowSpeedInwardCircleBackSlip =
-        bLowSpeedInwardCircleDetachEligible &&
-        !bLowSpeedInwardCircleDetach &&
-        !jumpPressed &&
-        !blockedByWallLikeSurface &&
-        !bLowSpeedInwardCircleHighFallZone &&
-        (fabsf(inwardCircleGravityTangent) >= kSurfaceInwardCircleBackSlipMinGravityTangent) &&
-        (curNormal.y <= kSurfaceInwardCircleBackSlipMaxNormalY) &&
-        (fabsf(vt) < kSurfaceInwardCircleLowSpeedDetachSpeedMin);
 
     bool speedStick = (fabsf(vt) > stickMinSpeed) && (curNormal.y > 0.2f);
     bool wallAttach = _Contact.Attachable && (fabsf(curNormal.x) > 0.85f);
@@ -5174,10 +6460,20 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
             (normalDot >= kSurfaceLineSeamKeepDot) &&
             (fabsf(vt) <= kSurfaceLineSeamMoveSpeedGate);
 
-        if (bFlatToSlopeTransition || bDownwardSlopeTransition || bSeamAngleShift)
+        if (bFlatToSlopeTransition || bDownwardSlopeTransition || bSlopeToFlatTransition || bSeamAngleShift)
             canStick = true;
         else
             canStick = bHoldLineSeam && seamCanStick;
+    }
+
+    if (bVerticalLineAttachAssist && !blockedByWallLikeSurface)
+    {
+        const bool verticalLineCanStick =
+            (fabsf(_Contact.SignedDistance) <= kSurfaceVerticalRoleLineSnapMaxDistance) &&
+            (rawVn <= max(vnTolerance, kSurfaceVerticalRoleLineKeepVnTolerance)) &&
+            (wallAttach || isSameCurrentLineSurface || bVerticalRoleLineTransfer || m_bVerticalRoleLineAttached || fabsf(vt) >= kSurfaceVerticalRoleLineTransferSpeedMin);
+        if (verticalLineCanStick)
+            canStick = true;
     }
 
     if (_Contact.Circle && _Contact.Attachable && !jumpPressed && !blockedByWallLikeSurface)
@@ -5190,7 +6486,7 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
             !bLowSpeedOuterCircleFall &&
             (fabsf(_Contact.SignedDistance) <= circleProjectionMaxDistance) &&
             (bInwardCircleLowerHalfContact ||
-             bLowSpeedInwardCircleBackSlip ||
+             bCircleSlopeSlip ||
              ((!_Contact.InwardCircle || inwardCircleUpperHalfRatio < kSurfaceInwardCircleLowSpeedDetachUpperHalfMin) &&
               ((curNormal.y >= kSurfaceCircleStickMinY) ||
                hasGroundedSurfaceContext ||
@@ -5200,6 +6496,18 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
         if (circleCanStick)
             canStick = true;
     }
+
+    const bool unresolvedPositiveLineGap =
+        isAttachableLineContact &&
+        !bVerticalLineAttachAssist &&
+        !isForcedChordCorrectionLineContact &&
+        (remainingPositiveGap > kSurfaceLineUnresolvedPositiveGapDetachDistance);
+
+    if (unresolvedPositiveLineGap)
+        canStick = false;
+
+    if (bCircleForcedFall)
+        canStick = false;
 
     if (blockedByWallLikeSurface)
     {
@@ -5219,21 +6527,35 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
 
     if (canStick)
     {
-        RefreshSurfaceGroundHold(_Contact.Circle ? kSurfaceCircleGroundHoldTime : 0.08f);
+        if (_Contact.Circle)
+        {
+            RefreshSurfaceGroundHold(kSurfaceCircleGroundHoldTime);
+        }
+        else if (bVerticalLineAttachAssist)
+        {
+            RefreshSurfaceGroundHold(kSurfaceVerticalRoleLineGroundHoldTime);
+        }
+        else if (isFlatSurfaceLine)
+        {
+            m_SurfaceGroundHoldTime = 0.f;
+        }
+        else
+        {
+            RefreshSurfaceGroundHold(0.08f);
+        }
         SetIsGround(true);
+        SetVerticalRoleLineAttached(bVerticalLineAttachAssist);
         SetNormal(curNormal);
         SetGroundTangent(tangent);
 
-        if (bLowSpeedInwardCircleBackSlip)
+        if (bCircleLowerHalfUphillHold)
         {
-            const float downhillDir = (inwardCircleGravityTangent >= 0.f) ? 1.f : -1.f;
-            vt += inwardCircleGravityTangent * vAccel.y * kSurfaceInwardCircleBackSlipAccelScale * DT;
-
-            if (vt * downhillDir < 0.f || fabsf(vt) < kSurfaceInwardCircleBackSlipWalkSpeedMin)
-                vt = downhillDir * kSurfaceInwardCircleBackSlipWalkSpeedMin;
-
-            if (fabsf(vt) > kSurfaceInwardCircleBackSlipWalkSpeedMax)
-                vt = downhillDir * kSurfaceInwardCircleBackSlipWalkSpeedMax;
+            vt = 0.f;
+            bCircleSlopeSlip = false;
+        }
+        else if (bCircleSlopeSlip)
+        {
+            // Circle slope physics already updated the tangential speed above.
         }
         else if (curNormal.y > 0.f)
         {
@@ -5255,21 +6577,76 @@ bool CPlayerScript::ApplySurfaceContact(const SurfaceContact& _Contact)
     }
     else
     {
+        if (unresolvedPositiveLineGap)
+        {
+            m_SurfaceGroundHoldTime = 0.f;
+            ResetGroundContact();
+            return false;
+        }
+
         const bool definiteAirborne =
+            bCircleForcedFall ||
             bLowSpeedOuterCircleFall ||
+            unresolvedPositiveLineGap ||
             (rawVn > vnKeepTolerance) ||
             (!wallAttach && curNormal.y < 0.2f && fabsf(vt) < stickMinSpeed);
 
-        if (bLowSpeedOuterCircleFall)
+        if (bCircleForcedFall || bLowSpeedOuterCircleFall)
             m_SurfaceGroundHoldTime = 0.f;
 
         if (definiteAirborne)
             SetIsGround(false);
+        else if (!bVerticalLineAttachAssist)
+            SetVerticalRoleLineAttached(false);
 
         SetNormal(curNormal);
         SetGroundTangent(tangent);
 
-        if (!bLowSpeedOuterCircleFall &&
+        if (bCircleForcedFall || bLowSpeedOuterCircleFall)
+        {
+            const bool keepHalfChecker =
+                _Contact.InwardCircle &&
+                inwardCircleContact &&
+                m_bInwardCircleHalfCheckerTracked &&
+                IsSameInwardCircleHalfChecker(inwardCircleCenter, inwardCircleRadius);
+            const bool savedLineOwnsTopRight = m_bInwardCircleLineOwnsTopRight;
+
+            SetIsJump(true);
+
+            // Circle contact should only control tangential motion while attached.
+            // Once we detach and start falling, drop the carried tangent speed and
+            // let world gravity take over.
+            const float tangentCarry = DotVec2(vVelocity, tangent);
+            vVelocity.x -= tangent.x * tangentCarry;
+            vVelocity.y -= tangent.y * tangentCarry;
+            m_LastFrameDeltaX = 0.f;
+
+            if (vVelocity.y > 0.f)
+                vVelocity.y = 0.f;
+
+            if (_Contact.InwardCircle && inwardCircleContact)
+            {
+                m_bHasRecentReleasedInwardCircleContact = true;
+                m_RecentReleasedInwardCircleContact = _Contact;
+                m_RecentReleasedInwardCircleTime = kSurfaceGuidedCorrectionLineTransferHoldTime;
+                CacheRecentGuidedCorrectionLineFromSurface(_Contact.Surface, kSurfaceGuidedCorrectionLineTransferHoldTime);
+            }
+
+            ResetGroundContact();
+            ResetInwardCircleLoopState();
+
+            if (keepHalfChecker)
+            {
+                m_bInwardCircleHalfCheckerTracked = true;
+                m_InwardCircleHalfCheckerCenter = inwardCircleCenter;
+                m_InwardCircleHalfCheckerRadius = inwardCircleRadius;
+                m_bInwardCircleLineOwnsTopRight = savedLineOwnsTopRight;
+            }
+            return false;
+        }
+
+        if (!bCircleForcedFall &&
+            !bLowSpeedOuterCircleFall &&
             curNormal.y <= 0.65f &&
             fabsf(vt) < stickMinSpeed)
         {
@@ -5384,4 +6761,213 @@ void CPlayerScript::LoadFromLevelFile(FILE* _File)
 {
     //fread(&m_Dir, sizeof(Vec3), 1, _File);
 }
+
+void CPlayerScript::Dead()
+{
+
+    if (GetOwner() != nullptr && GetOwner()->IsDead())
+        return;
+
+    PlayGameSFX(L"Sound\\Player_Dead.mp3", 0.9f, true);
+
+    GameObject* pEffect = new GameObject;
+    pEffect->SetName(L"DeadEffect");
+    pEffect->AddComponent(new CTransform);
+    pEffect->AddComponent(new CFlipbookRender);
+    CEffectScript* pEffectScript = new CEffectScript;
+    pEffect->AddComponent(pEffectScript);
+
+    pEffect->Transform()->SetRelativePos(Transform()->GetRelativePos());
+    Vec3 DeadPos = pEffect->Transform()->GetRelativePos();
+    pEffectScript->SetfGravity(1800.f);
+    pEffectScript->SetvVelocity(Vec2(0.f, 800.f));
+    pEffectScript->SetLifeTime(kPlayerDeadEffectLifeTime);
+    pEffectScript->SetDestroyAtFinish(false);
+    pEffect->Transform()->SetRelativeScale(Transform()->GetRelativeScale());
+
+    Ptr<AFlipbook> pGetAnim = LOAD(AFlipbook, L"Flipbook\\Sonic_Death.flip");
+    if (nullptr == pGetAnim)
+        pGetAnim = LOAD(AFlipbook, L"Flipbook\\Dead.flip");
+    if (nullptr == pGetAnim)
+        pGetAnim = LOAD(AFlipbook, L"Flipbook\\Sonic_Hurt.flip");
+    if (nullptr == pGetAnim)
+        pGetAnim = LOAD(AFlipbook, L"Flipbook\\CoinGet.flip");
+    if (nullptr != pGetAnim)
+    {
+        pEffect->FlipbookRender()->SetFlipbook(0, pGetAnim);
+        pEffect->FlipbookRender()->Play(0, 14.f, -1);
+    }
+
+    LevelMgr::GetInst()->GetCurLevel()->AddObject(2, pEffect);
+
+    Destroy();
+}
+
+void CPlayerScript::SetItemState(ITEM_STATE _State)
+{
+    if (_State == m_eShieldType)
+    {
+        OnEatShield();
+        return;
+    }
+
+    if (m_eShieldType == ITEM_STATE::STAR)
+        m_MaxMoveSpeed = m_StoredMaxMoveSpeed;
+
+    GameObject* pOwner = GetOwner();
+    if (pOwner != nullptr)
+    {
+        DestroyOwnedShieldChild(pOwner, L"FireShield");
+        DestroyOwnedShieldChild(pOwner, L"WaterShield");
+        DestroyOwnedShieldChild(pOwner, L"ElectricShield");
+        DestroyOwnedShieldChild(pOwner, L"StarShield");
+        DestroyOwnedShieldChild(pOwner, L"ElectricEatCoin");
+    }
+
+    m_bIsFirebouncing = false;
+    m_bIsWaterbouncing = false;
+    m_bIsElectricbouncing = false;
+    m_StarShieldTime = 0.f;
+
+    if (_State == ITEM_STATE::STAR)
+        m_StoredMaxMoveSpeed = m_MaxMoveSpeed;
+
+    m_eShieldType = _State;
+
+    if (_State == ITEM_STATE::STAR)
+        m_StarShieldTime = kStarShieldDuration;
+
+    OnEatShield();
+}
+
+void CPlayerScript::Fire()
+{
+    OnEatShield();
+
+    if (IsGround)
+    {
+        m_bIsFirebouncing = false;
+        return;
+    }
+
+    if (IsJump && !m_bIsFirebouncing && KEY_TAP(KEY::SPACE))
+    {
+        m_bIsFirebouncing = true;
+        vVelocity.x = kFireShieldDashSpeed * (float)m_Facing;
+        vVelocity.y = 0.f;
+        PlayGameSFX(L"Sound\\FireShieldAttack.wav", 0.9f, true);
+    }
+}
+
+void CPlayerScript::Water()
+{
+    OnEatShield();
+
+    if (IsJump && !m_bIsWaterbouncing && KEY_TAP(KEY::SPACE))
+    {
+        m_bIsWaterbouncing = true;
+        vVelocity.x = 0.f;
+        vVelocity.y = kWaterShieldDropSpeed;
+        PlayGameSFX(L"Sound\\WaterShieldAttack.wav", 0.9f, true);
+        return;
+    }
+
+    if (m_bIsWaterbouncing && IsGround)
+    {
+        vVelocity.y = kWaterShieldBounceSpeed;
+        m_bIsWaterbouncing = false;
+        IsJump = true;
+        IsGround = false;
+        m_bVerticalRoleLineAttached = false;
+    }
+}
+
+void CPlayerScript::Electric()
+{
+    OnEatShield();
+
+    if (IsGround)
+    {
+        m_bIsElectricbouncing = false;
+        return;
+    }
+
+    if (IsJump && !m_bIsElectricbouncing && KEY_TAP(KEY::SPACE))
+    {
+        m_bIsElectricbouncing = true;
+        vVelocity.y = kElectricShieldJumpSpeed;
+        PlayGameSFX(L"Sound\\ElectricShieldAttack.wav", 0.9f, true);
+    }
+}
+
+void CPlayerScript::Star()
+{
+    OnEatShield();
+
+    if (m_StarShieldTime > 0.f)
+    {
+        m_StarShieldTime -= DT;
+        if (m_StarShieldTime < 0.f)
+            m_StarShieldTime = 0.f;
+
+        m_MaxMoveSpeed = m_StoredMaxMoveSpeed + kStarShieldBonusSpeed;
+        return;
+    }
+
+    SetItemState(ITEM_STATE::NONE);
+}
+
+void CPlayerScript::CreateFireShield()
+{
+    CreateShieldVisualChild(GetOwner(), L"FireShield", L"Flipbook\\FireShield.flip", 2.f);
+}
+
+void CPlayerScript::CreateWaterShield()
+{
+    CreateShieldVisualChild(GetOwner(), L"WaterShield", L"Flipbook\\WaterShield.flip", 2.f);
+}
+
+void CPlayerScript::CreateElectricShield()
+{
+    CreateShieldVisualChild(GetOwner(), L"ElectricShield", L"Flipbook\\ElectricShield.flip", 2.f);
+}
+
+void CPlayerScript::CreateStarShield()
+{
+    CreateShieldVisualChild(GetOwner(), L"StarShield", L"Flipbook\\StarShield.flip", 2.f);
+}
+
+void CPlayerScript::CreateElectricShieldEffect()
+{
+    CreateShieldVisualChild(GetOwner(), L"ElectricEatCoin", L"Flipbook\\ElectricEatCoin.flip", 3.f);
+}
+
+void CPlayerScript::OnEatShield()
+{
+    switch (m_eShieldType)
+    {
+    case ITEM_STATE::FIRE:
+        if (FindChildByName(GetOwner(), L"FireShield") == nullptr)
+            CreateFireShield();
+        break;
+    case ITEM_STATE::WATER:
+        if (FindChildByName(GetOwner(), L"WaterShield") == nullptr)
+            CreateWaterShield();
+        break;
+    case ITEM_STATE::ELECTRIC:
+        if (FindChildByName(GetOwner(), L"ElectricShield") == nullptr)
+            CreateElectricShield();
+        if (FindChildByName(GetOwner(), L"ElectricEatCoin") == nullptr)
+            CreateElectricShieldEffect();
+        break;
+    case ITEM_STATE::STAR:
+        if (FindChildByName(GetOwner(), L"StarShield") == nullptr)
+            CreateStarShield();
+        break;
+    case ITEM_STATE::NONE:
+    default:
+        break;
+    }
+}
+
 

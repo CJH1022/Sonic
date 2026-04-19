@@ -5,6 +5,7 @@
 #include "LevelMgr.h"
 #include "GameObject.h"
 #include "Source/ScriptMgr.h"
+#include "Source/Scripts/CItemScript.h"
 
 namespace
 {
@@ -21,6 +22,18 @@ namespace
 		}
 
 		return false;
+	}
+
+	void InitializeItemScript(CScript* _Script)
+	{
+		CItemScript* pItemScript = dynamic_cast<CItemScript*>(_Script);
+		if (nullptr == pItemScript)
+			return;
+
+		if (pItemScript->GetBoxType() == CItemScript::ITEMBOX::NONE)
+			pItemScript->SetBoxType(CItemScript::ITEMBOX::COINBOX);
+
+		pItemScript->ApplyEditorBoxSetup();
 	}
 }
 
@@ -170,6 +183,7 @@ void Inspector::Tick_UI()
 				if (nullptr != pNewScript)
 				{
 					m_TargetObject->AddComponent(pNewScript);
+					InitializeItemScript(pNewScript);
 					if (nullptr != LevelMgr::GetInst()->GetCurLevel())
 					{
 						LevelMgr::GetInst()->GetCurLevel()->SetChanged();

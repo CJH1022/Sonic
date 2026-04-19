@@ -24,6 +24,7 @@ public:
         CORRECTION,
         WALL,
         VERTICAL_ENTRY,
+        VERTICAL_STICKY_ENTRY,
     };
 
     enum class ARC_CORNER
@@ -65,6 +66,8 @@ public:
         Vec2 SeamStart = Vec2(0.f, 0.f);
         Vec2 SeamEnd = Vec2(0.f, 0.f);
         Vec2 ContactPoint = Vec2(0.f, 0.f);
+        Vec2 Tangent = Vec2(1.f, 0.f);
+        float SlopeAngle = 0.f;
     };
 
     virtual void Begin() override;
@@ -112,7 +115,7 @@ private:
     void RefreshSpatialRegistration();
     void UnregisterSpatialRegistration();
     bool EvaluateWallProbe(CCollider2D* _OtherCollider, Vec2& _OutNormal, float& _OutSignedDistance);
-    bool EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround);
+    bool EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround, const Vec2* _ForcedSurfaceNormal = nullptr);
     bool EvaluateArcProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, Vec2& _OutContactPoint, bool _WasGround);
     bool EvaluateCircleProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, Vec2& _OutContactPoint, bool _WasGround);
     bool GetPlayerSupportPoint(CCollider2D* _OtherCollider, const Vec2& _SurfaceNormal, Vec2& _OutSupportPoint);

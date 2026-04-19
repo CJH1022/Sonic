@@ -5,6 +5,7 @@ class CDestroyBlockScript :
 {
 private:
     int m_life;
+    bool m_bDeadPiecesSpawned;
 
 public:
     virtual void Begin() override;

@@ -16,28 +16,24 @@
 
 namespace
 {
-    constexpr float kCylinderClimbSpeed = 420.f;
-    constexpr float kCylinderBounceSpeed = 620.f;
-    constexpr float kCylinderEntryMaxDownSpeed = 140.f;
+    constexpr float kCylinderClimbSpeed = 210.f;
+    constexpr float kCylinderBounceSpeed = 600.f;
     constexpr float kCylinderFirstBounceMinSpeed = 260.f;
-    constexpr float kCylinderBounceSpeedCap = 760.f;
+    constexpr float kCylinderBounceSpeedCap = kCylinderBounceSpeed;
+    constexpr float kCylinderRightWallBounceReliableSpeed = 460.f;
     constexpr float kCylinderWallRideStartSpeedRatio = 0.82f;
     constexpr float kCylinderExitHeightRatio = 0.82f;
     constexpr float kCylinderWallInset = 18.f;
-    constexpr float kCylinderInternalFallAccel = 1800.f;
-    constexpr float kCylinderInternalFallMaxSpeed = 840.f;
-    constexpr float kCylinderResolveEpsilon = 0.01f;
+    constexpr float kCylinderInsideWallSafetyInset = 0.f;
     constexpr float kCylinderMinHalfExtent = 8.f;
     constexpr float kCylinderDoorDefaultWidth = 54.f;
     constexpr float kCylinderDoorDefaultHeight = 72.f;
     constexpr float kCylinderDoorMinHalfWidth = 16.f;
     constexpr float kCylinderDoorMinHalfHeight = 20.f;
     constexpr float kCylinderDoorEdgeInset = 6.f;
-    constexpr float kCylinderEntryDoorApproachPaddingX = 20.f;
-    constexpr float kCylinderEntryDoorApproachPaddingY = 24.f;
     constexpr float kCylinderDebugDoorZBias = 0.2f;
     constexpr unsigned int kCylinderScriptDataMagic = 0x4344594Cu;
-    constexpr unsigned int kCylinderScriptDataVersion = 2u;
+    constexpr unsigned int kCylinderScriptDataVersion = 3u;
     const wchar_t* kCylinderOutsideSpriteKey = L"Sprite\\Sonic_CylinderTree.sprite";
     const wchar_t* kCylinderInsideSpriteKey = L"Sprite\\Sonic_CylinderTree_1.sprite";
     const Vec2  kCylinderExitVelocity = Vec2(420.f, 320.f);
@@ -97,25 +93,6 @@ namespace
                                 int _SideSign,
                                 bool _EntryDoor);
 
-    bool IsNearCylinderEntryDoor(const Rect2D& _PlayerRect,
-                                 const Vec2& _CylinderCenter,
-                                 float _HalfWidth,
-                                 float _HalfHeight,
-                                 const Vec2& _EntryDoorSize,
-                                 const Vec2& _EntryDoorOffset)
-    {
-        const Rect2D leftEntryDoor = InflateRect(
-            MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight, _EntryDoorSize, _EntryDoorOffset, -1, true),
-            kCylinderEntryDoorApproachPaddingX,
-            kCylinderEntryDoorApproachPaddingY);
-        const Rect2D rightEntryDoor = InflateRect(
-            MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight, _EntryDoorSize, _EntryDoorOffset, 1, true),
-            kCylinderEntryDoorApproachPaddingX,
-            kCylinderEntryDoorApproachPaddingY);
-
-        return Overlaps(_PlayerRect, leftEntryDoor) || Overlaps(_PlayerRect, rightEntryDoor);
-    }
-
     Rect2D MakeCylinderDoorRect(const Vec2& _CylinderCenter,
                                 float _HalfWidth,
                                 float _HalfHeight,
@@ -152,8 +129,6 @@ namespace
     void DrawCylinderDoorDebug(const Vec2& _CylinderCenter,
                                float _HalfWidth,
                                float _HalfHeight,
-                               const Vec2& _EntryDoorSize,
-                               const Vec2& _EntryDoorOffset,
                                const Vec2& _ExitDoorSize,
                                const Vec2& _ExitDoorOffset,
                                float _Z)
@@ -162,32 +137,14 @@ namespace
             return;
 
         const float pulse = 0.55f + 0.45f * (0.5f + 0.5f * sinf(TIME * 8.f));
-        const Rect2D entryLeft = MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight,
-                                                      _EntryDoorSize, _EntryDoorOffset, -1, true);
-        const Rect2D entryRight = MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight,
-                                                       _EntryDoorSize, _EntryDoorOffset, 1, true);
         const Rect2D exitLeft = MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight,
                                                      _ExitDoorSize, _ExitDoorOffset, -1, false);
         const Rect2D exitRight = MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight,
                                                       _ExitDoorSize, _ExitDoorOffset, 1, false);
 
-        DrawDoorRectDebug(entryLeft, _Z, Vec4(0.15f, 0.95f, 1.f, pulse));
-        DrawDoorRectDebug(entryRight, _Z, Vec4(0.15f, 0.95f, 1.f, pulse));
         DrawDoorRectDebug(exitLeft, _Z, Vec4(1.f, 0.65f, 0.15f, pulse));
         DrawDoorRectDebug(exitRight, _Z, Vec4(1.f, 0.65f, 0.15f, pulse));
 
-        DrawDebugRect(Vec3(entryLeft.Center.x, entryLeft.Center.y, _Z),
-                      Vec3(10.f, 10.f, 1.f),
-                      Vec3(0.f, 0.f, 0.f),
-                      Vec4(0.15f, 0.95f, 1.f, 1.f),
-                      0.f,
-                      false);
-        DrawDebugRect(Vec3(entryRight.Center.x, entryRight.Center.y, _Z),
-                      Vec3(10.f, 10.f, 1.f),
-                      Vec3(0.f, 0.f, 0.f),
-                      Vec4(0.15f, 0.95f, 1.f, 1.f),
-                      0.f,
-                      false);
         DrawDebugRect(Vec3(exitLeft.Center.x, exitLeft.Center.y, _Z),
                       Vec3(10.f, 10.f, 1.f),
                       Vec3(0.f, 0.f, 0.f),
@@ -220,22 +177,41 @@ namespace
         _CylinderObject->SpriteRender()->SetSprite(pTargetSprite);
     }
 
+    bool HasCylinderGroundSupport(CPlayerScript* _Player, const Vec2& _Velocity)
+    {
+        if (_Player == nullptr)
+            return false;
+
+        if (_Player->GetIsJump())
+            return false;
+
+        if (_Player->GetIsGround())
+            return true;
+
+        // Tile / block / attachable-surface overlap that was resolved in the
+        // previous collision step should still count as support while the
+        // player is not actively moving upward.
+        if (_Velocity.y > 60.f)
+            return false;
+
+        return _Player->HasAnyGroundOverlap();
+    }
+
 }
 
 CCylinderScript::CCylinderScript()
     : CScript(SCRIPT_TYPE::CYLINDERSCRIPT)
     , fTheta(0.f)
-    , m_fRideSpeed(0.f)
+    , m_fRideSpeed(100.f)
     , bAttachTree(false)
     , m_bPlayerInside(false)
     , m_bBounceStarted(false)
     , m_bFallingInside(false)
     , m_SpiralDir(1)
-    , m_EntryDoorSize(Vec2(kCylinderDoorDefaultWidth, kCylinderDoorDefaultHeight))
-    , m_EntryDoorOffset(Vec2(0.f, 0.f))
     , m_ExitDoorSize(Vec2(kCylinderDoorDefaultWidth, kCylinderDoorDefaultHeight))
     , m_ExitDoorOffset(Vec2(0.f, 0.f))
     , m_pRidingPlayer(nullptr)
+    , m_pIgnoreOverlapPlayer(nullptr)
 {
     RegisterScriptParams();
 }
@@ -249,11 +225,10 @@ CCylinderScript::CCylinderScript(const CCylinderScript& _Origin)
     , m_bBounceStarted(false)
     , m_bFallingInside(false)
     , m_SpiralDir(1)
-    , m_EntryDoorSize(_Origin.m_EntryDoorSize)
-    , m_EntryDoorOffset(_Origin.m_EntryDoorOffset)
     , m_ExitDoorSize(_Origin.m_ExitDoorSize)
     , m_ExitDoorOffset(_Origin.m_ExitDoorOffset)
     , m_pRidingPlayer(nullptr)
+    , m_pIgnoreOverlapPlayer(nullptr)
 {
     RegisterScriptParams();
 }
@@ -264,8 +239,6 @@ CCylinderScript::~CCylinderScript()
 
 void CCylinderScript::RegisterScriptParams()
 {
-    AddScriptParam(SCRIPT_PARAM::VEC2, &m_EntryDoorSize, L"Cylinder Entry Size", false, 1.f);
-    AddScriptParam(SCRIPT_PARAM::VEC2, &m_EntryDoorOffset, L"Cylinder Entry Offset", false, 1.f);
     AddScriptParam(SCRIPT_PARAM::VEC2, &m_ExitDoorSize, L"Cylinder Exit Size", false, 1.f);
     AddScriptParam(SCRIPT_PARAM::VEC2, &m_ExitDoorOffset, L"Cylinder Exit Offset", false, 1.f);
 }
@@ -284,21 +257,15 @@ void CCylinderScript::Begin()
 
 void CCylinderScript::Tick()
 {
+    SetCylinderSpriteVisual(GetOwner(), m_bPlayerInside);
+
+    DrawExitDoorDebug();
+
     Vec2 cylinderCenter = {};
     float halfWidth = 0.f;
     float halfHeight = 0.f;
     if (!GetCylinderWorldRect(cylinderCenter, halfWidth, halfHeight))
         return;
-
-    const float debugZ = (GetOwner() != nullptr && GetOwner()->Transform() != nullptr)
-        ? (GetOwner()->Transform()->GetWorldPos().z + kCylinderDebugDoorZBias)
-        : kCylinderDebugDoorZBias;
-    DrawCylinderDoorDebug(cylinderCenter, halfWidth, halfHeight,
-                          m_EntryDoorSize,
-                          m_EntryDoorOffset,
-                          m_ExitDoorSize,
-                          m_ExitDoorOffset,
-                          debugZ);
 
     if (!m_bPlayerInside || m_pRidingPlayer == nullptr)
         return;
@@ -319,6 +286,23 @@ void CCylinderScript::Tick()
     UpdateRide(pPlayer.Get(), cylinderCenter, halfWidth, halfHeight);
 }
 
+void CCylinderScript::DrawExitDoorDebug()
+{
+    Vec2 cylinderCenter = {};
+    float halfWidth = 0.f;
+    float halfHeight = 0.f;
+    if (!GetCylinderWorldRect(cylinderCenter, halfWidth, halfHeight))
+        return;
+
+    const float debugZ = (GetOwner() != nullptr && GetOwner()->Transform() != nullptr)
+        ? (GetOwner()->Transform()->GetWorldPos().z + kCylinderDebugDoorZBias)
+        : kCylinderDebugDoorZBias;
+    DrawCylinderDoorDebug(cylinderCenter, halfWidth, halfHeight,
+                          m_ExitDoorSize,
+                          m_ExitDoorOffset,
+                          debugZ);
+}
+
 void CCylinderScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
     Overlap(_OwnCollider, _OtherCollider);
@@ -333,6 +317,9 @@ void CCylinderScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColl
     if (pPlayer == nullptr)
         return;
 
+    if (!m_bPlayerInside && m_pIgnoreOverlapPlayer == _OtherCollider->GetOwner())
+        return;
+
     Vec2 cylinderCenter = {};
     float halfWidth = 0.f;
     float halfHeight = 0.f;
@@ -344,22 +331,14 @@ void CCylinderScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColl
     {
         return;
     }
-
+    
     if (!m_bPlayerInside)
     {
-        const Rect2D playerRect = MakeRect(playerCenter, playerHalfWidth, playerHalfHeight);
-
-        if (TryBeginRide(pPlayer.Get(), playerCenter, playerHalfWidth, playerHalfHeight,
-                         cylinderCenter, halfWidth, halfHeight))
+        if (TryBeginRide(pPlayer.Get(), playerCenter, cylinderCenter, halfWidth, halfHeight))
         {
             UpdateRide(pPlayer.Get(), cylinderCenter, halfWidth, halfHeight);
             return;
         }
-
-        if (IsNearCylinderEntryDoor(playerRect, cylinderCenter, halfWidth, halfHeight, m_EntryDoorSize, m_EntryDoorOffset))
-            return;
-
-        PossibleAttatchTreeWall(_OtherCollider);
         return;
     }
 
@@ -375,7 +354,18 @@ void CCylinderScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColl
 void CCylinderScript::EndOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
     UNREFERENCED_PARAMETER(_OwnCollider);
-    UNREFERENCED_PARAMETER(_OtherCollider);
+
+    if (_OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
+        return;
+
+    if (m_pIgnoreOverlapPlayer == _OtherCollider->GetOwner())
+        m_pIgnoreOverlapPlayer = nullptr;
+
+    if (!m_bPlayerInside)
+        return;
+
+    if (m_pRidingPlayer == _OtherCollider->GetOwner())
+        ResetRideState(true);
 }
 
 bool CCylinderScript::GetCylinderWorldRect(Vec2& _OutCenter, float& _OutHalfWidth, float& _OutHalfHeight)
@@ -418,57 +408,39 @@ bool CCylinderScript::GetOtherColliderWorldRect(CCollider2D* _OtherCollider, Vec
 }
 
 bool CCylinderScript::TryBeginRide(CPlayerScript* _Player, const Vec2& _PlayerCenter,
-                                   float _PlayerHalfWidth, float _PlayerHalfHeight,
                                    const Vec2& _CylinderCenter, float _HalfWidth, float _HalfHeight)
 {
     if (_Player == nullptr || _Player->GetOwner() == nullptr)
         return false;
 
-    const Vec2 velocity = _Player->GetVelocity();
-    if (velocity.y < -kCylinderEntryMaxDownSpeed)
+    const float innerHalfWidth = Maxf(kCylinderMinHalfExtent, _HalfWidth - kCylinderWallInset);
+    const Vec2 localCenter = _PlayerCenter - _CylinderCenter;
+    const bool isInsideCylinderBody =
+        fabsf(localCenter.x) <= innerHalfWidth &&
+        fabsf(localCenter.y) <= _HalfHeight;
+
+    if (!isInsideCylinderBody)
         return false;
 
-    const Rect2D playerRect = MakeRect(_PlayerCenter, _PlayerHalfWidth, _PlayerHalfHeight);
-    const Rect2D leftEntryDoor = InflateRect(
-        MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight, m_EntryDoorSize, m_EntryDoorOffset, -1, true),
-        kCylinderEntryDoorApproachPaddingX,
-        kCylinderEntryDoorApproachPaddingY);
-    const Rect2D rightEntryDoor = InflateRect(
-        MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight, m_EntryDoorSize, m_EntryDoorOffset, 1, true),
-        kCylinderEntryDoorApproachPaddingX,
-        kCylinderEntryDoorApproachPaddingY);
-    const bool isAtBottomLeftDoor = Overlaps(playerRect, leftEntryDoor);
-    const bool isAtBottomRightDoor = Overlaps(playerRect, rightEntryDoor);
-
-    if (!isAtBottomLeftDoor && !isAtBottomRightDoor)
-        return false;
+    Vec2 currentVel = _Player->GetVelocity();
 
     m_bPlayerInside = true;
     bAttachTree = true;
     m_bBounceStarted = false;
     m_bFallingInside = false;
     m_pRidingPlayer = _Player->GetOwner();
-    m_SpiralDir = isAtBottomLeftDoor ? 1 : -1;
+    m_SpiralDir = 1;
     fTheta = 0.f;
-    m_fRideSpeed = Minf(kCylinderBounceSpeedCap, fabsf(velocity.x));
     SetCylinderSpriteVisual(GetOwner(), true);
+    _Player->SetCylinderState(CPlayerScript::CylinderState::None);
 
-    _Player->SetIsGround(false);
-    _Player->SetIsJump(false);
+    _Player->SetVelocity(currentVel);
 
-    Vec2 playerColliderOffset = Vec2(0.f, 0.f);
-    if (_Player->GetOwner()->Collider2D() != nullptr)
-        playerColliderOffset = _Player->GetOwner()->Collider2D()->GetOffset();
-
-    Vec3 playerPos = _Player->GetOwner()->Transform()->GetRelativePos();
-    const float insideBottomCenterY = _CylinderCenter.y - _HalfHeight + _PlayerHalfHeight + 4.f;
-    playerPos.y = Maxf(playerPos.y, insideBottomCenterY - playerColliderOffset.y);
-    _Player->GetOwner()->Transform()->SetRelativePos(playerPos);
     return true;
 }
 
 void CCylinderScript::UpdateRide(CPlayerScript* _Player, const Vec2& _CylinderCenter,
-                                 float _HalfWidth, float _HalfHeight)
+    float _HalfWidth, float _HalfHeight)
 {
     if (_Player == nullptr || _Player->GetOwner() == nullptr)
         return;
@@ -478,29 +450,45 @@ void CCylinderScript::UpdateRide(CPlayerScript* _Player, const Vec2& _CylinderCe
     const bool leftHeld = KEY_PRESSED(KEY::LEFT);
     const bool rightHeld = KEY_PRESSED(KEY::RIGHT);
     const bool anyHorizontalHeld = leftHeld || rightHeld;
-    Vec2 playerCenter = Vec2(playerPos3.x, playerPos3.y);
     float playerHalfWidth = 18.f;
     float playerHalfHeight = 24.f;
     Vec2 playerVelocity = _Player->GetVelocity();
+    Vec2 playerColliderOffset = Vec2(0.f, 0.f);
 
     if (_Player->GetOwner()->Collider2D() != nullptr)
-        GetOtherColliderWorldRect(_Player->GetOwner()->Collider2D().Get(), playerCenter, playerHalfWidth, playerHalfHeight);
+    {
+        playerColliderOffset = _Player->GetOwner()->Collider2D()->GetOffset();
+        Vec2 unusedCenter = Vec2(0.f, 0.f);
+        GetOtherColliderWorldRect(_Player->GetOwner()->Collider2D().Get(), unusedCenter, playerHalfWidth, playerHalfHeight);
+    }
 
     const float innerHalfWidth = max(kCylinderMinHalfExtent, _HalfWidth - kCylinderWallInset);
-    const float openFloorLocalY = -_HalfHeight + playerHalfHeight + 4.f;
-    const bool isAboveOpenFloor = localPos.y > openFloorLocalY + 1.f;
+    const float rawLeftWallLocalX = -innerHalfWidth - playerColliderOffset.x + playerHalfWidth + kCylinderInsideWallSafetyInset;
+    const float leftWallLocalX = Maxf(-innerHalfWidth, Minf(innerHalfWidth, rawLeftWallLocalX));
+    const float rawRightWallLocalX = innerHalfWidth - playerColliderOffset.x - playerHalfWidth - kCylinderInsideWallSafetyInset;
+    const float rightWallLocalX = Maxf(-innerHalfWidth, Minf(innerHalfWidth, rawRightWallLocalX));
+    const bool justJumped = KEY_TAP(KEY::SPACE) || _Player->GetIsJump();
+    const bool cancelBounce = m_bBounceStarted && (KEY_TAP(KEY::SPACE) || !anyHorizontalHeld);
+    const bool hasGroundSupport = HasCylinderGroundSupport(_Player, playerVelocity);
 
-    if ((KEY_TAP(KEY::SPACE) || !anyHorizontalHeld) && (m_bBounceStarted || m_bFallingInside || isAboveOpenFloor))
+    if (cancelBounce)
     {
         m_bBounceStarted = false;
         m_bFallingInside = true;
+        _Player->SetCylinderState(CPlayerScript::CylinderState::None);
         if (playerVelocity.y > 0.f)
             playerVelocity.y = 0.f;
     }
 
+    if (!m_bBounceStarted)
+        m_bFallingInside = justJumped || !hasGroundSupport;
+
+    // ✅ 수정된 속도 기록 로직
     const float currentHorizontalSpeed = fabsf(playerVelocity.x);
-    if (currentHorizontalSpeed > 0.5f)
+    // 벽에 부딪혀 속도가 잠깐 0이 되더라도 달려오던 속도를 기억하도록 조건 완화
+    if (currentHorizontalSpeed > 10.f)
         m_fRideSpeed = Minf(kCylinderBounceSpeedCap, currentHorizontalSpeed);
+    // m_fRideSpeed를 0으로 초기화하는 else if 문은 완전히 삭제합니다!
 
     int inputDir = 0;
     if (rightHeld && !leftHeld)
@@ -508,76 +496,79 @@ void CCylinderScript::UpdateRide(CPlayerScript* _Player, const Vec2& _CylinderCe
     else if (leftHeld && !rightHeld)
         inputDir = -1;
 
-    if (m_bFallingInside)
+    if (!m_bBounceStarted)
     {
-        localPos.x += playerVelocity.x * DT;
-        localPos.y += playerVelocity.y * DT;
-        playerVelocity.y = Maxf(-kCylinderInternalFallMaxSpeed, playerVelocity.y - kCylinderInternalFallAccel * DT);
+        const float predictedLocalX = localPos.x + playerVelocity.x * DT;
+        const float playerWorldX = _CylinderCenter.x + localPos.x;
+        const float playerLeftEdgeX = playerWorldX + playerColliderOffset.x - playerHalfWidth;
+        const float leftInnerWallX = _CylinderCenter.x - innerHalfWidth;
 
-        if (localPos.x >= innerHalfWidth)
-            localPos.x = innerHalfWidth;
-        else if (localPos.x <= -innerHalfWidth)
-            localPos.x = -innerHalfWidth;
-
-        if (localPos.y <= openFloorLocalY)
+        if (inputDir < 0 && playerLeftEdgeX <= leftInnerWallX)
         {
-            localPos.y = openFloorLocalY;
-            playerVelocity.y = 0.f;
-            m_bFallingInside = false;
-        }
-    }
-    else if (!m_bBounceStarted)
-    {
-        localPos.y = openFloorLocalY;
-        localPos.x += playerVelocity.x * DT;
-
-        if (inputDir > 0)
-            _Player->SetFacing(1);
-        else if (inputDir < 0)
-            _Player->SetFacing(-1);
-
-        if (localPos.x <= -innerHalfWidth)
-        {
-            localPos.x = -innerHalfWidth;
+            ReleasePlayer(_Player, playerVelocity);
+            return;
         }
 
-        if (localPos.x >= innerHalfWidth)
+        if (predictedLocalX >= rightWallLocalX)
         {
-            localPos.x = innerHalfWidth;
+            localPos.x = rightWallLocalX;
+            const float wallRideReferenceSpeed = Minf(kCylinderBounceSpeedCap, _Player->GetMaxMoveSpeed());
+            const float baseWallRideStartSpeed = Maxf(kCylinderFirstBounceMinSpeed,
+                wallRideReferenceSpeed * kCylinderWallRideStartSpeedRatio);
+            const float wallRideStartSpeed = Minf(baseWallRideStartSpeed, kCylinderRightWallBounceReliableSpeed);
 
-            const float wallRideStartSpeed = Maxf(kCylinderFirstBounceMinSpeed,
-                                                  _Player->GetMaxMoveSpeed() * kCylinderWallRideStartSpeedRatio);
             if (inputDir > 0 && m_fRideSpeed >= wallRideStartSpeed)
             {
+                const float bounceSpeed = Minf(kCylinderBounceSpeed,
+                    Maxf(kCylinderClimbSpeed, m_fRideSpeed));
+
                 m_bBounceStarted = true;
+                m_bFallingInside = false;
                 m_SpiralDir = -1;
+                m_fRideSpeed = bounceSpeed;
+                _Player->SetIsGround(false);
+                _Player->SetIsJump(false);
+                _Player->SetCylinderState(CPlayerScript::CylinderState::Bounce);
+                _Player->SetVelocity(Vec2(0.f, 0.f));
+                _Player->StopBlockedAction();
+            }
+            else
+            {
+                if (playerVelocity.x > 0.f)
+                    playerVelocity.x = 0.f;
+                m_fRideSpeed = 0.f;
+                _Player->StopBlockedAction();
             }
         }
     }
     else
     {
         localPos.x += (float)m_SpiralDir * kCylinderBounceSpeed * DT;
+        localPos.y += kCylinderClimbSpeed * DT;
 
-        if (localPos.x >= innerHalfWidth)
+        if (localPos.x >= rightWallLocalX)
         {
-            localPos.x = innerHalfWidth;
+            localPos.x = rightWallLocalX;
             m_SpiralDir = -1;
         }
-        else if (localPos.x <= -innerHalfWidth)
+        else if (localPos.x <= leftWallLocalX)
         {
-            localPos.x = -innerHalfWidth;
+            localPos.x = leftWallLocalX;
             m_SpiralDir = 1;
         }
-
-        localPos.y += kCylinderClimbSpeed * DT;
+        // 지그재그 중에는 중력이 개입 못하게 플레이어 속도를 0으로 유지
+        _Player->SetVelocity(Vec2(0.f, 0.f));
+        _Player->SetIsGround(false);
+        _Player->SetCylinderState(CPlayerScript::CylinderState::Bounce);
     }
 
     const Vec2 nextPlayerCenter = Vec2(_CylinderCenter.x + localPos.x, _CylinderCenter.y + localPos.y);
     const Rect2D playerRect = MakeRect(nextPlayerCenter, playerHalfWidth, playerHalfHeight);
     const Rect2D leftExitDoor = MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight,
-                                                     m_ExitDoorSize, m_ExitDoorOffset, -1, false);
+        m_ExitDoorSize, m_ExitDoorOffset, -1, false);
     const Rect2D rightExitDoor = MakeCylinderDoorRect(_CylinderCenter, _HalfWidth, _HalfHeight,
-                                                      m_ExitDoorSize, m_ExitDoorOffset, 1, false);
+        m_ExitDoorSize, m_ExitDoorOffset, 1, false);
+
     const bool canUseLeftExitDoor = Overlaps(playerRect, leftExitDoor);
     const bool canUseRightExitDoor = Overlaps(playerRect, rightExitDoor);
     const float exitThresholdY = -_HalfHeight + (_HalfHeight * 2.f) * Clamp01(kCylinderExitHeightRatio);
@@ -597,21 +588,18 @@ void CCylinderScript::UpdateRide(CPlayerScript* _Player, const Vec2& _CylinderCe
     playerPos3.x = _CylinderCenter.x + localPos.x;
     playerPos3.y = _CylinderCenter.y + localPos.y;
     _Player->GetOwner()->Transform()->SetRelativePos(playerPos3);
-    _Player->SetIsGround(false);
-    _Player->SetIsJump(false);
 
-    if (m_bFallingInside)
+    if (m_bBounceStarted)
     {
-        _Player->SetVelocity(playerVelocity);
-    }
-    else if (!m_bBounceStarted)
-    {
-        playerVelocity.y = 0.f;
-        _Player->SetVelocity(playerVelocity);
+        _Player->SetVelocity(Vec2(0.f, 0.f));
+        _Player->SetIsGround(false);
+        _Player->SetIsJump(false);
+        _Player->SetCylinderState(CPlayerScript::CylinderState::Bounce);
     }
     else
     {
-        _Player->SetVelocity(Vec2(0.f, 0.f));
+        _Player->SetCylinderState(CPlayerScript::CylinderState::None);
+        _Player->SetVelocity(playerVelocity);
     }
 
     fTheta += DT;
@@ -621,8 +609,8 @@ void CCylinderScript::ReleasePlayer(CPlayerScript* _Player, const Vec2& _Velocit
 {
     if (_Player != nullptr)
     {
-        _Player->SetIsGround(false);
-        _Player->SetIsJump(false);
+        m_pIgnoreOverlapPlayer = _Player->GetOwner();
+        _Player->SetCylinderState(CPlayerScript::CylinderState::None);
         _Player->SetVelocity(_Velocity);
     }
 
@@ -631,6 +619,13 @@ void CCylinderScript::ReleasePlayer(CPlayerScript* _Player, const Vec2& _Velocit
 
 void CCylinderScript::ResetRideState(bool _RestoreOutsideSprite)
 {
+    if (m_pRidingPlayer != nullptr)
+    {
+        Ptr<CPlayerScript> pPlayer = m_pRidingPlayer->GetScript<CPlayerScript>();
+        if (pPlayer != nullptr)
+            pPlayer->SetCylinderState(CPlayerScript::CylinderState::None);
+    }
+
     m_bPlayerInside = false;
     m_bBounceStarted = false;
     m_bFallingInside = false;
@@ -646,9 +641,7 @@ void CCylinderScript::SaveToLevelFile(FILE* _File)
 {
     fwrite(&kCylinderScriptDataMagic, sizeof(unsigned int), 1, _File);
     fwrite(&kCylinderScriptDataVersion, sizeof(unsigned int), 1, _File);
-    fwrite(&m_EntryDoorSize, sizeof(Vec2), 1, _File);
     fwrite(&m_ExitDoorSize, sizeof(Vec2), 1, _File);
-    fwrite(&m_EntryDoorOffset, sizeof(Vec2), 1, _File);
     fwrite(&m_ExitDoorOffset, sizeof(Vec2), 1, _File);
 }
 
@@ -673,86 +666,26 @@ void CCylinderScript::LoadFromLevelFile(FILE* _File)
     unsigned int version = 0u;
     fread(&version, sizeof(unsigned int), 1, _File);
 
+    if (version >= 3u)
+    {
+        fread(&m_ExitDoorSize, sizeof(Vec2), 1, _File);
+        fread(&m_ExitDoorOffset, sizeof(Vec2), 1, _File);
+        return;
+    }
+
     if (version >= 1u)
     {
-        fread(&m_EntryDoorSize, sizeof(Vec2), 1, _File);
+        Vec2 legacyEntryDoorSize = Vec2(0.f, 0.f);
+        fread(&legacyEntryDoorSize, sizeof(Vec2), 1, _File);
         fread(&m_ExitDoorSize, sizeof(Vec2), 1, _File);
     }
 
     if (version >= 2u)
     {
-        fread(&m_EntryDoorOffset, sizeof(Vec2), 1, _File);
+        Vec2 legacyEntryDoorOffset = Vec2(0.f, 0.f);
+        fread(&legacyEntryDoorOffset, sizeof(Vec2), 1, _File);
         fread(&m_ExitDoorOffset, sizeof(Vec2), 1, _File);
     }
-}
-
-void CCylinderScript::PossibleAttatchTreeWall(CCollider2D* _OtherCollider)
-{
-    if (Collider2D() == nullptr || _OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
-        return;
-
-    Ptr<CPlayerScript> pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
-    if (pPlayer == nullptr)
-        return;
-
-    Vec2 cylinderCenter = {};
-    float cylinderHalfWidth = 0.f;
-    float cylinderHalfHeight = 0.f;
-    Vec2 playerCenter = {};
-    float playerHalfWidth = 0.f;
-    float playerHalfHeight = 0.f;
-    if (!GetCylinderWorldRect(cylinderCenter, cylinderHalfWidth, cylinderHalfHeight) ||
-        !GetOtherColliderWorldRect(_OtherCollider, playerCenter, playerHalfWidth, playerHalfHeight))
-    {
-        return;
-    }
-
-    const float dx = playerCenter.x - cylinderCenter.x;
-    const float dy = playerCenter.y - cylinderCenter.y;
-    const float overlapX = (cylinderHalfWidth + playerHalfWidth) - fabsf(dx);
-    const float overlapY = (cylinderHalfHeight + playerHalfHeight) - fabsf(dy);
-    if (overlapX <= 0.f || overlapY <= 0.f)
-        return;
-
-    const Rect2D playerRect = MakeRect(playerCenter, playerHalfWidth, playerHalfHeight);
-    if (IsNearCylinderEntryDoor(playerRect, cylinderCenter, cylinderHalfWidth, cylinderHalfHeight,
-                                m_EntryDoorSize, m_EntryDoorOffset))
-    {
-        return;
-    }
-
-    Vec3 playerPos = pPlayer->Transform()->GetRelativePos();
-    Vec2 playerVelocity = pPlayer->GetVelocity();
-
-    if (overlapX < overlapY)
-    {
-        if (dx >= 0.f)
-            playerPos.x += overlapX + kCylinderResolveEpsilon;
-        else
-            playerPos.x -= overlapX + kCylinderResolveEpsilon;
-
-        playerVelocity.x = 0.f;
-        pPlayer->StopBlockedAction();
-    }
-    else
-    {
-        if (dy >= 0.f)
-        {
-            playerPos.y += overlapY + kCylinderResolveEpsilon;
-            pPlayer->ForceFlatGroundContact(0.12f);
-            if (playerVelocity.y < 0.f)
-                playerVelocity.y = 0.f;
-        }
-        else
-        {
-            playerPos.y -= overlapY + kCylinderResolveEpsilon;
-            if (playerVelocity.y > 0.f)
-                playerVelocity.y = 0.f;
-        }
-    }
-
-    pPlayer->Transform()->SetRelativePos(playerPos);
-    pPlayer->SetVelocity(playerVelocity);
 }
 
 Vec2 CCylinderScript::FallingTree()

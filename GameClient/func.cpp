@@ -3,8 +3,98 @@
 #include "RenderMgr.h"
 #include "TaskMgr.h"
 #include "LevelMgr.h"
+#include "AssetMgr.h"
+#include "ASound.h"
 #include "Source/Scripts/COpeningScript.h"
 #include "Source/Scripts/CSurfaceCircleGuideScript.h"
+
+namespace
+{
+    struct ManagedBGMTrack
+    {
+        const wchar_t* RelativePath;
+        float Volume;
+        bool Loop;
+    };
+
+    constexpr ManagedBGMTrack kOpeningTracks[] =
+    {
+        { L"Sound\\OPEN_LEVEL0.mp3", 0.75f, false },
+        { L"Sound\\OPEN_LEVEL1.mp3", 0.75f, false },
+    };
+
+    constexpr ManagedBGMTrack kStageTracks[] =
+    {
+        { L"Sound\\Stage1 music1.mp3", 0.75f, false },
+        { L"Sound\\Stage1 music2 .mp3", 0.75f, false },
+    };
+
+    constexpr ManagedBGMTrack kBossTracks[] =
+    {
+        { L"Sound\\BossZonebgm.mp3", 0.8f, true },
+    };
+
+    constexpr ManagedBGMTrack kEndingTracks[] =
+    {
+        { L"Sound\\STAGE_END_UI.mp3", 0.8f, true },
+    };
+
+    GAME_BGM_PLAYLIST g_CurrentBGMPlaylist = GAME_BGM_PLAYLIST::NONE;
+    int g_CurrentBGMTrackIndex = 0;
+    Ptr<ASound> g_CurrentBGMSound = nullptr;
+
+    Ptr<ASound> FindOrLoadSoundAsset(const wchar_t* _RelativePath)
+    {
+        if (_RelativePath == nullptr || _RelativePath[0] == L'\0')
+            return nullptr;
+
+        return LOAD(ASound, _RelativePath);
+    }
+
+    const ManagedBGMTrack* GetManagedBGMTracks(GAME_BGM_PLAYLIST _Playlist, int& _OutTrackCount)
+    {
+        _OutTrackCount = 0;
+
+        switch (_Playlist)
+        {
+        case GAME_BGM_PLAYLIST::OPENING:
+            _OutTrackCount = _countof(kOpeningTracks);
+            return kOpeningTracks;
+        case GAME_BGM_PLAYLIST::STAGE:
+            _OutTrackCount = _countof(kStageTracks);
+            return kStageTracks;
+        case GAME_BGM_PLAYLIST::BOSS:
+            _OutTrackCount = _countof(kBossTracks);
+            return kBossTracks;
+        case GAME_BGM_PLAYLIST::ENDING:
+            _OutTrackCount = _countof(kEndingTracks);
+            return kEndingTracks;
+        default:
+            return nullptr;
+        }
+    }
+
+    void PlayManagedBGMTrack(GAME_BGM_PLAYLIST _Playlist, int _TrackIndex)
+    {
+        int trackCount = 0;
+        const ManagedBGMTrack* pTracks = GetManagedBGMTracks(_Playlist, trackCount);
+        if (pTracks == nullptr || trackCount <= 0)
+            return;
+
+        const int clampedTrackIndex = (_TrackIndex >= 0) ? (_TrackIndex % trackCount) : 0;
+        const ManagedBGMTrack& track = pTracks[clampedTrackIndex];
+        Ptr<ASound> pSound = FindOrLoadSoundAsset(track.RelativePath);
+        if (pSound == nullptr)
+            return;
+
+        if (g_CurrentBGMSound != nullptr)
+            g_CurrentBGMSound->Stop();
+
+        g_CurrentBGMSound = pSound;
+        g_CurrentBGMTrackIndex = clampedTrackIndex;
+        g_CurrentBGMSound->Play(track.Loop ? 0 : 1, track.Volume, false);
+    }
+}
 
 void CreateObject(GameObject* _Object, int LayerIdx)
 {
@@ -39,6 +129,92 @@ void ChangeLevelState(LEVEL_STATE _NextState)
 	info.Param_0 = (DWORD_PTR)_NextState;
 
 	TaskMgr::GetInst()->AddTask(info);
+}
+
+void PreloadGameplaySounds()
+{
+    static const wchar_t* kSoundPaths[] =
+    {
+        L"Sound\\AddLife.mp3",
+        L"Sound\\BossZonebgm.mp3",
+        L"Sound\\ElectricShieldAttack.wav",
+        L"Sound\\FireShieldAttack.wav",
+        L"Sound\\OPEN_LEVEL0.mp3",
+        L"Sound\\OPEN_LEVEL1.mp3",
+        L"Sound\\Player_Dead.mp3",
+        L"Sound\\Stage1 music1.mp3",
+        L"Sound\\Stage1 music2 .mp3",
+        L"Sound\\STAGE_END_UI.mp3",
+        L"Sound\\WaterShieldAttack.wav",
+        L"Sound\\맞아서 코인 뱉을떄.wav",
+        L"Sound\\보스나 아이템 을 때려서 맞을 때.wav",
+        L"Sound\\스킬 대쉬 점점 소리가 빨라짐.wav",
+        L"Sound\\스프링 닿았을때.wav",
+        L"Sound\\코인 먹을때.wav",
+    };
+
+    for (const wchar_t* pSoundPath : kSoundPaths)
+    {
+        if (pSoundPath == nullptr || pSoundPath[0] == L'\0')
+            continue;
+
+        FindOrLoadSoundAsset(pSoundPath);
+    }
+}
+
+void SetGameBGMPlaylist(GAME_BGM_PLAYLIST _Playlist)
+{
+    if (g_CurrentBGMPlaylist == _Playlist)
+        return;
+
+    StopGameBGM();
+    g_CurrentBGMPlaylist = _Playlist;
+    g_CurrentBGMTrackIndex = 0;
+
+    if (g_CurrentBGMPlaylist != GAME_BGM_PLAYLIST::NONE)
+        PlayManagedBGMTrack(g_CurrentBGMPlaylist, g_CurrentBGMTrackIndex);
+}
+
+void UpdateGameBGM()
+{
+    if (g_CurrentBGMPlaylist == GAME_BGM_PLAYLIST::NONE)
+        return;
+
+    if (g_CurrentBGMSound != nullptr && g_CurrentBGMSound->IsPlaying())
+        return;
+
+    int trackCount = 0;
+    const ManagedBGMTrack* pTracks = GetManagedBGMTracks(g_CurrentBGMPlaylist, trackCount);
+    if (pTracks == nullptr || trackCount <= 0)
+        return;
+
+    if (pTracks[g_CurrentBGMTrackIndex].Loop)
+    {
+        PlayManagedBGMTrack(g_CurrentBGMPlaylist, g_CurrentBGMTrackIndex);
+        return;
+    }
+
+    g_CurrentBGMTrackIndex = (g_CurrentBGMTrackIndex + 1) % trackCount;
+    PlayManagedBGMTrack(g_CurrentBGMPlaylist, g_CurrentBGMTrackIndex);
+}
+
+void StopGameBGM()
+{
+    if (g_CurrentBGMSound != nullptr)
+        g_CurrentBGMSound->Stop();
+
+    g_CurrentBGMSound = nullptr;
+    g_CurrentBGMTrackIndex = 0;
+    g_CurrentBGMPlaylist = GAME_BGM_PLAYLIST::NONE;
+}
+
+void PlayGameSFX(const wchar_t* _RelativePath, float _Volume, bool _Overlap)
+{
+    Ptr<ASound> pSound = FindOrLoadSoundAsset(_RelativePath);
+    if (pSound == nullptr)
+        return;
+
+    pSound->Play(1, _Volume, _Overlap);
 }
 
 void DrawDebugRect(Vec3 _Pos, Vec3 _Scale, Vec3 _Rot, Vec4 _Color, float _Duration, bool _DepthTest)
@@ -104,13 +280,50 @@ void SaveWString(FILE* _File, const wstring& _String)
 
 wstring LoadWString(FILE* _File)
 {
+    constexpr int kMaxSerializedWStringLen = 16 * 1024;
+
+    if (nullptr == _File)
+        return L"";
+
     int Len = 0;
-    fread(&Len, sizeof(int), 1, _File);
+    if (1 != fread(&Len, sizeof(int), 1, _File))
+        return L"";
 
-    wchar_t buff[255] = {};
-    fread(buff, sizeof(wchar_t), Len, _File);
+    if (Len <= 0)
+        return L"";
 
-    return buff;
+    if (Len > kMaxSerializedWStringLen)
+        return L"";
+
+    const __int64 stringStartPos = _ftelli64(_File);
+    if (0 <= stringStartPos)
+    {
+        if (0 == _fseeki64(_File, 0, SEEK_END))
+        {
+            const __int64 fileEndPos = _ftelli64(_File);
+            const __int64 remainingBytes = fileEndPos - stringStartPos;
+            const __int64 requiredBytes = static_cast<__int64>(Len) * sizeof(wchar_t);
+
+            _fseeki64(_File, stringStartPos, SEEK_SET);
+
+            if (remainingBytes < requiredBytes)
+            {
+                _fseeki64(_File, 0, SEEK_END);
+                return L"";
+            }
+        }
+    }
+
+    wstring result;
+    result.resize(Len);
+
+    const size_t readCount = fread(result.data(), sizeof(wchar_t), Len, _File);
+    if (readCount != static_cast<size_t>(Len))
+    {
+        result.resize(readCount);
+    }
+
+    return result;
 }
 
 void SaveAssetRef(FILE* _File, Asset* _Asset)

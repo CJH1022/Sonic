@@ -22,6 +22,7 @@ namespace
     constexpr float kEndpointTransitionMargin = 0.12f;
     constexpr float kTransitionSnapThresholdAir = 2.0f;
     constexpr float kTransitionSnapThresholdGround = 8.f;
+    constexpr float kLineTransitionSnapThresholdGround = 16.f;
     constexpr float kCircleTransitionSnapThresholdAir = 0.6f;
     constexpr float kCircleTransitionSnapThresholdGround = 3.f;
     // 0.02f: more aggressive depth clamping (less sink-in),
@@ -41,11 +42,22 @@ namespace
     constexpr float kArcSupportLocalMargin = 0.38f;
     constexpr float kLineSupportProjectionMarginMin = 4.f;
     constexpr float kLineSupportProjectionMarginMax = 10.f;
+    constexpr float kFlatLineEndpointDetachTangentYMax = 0.08f;
+    constexpr float kFlatLineProjectionMargin = 0.75f;
+    constexpr float kFlatLineSupportProjectionMarginMin = 1.0f;
+    constexpr float kFlatLineSupportProjectionMarginMax = 2.0f;
     constexpr float kSurfaceAirAttachMaxPenetration = 24.f;
     constexpr float kTopHalfInwardCircleLineContextAttachMaxDistance = 16.f;
     constexpr float kSurfaceSpatialCellSize = 256.f;
-    constexpr float kVerticalEntryApproachMinSpeed = 35.f;
-    constexpr float kVerticalEntryApproachDominance = 1.1f;
+    constexpr float kVerticalEntryApproachMinSpeed = 16.f;
+    constexpr float kVerticalEntryApproachDominance = 0.85f;
+    constexpr float kVerticalEntryLineTransferDominance = 0.65f;
+    constexpr float kVerticalEntryTangentAlignMin = 0.72f;
+    constexpr float kVerticalEntryNormalAlignMin = 0.68f;
+    constexpr float kVerticalEntryTangentTransferSpeedMin = 14.f;
+    constexpr float kVerticalEntryAlignedSnapThresholdAir = 20.f;
+    constexpr float kVerticalEntryAlignedSnapThresholdGround = 24.f;
+    constexpr float kVerticalStickyCrossingSuppressMaxTangentDot = 0.75f;
 
     std::unordered_map<long long, std::vector<CSurfaceScript*>> g_SurfaceSpatialBuckets;
     std::unordered_set<CSurfaceScript*> g_LiveSurfaceScripts;
@@ -152,6 +164,204 @@ namespace
         }
     }
 
+    bool TryGetLineSurfaceTangent(GameObject* _Surface, Vec2& _OutTangent)
+    {
+        _OutTangent = Vec2(0.f, 1.f);
+        if (_Surface == nullptr)
+            return false;
+
+        auto pSurface = _Surface->GetScript<CSurfaceScript>();
+        if (pSurface == nullptr || pSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::LINE)
+            return false;
+
+        Vec2 lineStart = {};
+        Vec2 lineEnd = {};
+        pSurface->GetWorldEndpoints(lineStart, lineEnd);
+        CanonicalizeLine(lineStart, lineEnd);
+
+        const Vec2 delta = lineEnd - lineStart;
+        const float length = Length(delta);
+        if (length <= 0.0001f)
+            return false;
+
+        _OutTangent = delta / length;
+        return true;
+    }
+
+    bool TryGetLineSurfaceNormal(GameObject* _Surface, Vec2& _OutNormal)
+    {
+        _OutNormal = Vec2(0.f, 1.f);
+        if (_Surface == nullptr)
+            return false;
+
+        auto pSurface = _Surface->GetScript<CSurfaceScript>();
+        if (pSurface == nullptr || pSurface->GetGeometry() != CSurfaceScript::SURFACE_GEOMETRY::LINE)
+            return false;
+
+        Vec2 tangent = {};
+        if (!TryGetLineSurfaceTangent(_Surface, tangent))
+            return false;
+
+        _OutNormal = pSurface->GetFillAbove() ? Vec2(tangent.y, -tangent.x) : Vec2(-tangent.y, tangent.x);
+        return true;
+    }
+
+    Vec2 OrientLineTangentToPlayer(CPlayerScript* _Player, GameObject* _Surface, const Vec2& _FallbackTangent)
+    {
+        Vec2 surfaceTangent = NormalizeSafe(_FallbackTangent, Vec2(1.f, 0.f));
+        if (!TryGetLineSurfaceTangent(_Surface, surfaceTangent))
+            return surfaceTangent;
+
+        Vec2 preferredDirection = NormalizeSafe(_FallbackTangent, surfaceTangent);
+        const auto tryAdoptPreferredDirection = [&](const Vec2& _Direction, float _MinAlignment)
+        {
+            const Vec2 normalizedDirection = NormalizeSafe(_Direction, Vec2(0.f, 0.f));
+            if (Length(normalizedDirection) <= 0.0001f)
+                return;
+
+            if (fabsf(Dot(normalizedDirection, surfaceTangent)) >= _MinAlignment)
+                preferredDirection = normalizedDirection;
+        };
+        if (_Player != nullptr)
+        {
+            Vec2 surfaceNormal = {};
+            if (TryGetLineSurfaceNormal(_Surface, surfaceNormal))
+            {
+                Vec2 referenceNormal = NormalizeSafe(_Player->GetNormal(), surfaceNormal);
+                GameObject* pReferenceLine = _Player->GetReferenceAttachableLineSurface();
+                if (pReferenceLine != nullptr && pReferenceLine != _Surface)
+                {
+                    Vec2 referenceLineNormal = {};
+                    if (TryGetLineSurfaceNormal(pReferenceLine, referenceLineNormal))
+                        referenceNormal = NormalizeSafe(referenceLineNormal, referenceNormal);
+                }
+
+                const float normalTurn = referenceNormal.x * surfaceNormal.y - referenceNormal.y * surfaceNormal.x;
+                if (fabsf(normalTurn) >= 0.05f)
+                {
+                    const Vec2 canonicalTangent = NormalizeSafe(_FallbackTangent, surfaceTangent);
+                    preferredDirection = (normalTurn >= 0.f) ? canonicalTangent : -canonicalTangent;
+                }
+            }
+
+            const Vec2 velocity = _Player->GetVelocity();
+            if (Length(velocity) >= kVerticalEntryApproachMinSpeed)
+                tryAdoptPreferredDirection(velocity, 0.35f);
+
+            GameObject* pReferenceLine = _Player->GetReferenceAttachableLineSurface();
+            if (pReferenceLine != nullptr && pReferenceLine != _Surface)
+            {
+                Vec2 referenceTangent = {};
+                if (TryGetLineSurfaceTangent(pReferenceLine, referenceTangent))
+                    tryAdoptPreferredDirection(referenceTangent, 0.35f);
+            }
+
+            tryAdoptPreferredDirection(_Player->GetGroundTangent(), 0.35f);
+        }
+
+        if (Dot(surfaceTangent, preferredDirection) < 0.f)
+            surfaceTangent *= -1.f;
+
+        return NormalizeSafe(surfaceTangent, NormalizeSafe(_FallbackTangent, Vec2(1.f, 0.f)));
+    }
+
+    bool IsVerticalRoleSurface(GameObject* _Surface)
+    {
+        if (_Surface == nullptr)
+            return false;
+
+        auto pSurface = _Surface->GetScript<CSurfaceScript>();
+        if (pSurface == nullptr)
+            return false;
+
+        return pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY ||
+               pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
+    }
+
+    float ComputeVerticalLineApproachAlignment(CPlayerScript* _Player, GameObject* _Surface)
+    {
+        if (_Player == nullptr || _Surface == nullptr)
+            return 0.f;
+
+        Vec2 surfaceTangent = {};
+        if (!TryGetLineSurfaceTangent(_Surface, surfaceTangent))
+            return 0.f;
+
+        float bestAlignment = 0.f;
+        Vec2 surfaceNormal = {};
+        if (TryGetLineSurfaceNormal(_Surface, surfaceNormal))
+        {
+            const Vec2 playerNormal = NormalizeSafe(_Player->GetNormal(), surfaceNormal);
+            bestAlignment = max(bestAlignment, max(0.f, Dot(playerNormal, surfaceNormal)));
+        }
+
+        const Vec2 velocity = _Player->GetVelocity();
+        const float speed = Length(velocity);
+        if (speed >= kVerticalEntryApproachMinSpeed)
+        {
+            const Vec2 moveDir = NormalizeSafe(velocity, surfaceTangent);
+            bestAlignment = max(bestAlignment, fabsf(Dot(moveDir, surfaceTangent)));
+        }
+
+        const Vec2 groundTangent = NormalizeSafe(_Player->GetGroundTangent(), surfaceTangent);
+        bestAlignment = max(bestAlignment, fabsf(Dot(groundTangent, surfaceTangent)));
+
+        GameObject* pReferenceLine = _Player->GetReferenceAttachableLineSurface();
+        if (pReferenceLine != nullptr && pReferenceLine != _Surface)
+        {
+            Vec2 referenceTangent = {};
+            if (TryGetLineSurfaceTangent(pReferenceLine, referenceTangent))
+            {
+                if (IsVerticalRoleSurface(pReferenceLine))
+                    bestAlignment = max(bestAlignment, fabsf(Dot(NormalizeSafe(referenceTangent, surfaceTangent), surfaceTangent)));
+
+                const float referenceSpeed = fabsf(Dot(velocity, NormalizeSafe(referenceTangent, surfaceTangent)));
+                if (referenceSpeed >= kVerticalEntryTangentTransferSpeedMin)
+                    bestAlignment = max(bestAlignment, fabsf(Dot(NormalizeSafe(referenceTangent, surfaceTangent), surfaceTangent)));
+            }
+        }
+
+        return bestAlignment;
+    }
+
+    bool IsVerticalEntryRoleSurface(GameObject* _Surface)
+    {
+        if (_Surface == nullptr)
+            return false;
+
+        auto pSurface = _Surface->GetScript<CSurfaceScript>();
+        return pSurface != nullptr &&
+            pSurface->GetRole() == CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    }
+
+    bool ShouldSuppressCrossingVerticalSticky(CPlayerScript* _Player, GameObject* _StickySurface)
+    {
+        if (_Player == nullptr || _StickySurface == nullptr)
+            return false;
+
+        GameObject* pReferenceSurface = _Player->GetReferenceAttachableLineSurface();
+        if (pReferenceSurface == nullptr ||
+            pReferenceSurface == _StickySurface ||
+            !IsVerticalEntryRoleSurface(pReferenceSurface))
+        {
+            return false;
+        }
+
+        if (ComputeVerticalLineApproachAlignment(_Player, pReferenceSurface) < kVerticalEntryTangentAlignMin)
+            return false;
+
+        Vec2 referenceTangent = {};
+        Vec2 stickyTangent = {};
+        if (!TryGetLineSurfaceTangent(pReferenceSurface, referenceTangent) ||
+            !TryGetLineSurfaceTangent(_StickySurface, stickyTangent))
+        {
+            return false;
+        }
+
+        const float tangentDot = fabsf(Dot(referenceTangent, stickyTangent));
+        return tangentDot <= kVerticalStickyCrossingSuppressMaxTangentDot;
+    }
+
     bool IsPastCircleExitEdge(CSurfaceScript::ARC_CORNER _Corner, const Vec2& _Point, const Vec2& _BoxMin, const Vec2& _BoxMax, float _Margin)
     {
         switch (_Corner)
@@ -168,7 +378,8 @@ namespace
         }
     }
 
-    bool GetPlayerFootPos(CCollider2D* _OtherCollider, bool _WasGround, Vec2& _OutFootPos)
+    bool GetPlayerFootPos(CCollider2D* _OtherCollider, bool _WasGround, Vec2& _OutFootPos,
+                          bool _ForceBottomSample = false, bool _PreferPlayerNormalSample = false)
     {
         if (_OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
             return false;
@@ -177,7 +388,9 @@ namespace
         auto pPlayer = pOwner->GetScript<CPlayerScript>();
 
         Vec2 sampleNormal = Vec2(0.f, 1.f);
-        if (_WasGround && pPlayer != nullptr)
+        if (!_ForceBottomSample &&
+            pPlayer != nullptr &&
+            (_WasGround || _PreferPlayerNormalSample))
         {
             sampleNormal = NormalizeSafe(pPlayer->GetNormal(), Vec2(0.f, 1.f));
 
@@ -185,8 +398,12 @@ namespace
             // toward the body side instead of the true sole. For line probing we want
             // a stable "bottom" sample again, otherwise the player stays buried until
             // a jump resets the contact state.
-            if (pPlayer->HasCurrentCircleSurfaceContact() && sampleNormal.y < 0.6f)
+            if (!_PreferPlayerNormalSample &&
+                pPlayer->HasCurrentCircleSurfaceContact() &&
+                sampleNormal.y < 0.6f)
+            {
                 sampleNormal = Vec2(0.f, 1.f);
+            }
         }
 
         Vec2 center = {};
@@ -194,10 +411,55 @@ namespace
         return GetColliderSupportData(_OtherCollider, sampleNormal, center, _OutFootPos, supportDistance);
     }
 
+    bool GetColliderSupportPointForNormal(CCollider2D* _OtherCollider, const Vec2& _SampleNormal, Vec2& _OutSupportPoint)
+    {
+        if (_OtherCollider == nullptr || _OtherCollider->GetOwner() == nullptr)
+            return false;
+
+        Vec2 center = {};
+        float supportDistance = 0.f;
+        return GetColliderSupportData(_OtherCollider, NormalizeSafe(_SampleNormal, Vec2(0.f, 1.f)),
+                                      center, _OutSupportPoint, supportDistance);
+    }
+
     bool IsCircleGeometry(CSurfaceScript::SURFACE_GEOMETRY _Geometry)
     {
         return _Geometry == CSurfaceScript::SURFACE_GEOMETRY::CIRCLE ||
                _Geometry == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE;
+    }
+
+    bool IsNearlyVerticalLineApproach(CPlayerScript* _Player, GameObject* _Surface)
+    {
+        if (_Player == nullptr)
+            return false;
+
+        Vec2 surfaceNormal = {};
+        if (TryGetLineSurfaceNormal(_Surface, surfaceNormal))
+        {
+            const Vec2 playerNormal = NormalizeSafe(_Player->GetNormal(), surfaceNormal);
+            if (Dot(playerNormal, surfaceNormal) >= kVerticalEntryNormalAlignMin)
+                return true;
+        }
+
+        if (ComputeVerticalLineApproachAlignment(_Player, _Surface) >= kVerticalEntryTangentAlignMin)
+            return true;
+
+        const Vec2 velocity = _Player->GetVelocity();
+        const float absX = fabsf(velocity.x);
+        const float absY = fabsf(velocity.y);
+        if (absY < kVerticalEntryApproachMinSpeed)
+            return false;
+
+        if (absY >= absX * kVerticalEntryApproachDominance)
+            return true;
+
+        if (_Player->GetReferenceAttachableLineSurface() != nullptr &&
+            absY >= absX * kVerticalEntryLineTransferDominance)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     bool IsVerticalEntryApproachAllowed(CPlayerScript* _Player, GameObject* _Surface)
@@ -208,11 +470,21 @@ namespace
         if (_Player->GetReferenceAttachableLineSurface() == _Surface)
             return true;
 
-        const Vec2 velocity = _Player->GetVelocity();
-        const float absX = fabsf(velocity.x);
-        const float absY = fabsf(velocity.y);
-        return absY >= kVerticalEntryApproachMinSpeed &&
-               absY >= absX * kVerticalEntryApproachDominance;
+        return IsNearlyVerticalLineApproach(_Player, _Surface);
+    }
+
+    bool ShouldIgnoreVerticalStickyApproach(CPlayerScript* _Player, GameObject* _Surface)
+    {
+        if (_Player == nullptr || _Surface == nullptr)
+            return false;
+
+        if (_Player->GetReferenceAttachableLineSurface() == _Surface)
+            return false;
+
+        if (ShouldSuppressCrossingVerticalSticky(_Player, _Surface))
+            return true;
+
+        return IsNearlyVerticalLineApproach(_Player, _Surface);
     }
 
 }
@@ -378,7 +650,9 @@ void CSurfaceScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherColli
                                   probe.SeamBlendHasValue,
                                   probe.SeamStart,
                                   probe.SeamEnd,
-                                  probe.ContactPoint);
+                                  probe.ContactPoint,
+                                  probe.Tangent,
+                                  probe.SlopeAngle);
 }
 
 bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGround, CONTACT_PROBE& _OutProbe)
@@ -403,6 +677,7 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
     Vec2 seamStart = {};
     Vec2 seamEnd = {};
     Vec2 contactPoint = {};
+    bool alignedVerticalRoleNormal = false;
     bool hit = false;
 
     if (m_Role == SURFACE_ROLE::WALL)
@@ -412,25 +687,153 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
         if (pPlayer->IsSurfaceAttachBlocked(GetOwner()))
             return false;
 
-        if (m_Role == SURFACE_ROLE::VERTICAL_ENTRY &&
-            m_Geometry == SURFACE_GEOMETRY::LINE &&
-            !IsVerticalEntryApproachAllowed(pPlayer.Get(), GetOwner()))
+        if (m_Geometry == SURFACE_GEOMETRY::LINE)
         {
-            return false;
+            if (m_Role == SURFACE_ROLE::VERTICAL_ENTRY &&
+                !IsVerticalEntryApproachAllowed(pPlayer.Get(), GetOwner()))
+            {
+                return false;
+            }
+
+            if (m_Role == SURFACE_ROLE::VERTICAL_STICKY_ENTRY &&
+                ShouldIgnoreVerticalStickyApproach(pPlayer.Get(), GetOwner()))
+            {
+                return false;
+            }
+
         }
 
-        Vec2 footPos = {};
-        if (!GetPlayerFootPos(_OtherCollider, _WasGround, footPos))
-            return false;
+        GameObject* pReferenceLineSurface =
+            (pPlayer != nullptr) ? pPlayer->GetReferenceAttachableLineSurface() : nullptr;
+        const auto isAlignedToPlayerNormal = [pPlayer = pPlayer.Get()](const Vec2& _SurfaceNormal) -> bool
+        {
+            if (pPlayer == nullptr)
+                return false;
 
-        if (m_Geometry == SURFACE_GEOMETRY::LINE)
-            hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint, _WasGround);
-        else if (IsCircleGeometry(m_Geometry))
-            hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
-        else if (m_Geometry == SURFACE_GEOMETRY::ARC)
-            hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
+            const Vec2 playerNormal = NormalizeSafe(pPlayer->GetNormal(), _SurfaceNormal);
+            return Dot(playerNormal, _SurfaceNormal) >= kVerticalEntryNormalAlignMin;
+        };
+        alignedVerticalRoleNormal =
+            pPlayer != nullptr &&
+            IsVerticalRoleSurface(GetOwner()) &&
+            [] (CPlayerScript* _Player, GameObject* _Surface) -> bool
+            {
+                Vec2 surfaceNormal = {};
+                if (_Player == nullptr || !TryGetLineSurfaceNormal(_Surface, surfaceNormal))
+                    return false;
+
+                const Vec2 playerNormal = NormalizeSafe(_Player->GetNormal(), surfaceNormal);
+                return Dot(playerNormal, surfaceNormal) >= kVerticalEntryNormalAlignMin;
+            }(pPlayer.Get(), GetOwner());
+        const bool useVerticalRoleSurfaceNormalSample =
+            m_Geometry == SURFACE_GEOMETRY::LINE &&
+            IsVerticalRoleSurface(GetOwner()) &&
+            pPlayer != nullptr &&
+            pReferenceLineSurface != GetOwner() &&
+            ((m_Role == SURFACE_ROLE::VERTICAL_ENTRY &&
+              IsVerticalEntryApproachAllowed(pPlayer.Get(), GetOwner())) ||
+             (m_Role == SURFACE_ROLE::VERTICAL_STICKY_ENTRY &&
+              !ShouldIgnoreVerticalStickyApproach(pPlayer.Get(), GetOwner())));
+        const bool forceBottomSampleForVerticalRoleLine =
+            m_Geometry == SURFACE_GEOMETRY::LINE &&
+            m_Role == SURFACE_ROLE::VERTICAL_STICKY_ENTRY &&
+            !useVerticalRoleSurfaceNormalSample &&
+            pPlayer != nullptr &&
+            pReferenceLineSurface != GetOwner() &&
+            !IsVerticalRoleSurface(pReferenceLineSurface) &&
+            !alignedVerticalRoleNormal;
+
+        if (m_Geometry == SURFACE_GEOMETRY::LINE &&
+            IsVerticalRoleSurface(GetOwner()))
+        {
+            Vec2 baseSurfaceNormal = {};
+            if (!TryGetLineSurfaceNormal(GetOwner(), baseSurfaceNormal))
+                return false;
+
+            bool hasVerticalRoleCandidate = false;
+            float bestVerticalRoleMetric = 999999.f;
+            float bestVerticalRoleAlignment = -1.f;
+            const auto tryVerticalRoleLineCandidate = [&](const Vec2& _CandidateSurfaceNormal)
+            {
+                Vec2 candidateFootPos = {};
+                if (!GetColliderSupportPointForNormal(_OtherCollider, _CandidateSurfaceNormal, candidateFootPos))
+                    return;
+
+                Vec2 candidateNormal = {};
+                float candidateSignedDistance = 0.f;
+                bool candidateTransitionSurface = false;
+                float candidateSeamBlendT = 0.f;
+                bool candidateSeamBlendHasValue = false;
+                Vec2 candidateSeamStart = {};
+                Vec2 candidateSeamEnd = {};
+                Vec2 candidateContactPoint = {};
+                if (!EvaluateLineProbe(_OtherCollider, candidateFootPos,
+                                       candidateNormal, candidateSignedDistance,
+                                       candidateTransitionSurface,
+                                       candidateSeamBlendT, candidateSeamBlendHasValue,
+                                       candidateSeamStart, candidateSeamEnd,
+                                       candidateContactPoint, _WasGround,
+                                       &_CandidateSurfaceNormal))
+                {
+                    return;
+                }
+
+                const float normalAlignment =
+                    isAlignedToPlayerNormal(NormalizeSafe(candidateNormal, _CandidateSurfaceNormal)) ? 1.f : 0.f;
+                const float candidateMetric = fabsf(candidateSignedDistance) - normalAlignment * 0.35f;
+                if (!hasVerticalRoleCandidate ||
+                    candidateMetric < bestVerticalRoleMetric - 0.001f ||
+                    (fabsf(candidateMetric - bestVerticalRoleMetric) <= 0.001f &&
+                     normalAlignment > bestVerticalRoleAlignment))
+                {
+                    hasVerticalRoleCandidate = true;
+                    bestVerticalRoleMetric = candidateMetric;
+                    bestVerticalRoleAlignment = normalAlignment;
+                    normal = candidateNormal;
+                    signedDistance = candidateSignedDistance;
+                    transitionSurface = candidateTransitionSurface;
+                    seamBlendT = candidateSeamBlendT;
+                    seamBlendHasValue = candidateSeamBlendHasValue;
+                    seamStart = candidateSeamStart;
+                    seamEnd = candidateSeamEnd;
+                    contactPoint = candidateContactPoint;
+                    alignedVerticalRoleNormal = (normalAlignment > 0.f);
+                }
+            };
+
+            tryVerticalRoleLineCandidate(baseSurfaceNormal);
+            tryVerticalRoleLineCandidate(baseSurfaceNormal * -1.f);
+            hit = hasVerticalRoleCandidate;
+        }
         else
-            hit = EvaluateWallProbe(_OtherCollider, normal, signedDistance);
+        {
+            Vec2 footPos = {};
+            if (useVerticalRoleSurfaceNormalSample)
+            {
+                Vec2 probeSampleNormal = {};
+                if (!TryGetLineSurfaceNormal(GetOwner(), probeSampleNormal) ||
+                    !GetColliderSupportPointForNormal(_OtherCollider, probeSampleNormal, footPos))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                if (!GetPlayerFootPos(_OtherCollider, _WasGround, footPos,
+                                      forceBottomSampleForVerticalRoleLine,
+                                      alignedVerticalRoleNormal))
+                    return false;
+            }
+
+            if (m_Geometry == SURFACE_GEOMETRY::LINE)
+                hit = EvaluateLineProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, seamBlendT, seamBlendHasValue, seamStart, seamEnd, contactPoint, _WasGround);
+            else if (IsCircleGeometry(m_Geometry))
+                hit = EvaluateCircleProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
+            else if (m_Geometry == SURFACE_GEOMETRY::ARC)
+                hit = EvaluateArcProbe(_OtherCollider, footPos, normal, signedDistance, transitionSurface, contactPoint, _WasGround);
+            else
+                hit = EvaluateWallProbe(_OtherCollider, normal, signedDistance);
+        }
     }
 
     if (!hit)
@@ -460,17 +863,34 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
             m_FillInside &&
             pPlayer->HasInwardCircleLineContext() &&
             (m_Geometry == SURFACE_GEOMETRY::FULL_CIRCLE ||
-                m_ArcCorner == ARC_CORNER::TOP_LEFT ||
-                m_ArcCorner == ARC_CORNER::TOP_RIGHT) &&
+                m_ArcCorner == ARC_CORNER::BOTTOM_LEFT ||
+                m_ArcCorner == ARC_CORNER::BOTTOM_RIGHT) &&
             contactPoint.y < circleCenter.y - 0.5f)
         {
             topHalfInwardCircleWithLineContext = true;
         }
     }
 
+    const bool alignedVerticalEntryContact =
+        alignedVerticalRoleNormal &&
+        m_Geometry == SURFACE_GEOMETRY::LINE &&
+        m_Role == SURFACE_ROLE::VERTICAL_ENTRY;
+
     float transitionSnapThreshold = _WasGround ? kTransitionSnapThresholdGround : kTransitionSnapThresholdAir;
     if (IsCircleGeometry(m_Geometry))
         transitionSnapThreshold = _WasGround ? kCircleTransitionSnapThresholdGround : kCircleTransitionSnapThresholdAir;
+    else if (_WasGround &&
+             m_Geometry == SURFACE_GEOMETRY::LINE &&
+             transitionSurface)
+    {
+        transitionSnapThreshold = max(transitionSnapThreshold, kLineTransitionSnapThresholdGround);
+    }
+    if (alignedVerticalEntryContact)
+    {
+        const float alignedSnapThreshold =
+            _WasGround ? kVerticalEntryAlignedSnapThresholdGround : kVerticalEntryAlignedSnapThresholdAir;
+        transitionSnapThreshold = max(transitionSnapThreshold, alignedSnapThreshold);
+    }
     if (topHalfInwardCircleWithLineContext)
         transitionSnapThreshold = max(transitionSnapThreshold, kTopHalfInwardCircleLineContextAttachMaxDistance);
     if (signedDistance > transitionSnapThreshold)
@@ -515,6 +935,17 @@ bool CSurfaceScript::ProbePlayerContact(CCollider2D* _OtherCollider, bool _WasGr
     _OutProbe.SeamStart = seamStart;
     _OutProbe.SeamEnd = seamEnd;
     _OutProbe.ContactPoint = contactPoint;
+    if (m_Geometry == SURFACE_GEOMETRY::LINE &&
+        IsVerticalRoleSurface(GetOwner()))
+    {
+        const Vec2 fallbackTangent = NormalizeSafe(Vec2(normal.y, -normal.x), Vec2(1.f, 0.f));
+        _OutProbe.Tangent = OrientLineTangentToPlayer(pPlayer.Get(), GetOwner(), fallbackTangent);
+    }
+    else
+    {
+        _OutProbe.Tangent = NormalizeSafe(Vec2(normal.y, -normal.x), Vec2(1.f, 0.f));
+    }
+    _OutProbe.SlopeAngle = atan2f(normal.y, normal.x);
     return true;
 }
 
@@ -670,6 +1101,8 @@ Vec4 CSurfaceScript::GetEditorColor() const
         return Vec4(1.f, 0.45f, 0.2f, 1.f);
     case SURFACE_ROLE::VERTICAL_ENTRY:
         return Vec4(1.f, 0.9f, 0.2f, 1.f);
+    case SURFACE_ROLE::VERTICAL_STICKY_ENTRY:
+        return Vec4(1.f, 0.65f, 0.2f, 1.f);
     default:
         return Vec4(1.f, 1.f, 1.f, 1.f);
     }
@@ -1064,7 +1497,7 @@ bool CSurfaceScript::GetPlayerSupportPoint(CCollider2D* _OtherCollider, const Ve
     float supportDistance = 0.f;
     return GetColliderSupportData(_OtherCollider, _SurfaceNormal, center, _OutSupportPoint, supportDistance);
 }
-bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround)
+bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& _FootPos, Vec2& _OutNormal, float& _OutSignedDistance, bool& _OutTransitionSurface, float& _OutSeamBlendT, bool& _OutSeamBlendHasValue, Vec2& _OutSeamStart, Vec2& _OutSeamEnd, Vec2& _OutContactPoint, bool _WasGround, const Vec2* _ForcedSurfaceNormal)
 {
     _OutTransitionSurface = false;
     _OutSeamBlendT = 0.f;
@@ -1086,10 +1519,13 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
     Vec2 tangent = ab / length;
     // 위쪽 채우기 여부에 따라 법선 방향 결정
     Vec2 outward = m_FillAbove ? Vec2(tangent.y, -tangent.x) : Vec2(-tangent.y, tangent.x);
+    if (_ForcedSurfaceNormal != nullptr)
+        outward = NormalizeSafe(*_ForcedSurfaceNormal, outward);
+    const bool nearlyFlatLine = fabsf(tangent.y) <= kFlatLineEndpointDetachTangentYMax;
 
     // [핵심 1] 선분 위에 있는지 투영(Projection) 검사. 여유값은 float 오차를 막을 아주 작은 값만 줍니다.
     float projection = Dot(_FootPos - worldA, tangent);
-    const float strictMargin = kSurfaceLineSeamPixelMargin;
+    const float strictMargin = nearlyFlatLine ? kFlatLineProjectionMargin : kSurfaceLineSeamPixelMargin;
     if (projection < -strictMargin || projection > length + strictMargin)
         return false;
 
@@ -1121,6 +1557,11 @@ bool CSurfaceScript::EvaluateLineProbe(CCollider2D* _OtherCollider, const Vec2& 
     float supportProjectionMargin = kLineSupportProjectionMarginMin + fabsf(Dot(supportPoint - _FootPos, tangent));
     if (supportProjectionMargin > kLineSupportProjectionMarginMax)
         supportProjectionMargin = kLineSupportProjectionMarginMax;
+    if (nearlyFlatLine)
+    {
+        supportProjectionMargin = max(supportProjectionMargin, kFlatLineSupportProjectionMarginMin);
+        supportProjectionMargin = min(supportProjectionMargin, kFlatLineSupportProjectionMarginMax);
+    }
     if (supportProjection < -supportProjectionMargin || supportProjection > length + supportProjectionMargin)
         return false;
 

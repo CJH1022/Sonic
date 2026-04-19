@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "Engine.h"
 
 #include "Device.h"
@@ -8,6 +8,7 @@
 #include "AssetMgr.h"
 #include "LevelMgr.h"
 #include "RenderMgr.h"
+#include "FontMgr.h"
 #include "EditorMgr.h"
 
 LRESULT CALLBACK  WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -95,6 +96,14 @@ int Engine::Init(HINSTANCE _hInst, UINT _Width, UINT _Height, bool _EditorMode)
 
     // 렌더링 매니저 초기화
     RenderMgr::GetInst()->Init();
+
+    // Font 매니저 초기화
+    FontMgr::GetInst()->Init();
+
+    // FMOD 초기화
+    FMOD::System_Create(&m_FMODSystem);
+    assert(m_FMODSystem);
+    m_FMODSystem->init(32, FMOD_DEFAULT, nullptr);
 
     // Editor 매니저 초기화
     if (m_EditorMode)

@@ -41,6 +41,8 @@ namespace
             return CSurfaceScript::SURFACE_ROLE::WALL;
         case SURFACE_SET_ROLE::VERTICAL_ENTRY:
             return CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+        case SURFACE_SET_ROLE::VERTICAL_STICKY_ENTRY:
+            return CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
         case SURFACE_SET_ROLE::SURFACE:
         default:
             return CSurfaceScript::SURFACE_ROLE::SURFACE;
@@ -235,6 +237,9 @@ void CSurfaceSetScript::BuildRuntimeSurfaces()
 
         CSurfaceScript* pSurfaceScript = new CSurfaceScript;
         pSurfaceObject->AddComponent(pSurfaceScript);
+        // SurfaceSet preview/runtime children are baked static geometry, so their
+        // spatial registration only needs Begin() once.
+        pSurfaceScript->SetTickEnabled(false);
 
         const CSurfaceScript::SURFACE_ROLE role = ToRuntimeRole(desc.Role);
         const CSurfaceScript::ARC_CORNER corner = ToRuntimeArcCorner(desc.ArcCorner);

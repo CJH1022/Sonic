@@ -93,3 +93,9 @@ void AMesh::Render()
 	// 그 이전까지는 각 단계별로 실행할 옵션을 설정만 함
 	CONTEXT->DrawIndexed(m_IdxCount, 0, 0);
 }
+
+void AMesh::Render_Particle(UINT _Count)
+{
+	Binding();
+	CONTEXT->DrawIndexedInstanced(m_IdxCount, _Count, 0, 0, 0);
+}

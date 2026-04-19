@@ -141,6 +141,29 @@ int AGraphicShader::CreatePixelShader(const wstring& _RelativeFilePath, const st
 	return S_OK;
 }
 
+int AGraphicShader::CreateGeometryShader(const wstring& _RelativeFilePath, const string& _FuncName)
+{
+	wstring Path = PathMgr::GetInst()->GetContentPath() + _RelativeFilePath;
+
+	ComPtr<ID3DBlob> Err;
+	if (FAILED(D3DCompileFromFile(Path.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE
+		, _FuncName.c_str(), "gs_5_0", D3DCOMPILE_DEBUG, 0
+		, m_GSBlob.GetAddressOf(), Err.GetAddressOf())))
+	{
+		ShowShaderCompileError(_RelativeFilePath.c_str(), Path.c_str(), _FuncName, Err.Get());
+		return E_FAIL;
+	}
+
+	if (FAILED(DEVICE->CreateGeometryShader(m_GSBlob->GetBufferPointer()
+		, m_GSBlob->GetBufferSize(), nullptr
+		, m_GS.GetAddressOf())))
+	{
+		return E_FAIL;
+	}
+
+	return S_OK;
+}
+
 void AGraphicShader::Binding()
 {
 	// Graphic Pipeline
@@ -157,6 +180,8 @@ void AGraphicShader::Binding()
 	// Vertex Shader(함수) - 정점 당 연산 수행
 	// HLSL(High Level Shader Language) 5.0
 	CONTEXT->VSSetShader(m_VS.Get(), nullptr, 0);
+
+	CONTEXT->GSSetShader(m_GS.Get(), nullptr, 0);
 
 	// Rasterizer State	
 	CONTEXT->RSSetState(Device::GetInst()->GetRSState(m_RSType).Get());

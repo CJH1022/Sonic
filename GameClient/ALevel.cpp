@@ -41,6 +41,20 @@ namespace
 		fwprintf(pTrace, L"\n");
 		fclose(pTrace);
 	}
+
+	bool IsTransientOpeningRuntimeObject(GameObject* _Object)
+	{
+		if (nullptr == _Object)
+			return false;
+
+		const wstring& name = _Object->GetName();
+
+		return name == L"Opening_Sonic_main"
+			|| name == L"Opening_Sonic_Eye"
+			|| name == L"Opening_Sonic_Hand"
+			|| name == L"Opening_Overlay_20"
+			|| name == L"Opening_Start_Button";
+	}
 }
 
 
@@ -167,10 +181,24 @@ int ALevel::Save(const wstring& _FilePath)
 		SaveWString(pFile, m_arrLayer[i].GetName());
 
 		const vector<Ptr<GameObject>>& vecParents = m_arrLayer[i].GetParentObjects();
-		size_t ParentCount = vecParents.size();
-		fwrite(&ParentCount, sizeof(size_t), 1, pFile);
+		vector<Ptr<GameObject>> vecSaveParents;
+		vecSaveParents.reserve(vecParents.size());
 
 		for (const auto& Object : vecParents)
+		{
+			if (Object == nullptr || Object->IsDead())
+				continue;
+
+			if (IsTransientOpeningRuntimeObject(Object.Get()))
+				continue;
+
+			vecSaveParents.push_back(Object);
+		}
+
+		size_t ParentCount = vecSaveParents.size();
+		fwrite(&ParentCount, sizeof(size_t), 1, pFile);
+
+		for (const auto& Object : vecSaveParents)
 		{
 			Object->SaveToLevelFile(pFile);
 		}

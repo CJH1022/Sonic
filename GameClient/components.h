@@ -7,8 +7,9 @@
 #include "CLight2D.h"
 // #include "CLight3D.h"
 #include "CMeshRender.h"
-// #include "CParticleRender.h"
+#include "CParticleRender.h"
 #include "CSpriteRender.h"
 #include "CTileRender.h"
 #include "CTransform.h"
+
 #include "CScript.h"

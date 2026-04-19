@@ -13,12 +13,19 @@ Engine::Engine()
     : m_hInst(nullptr)
     , m_hWnd(nullptr)
     , m_Resolution{}
+    , m_FMODSystem(nullptr)
     , m_EditorMode(true)
 {
 }
 
 Engine::~Engine()
 {
+    if (nullptr != m_FMODSystem)
+    {
+        m_FMODSystem->close();
+        m_FMODSystem->release();
+        m_FMODSystem = nullptr;
+    }
 }
 
 int Engine::Progress()
@@ -34,6 +41,9 @@ int Engine::Progress()
 
     // RenderMgr 렌더링
     RenderMgr::GetInst()->Progress();
+
+    if (m_FMODSystem != nullptr)
+        m_FMODSystem->update();
        
     // EditorMgr
     if (m_EditorMode)

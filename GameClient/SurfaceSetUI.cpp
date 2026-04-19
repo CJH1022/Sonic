@@ -45,6 +45,8 @@ namespace
             return SURFACE_SET_ROLE::WALL;
         case CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY:
             return SURFACE_SET_ROLE::VERTICAL_ENTRY;
+        case CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY:
+            return SURFACE_SET_ROLE::VERTICAL_STICKY_ENTRY;
         case CSurfaceScript::SURFACE_ROLE::SURFACE:
         default:
             return SURFACE_SET_ROLE::SURFACE;
@@ -93,11 +95,11 @@ namespace
             *_OutStatusText = _StatusText;
     }
 
-    std::wstring BuildSurfaceSetStemFromLevelName(const std::wstring& _LevelName)
+    std::wstring SanitizeSurfaceSetStem(const std::wstring& _RawStem)
     {
-        std::wstring stem = std::filesystem::path(_LevelName).stem().wstring();
+        std::wstring stem = std::filesystem::path(_RawStem).stem().wstring();
         if (stem.empty())
-            stem = _LevelName;
+            stem = _RawStem;
 
         if (stem.empty())
             stem = L"CurrentLevel";
@@ -117,6 +119,20 @@ namespace
             stem = L"CurrentLevel";
 
         return stem;
+    }
+
+    std::wstring BuildSurfaceSetStemFromLevelAsset(ALevel* _Level)
+    {
+        if (_Level == nullptr)
+            return L"CurrentLevel";
+
+        std::wstring source = _Level->GetRelativePath();
+        if (source.empty())
+            source = _Level->GetKey();
+        if (source.empty())
+            source = _Level->GetName();
+
+        return SanitizeSurfaceSetStem(source);
     }
 
     std::wstring BuildUniqueSurfaceSetKey(const std::wstring& _Stem)
@@ -147,7 +163,7 @@ namespace
             return nullptr;
         }
 
-        const std::wstring stem = BuildSurfaceSetStemFromLevelName(pLevel->GetName());
+        const std::wstring stem = BuildSurfaceSetStemFromLevelAsset(pLevel.Get());
         const std::wstring baseKey = L"SurfaceSet\\" + stem + L"_SurfaceSet.sset";
 
         Ptr<ASurfaceSet> pExistingSurfaceSet = AssetMgr::GetInst()->Find<ASurfaceSet>(baseKey);

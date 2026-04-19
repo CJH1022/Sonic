@@ -147,6 +147,71 @@ namespace
                _Geometry == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE;
     }
 
+    Vec2 GetQuarterArcRadii(const Vec2& _Center, const Vec2& _BoxMin, const Vec2& _BoxMax,
+                            CSurfaceScript::ARC_CORNER _Corner)
+    {
+        switch (_Corner)
+        {
+        case CSurfaceScript::ARC_CORNER::TOP_LEFT:
+            return Vec2(max(0.f, _BoxMax.x - _Center.x), max(0.f, _Center.y - _BoxMin.y));
+        case CSurfaceScript::ARC_CORNER::TOP_RIGHT:
+            return Vec2(max(0.f, _Center.x - _BoxMin.x), max(0.f, _Center.y - _BoxMin.y));
+        case CSurfaceScript::ARC_CORNER::BOTTOM_LEFT:
+            return Vec2(max(0.f, _BoxMax.x - _Center.x), max(0.f, _BoxMax.y - _Center.y));
+        case CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT:
+        default:
+            return Vec2(max(0.f, _Center.x - _BoxMin.x), max(0.f, _BoxMax.y - _Center.y));
+        }
+    }
+
+    Vec2 MakeEllipsePointFromAngle(const Vec2& _Center, const Vec2& _Radii, float _AngleRad)
+    {
+        return Vec2(_Center.x + cosf(_AngleRad) * _Radii.x,
+                    _Center.y + sinf(_AngleRad) * _Radii.y);
+    }
+
+    Vec2 GetEllipseOutwardNormal(const Vec2& _Center, const Vec2& _Radii, const Vec2& _Point)
+    {
+        const float safeRx = max(_Radii.x, 0.0001f);
+        const float safeRy = max(_Radii.y, 0.0001f);
+        const Vec2 delta = _Point - _Center;
+        const Vec2 gradient(delta.x / (safeRx * safeRx), delta.y / (safeRy * safeRy));
+        const float length = sqrtf(gradient.x * gradient.x + gradient.y * gradient.y);
+        if (length <= 0.0001f)
+            return Vec2(0.f, 1.f);
+
+        return Vec2(gradient.x / length, gradient.y / length);
+    }
+
+    Vec2 GetSurfaceCurveRadii(CSurfaceScript* _Script, const Vec2& _Center, const Vec2& _BoxMin, const Vec2& _BoxMax, float _Radius)
+    {
+        if (_Script == nullptr)
+            return Vec2(0.f, 0.f);
+
+        if (_Script->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE)
+            return Vec2(_Radius, _Radius);
+
+        return GetQuarterArcRadii(_Center, _BoxMin, _BoxMax, _Script->GetArcCorner());
+    }
+
+    float DistanceToEllipseCurve(const Vec2& _Point, const Vec2& _Center, const Vec2& _Radii)
+    {
+        const Vec2 delta = _Point - _Center;
+        const float safeRx = max(_Radii.x, 0.0001f);
+        const float safeRy = max(_Radii.y, 0.0001f);
+        const float denom =
+            (delta.x * delta.x) / (safeRx * safeRx) +
+            (delta.y * delta.y) / (safeRy * safeRy);
+
+        if (denom <= 0.0001f)
+            return FLT_MAX;
+
+        const float scale = 1.f / sqrtf(denom);
+        const Vec2 closest = _Center + delta * scale;
+        const Vec2 diff = _Point - closest;
+        return sqrtf(diff.x * diff.x + diff.y * diff.y);
+    }
+
     int CellIndex(int _Row, int _Col, int _ColCount)
     {
         return _Row * _ColCount + _Col;
@@ -629,34 +694,35 @@ bool MapEditorUI::GetSurfaceEndpointPair(CSurfaceScript* _Script, Vec2& _OutStar
     Vec2 boxMax = {};
     float radius = 0.f;
     _Script->GetArcWorldData(center, radius, boxMin, boxMax);
-    if (radius <= 0.001f)
+    const Vec2 radii = GetSurfaceCurveRadii(_Script, center, boxMin, boxMax, radius);
+    if (radii.x <= 0.001f || radii.y <= 0.001f)
         return false;
 
     if (_Script->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE)
     {
-        _OutStart = Vec2(center.x - radius, center.y);
-        _OutEnd = Vec2(center.x + radius, center.y);
+        _OutStart = Vec2(center.x - radii.x, center.y);
+        _OutEnd = Vec2(center.x + radii.x, center.y);
         return true;
     }
 
     switch (_Script->GetArcCorner())
     {
     case CSurfaceScript::ARC_CORNER::TOP_LEFT:
-        _OutStart = Vec2(center.x + radius, center.y);
-        _OutEnd = Vec2(center.x, center.y - radius);
+        _OutStart = Vec2(center.x + radii.x, center.y);
+        _OutEnd = Vec2(center.x, center.y - radii.y);
         return true;
     case CSurfaceScript::ARC_CORNER::TOP_RIGHT:
-        _OutStart = Vec2(center.x - radius, center.y);
-        _OutEnd = Vec2(center.x, center.y - radius);
+        _OutStart = Vec2(center.x - radii.x, center.y);
+        _OutEnd = Vec2(center.x, center.y - radii.y);
         return true;
     case CSurfaceScript::ARC_CORNER::BOTTOM_LEFT:
-        _OutStart = Vec2(center.x + radius, center.y);
-        _OutEnd = Vec2(center.x, center.y + radius);
+        _OutStart = Vec2(center.x + radii.x, center.y);
+        _OutEnd = Vec2(center.x, center.y + radii.y);
         return true;
     case CSurfaceScript::ARC_CORNER::BOTTOM_RIGHT:
     default:
-        _OutStart = Vec2(center.x - radius, center.y);
-        _OutEnd = Vec2(center.x, center.y + radius);
+        _OutStart = Vec2(center.x - radii.x, center.y);
+        _OutEnd = Vec2(center.x, center.y + radii.y);
         return true;
     }
 }
@@ -691,7 +757,10 @@ Ptr<GameObject> MapEditorUI::FindNearestSurfaceObject(const Vec2& _WorldPos, flo
             Vec2 boxMax = {};
             float radius = 0.f;
             pScript->GetArcWorldData(center, radius, boxMin, boxMax);
-            float radialDist = fabsf(LengthVec2(_WorldPos - center) - radius);
+            const Vec2 radii = GetSurfaceCurveRadii(pScript.Get(), center, boxMin, boxMax, radius);
+            float radialDist = FLT_MAX;
+            if (radii.x > 0.001f && radii.y > 0.001f)
+                radialDist = DistanceToEllipseCurve(_WorldPos, center, radii);
             bool inBox = boxMin.x <= _WorldPos.x && _WorldPos.x <= boxMax.x && boxMin.y <= _WorldPos.y && _WorldPos.y <= boxMax.y;
             dist = inBox ? radialDist : FLT_MAX;
         }
@@ -887,6 +956,41 @@ void MapEditorUI::RefreshCircleGuideCorrectionLines()
     }
 }
 
+void MapEditorUI::BuildArcSurfaceBounds(const Vec2& _StartWorld, const Vec2& _EndWorld,
+                                        Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter) const
+{
+    float left = min(_StartWorld.x, _EndWorld.x);
+    float right = max(_StartWorld.x, _EndWorld.x);
+    float bottom = min(_StartWorld.y, _EndWorld.y);
+    float top = max(_StartWorld.y, _EndWorld.y);
+
+    if (right - left <= 0.001f)
+        right = left + 1.f;
+
+    if (top - bottom <= 0.001f)
+        top = bottom + 1.f;
+
+    _OutMinBox = Vec2(left, bottom);
+    _OutMaxBox = Vec2(right, top);
+
+    switch (m_ArcCorner)
+    {
+    case ARC_CORNER::TOP_LEFT:
+        _OutCenter = Vec2(_OutMinBox.x, _OutMaxBox.y);
+        break;
+    case ARC_CORNER::TOP_RIGHT:
+        _OutCenter = Vec2(_OutMaxBox.x, _OutMaxBox.y);
+        break;
+    case ARC_CORNER::BOTTOM_LEFT:
+        _OutCenter = Vec2(_OutMinBox.x, _OutMinBox.y);
+        break;
+    case ARC_CORNER::BOTTOM_RIGHT:
+    default:
+        _OutCenter = Vec2(_OutMaxBox.x, _OutMinBox.y);
+        break;
+    }
+}
+
 void MapEditorUI::BuildQuarterSurfaceBounds(const Vec2& _StartWorld, const Vec2& _EndWorld, bool _UseCircleRadius, Vec2& _OutMinBox, Vec2& _OutMaxBox, Vec2& _OutCenter, float& _OutRadius) const
 {
     Vec2 leftTop = Vec2(min(_StartWorld.x, _EndWorld.x), max(_StartWorld.y, _EndWorld.y));
@@ -979,6 +1083,8 @@ void MapEditorUI::CreateLineSurfaceObject(const Vec2& _StartWorld, const Vec2& _
         role = CSurfaceScript::SURFACE_ROLE::WALL;
     else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
         role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_STICKY_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
 
     pScript->ConfigureLine(localStart, localEnd, role, m_FillAbove, m_Attachable);
 
@@ -1006,8 +1112,7 @@ void MapEditorUI::CreateArcSurfaceObject(const Vec2& _StartWorld, const Vec2& _E
     Vec2 minBox = {};
     Vec2 maxBox = {};
     Vec2 center = {};
-    float radius = 0.f;
-    BuildQuarterSurfaceBounds(_StartWorld, _EndWorld, false, minBox, maxBox, center, radius);
+    BuildArcSurfaceBounds(_StartWorld, _EndWorld, minBox, maxBox, center);
     pSurface->Transform()->SetRelativePos(Vec3(center.x, center.y, 10.f));
 
     Vec2 localStart = minBox - center;
@@ -1020,6 +1125,8 @@ void MapEditorUI::CreateArcSurfaceObject(const Vec2& _StartWorld, const Vec2& _E
         role = CSurfaceScript::SURFACE_ROLE::WALL;
     else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
         role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_STICKY_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
 
     pScript->ConfigureArc(localStart, localEnd, role, (CSurfaceScript::ARC_CORNER)(int)m_ArcCorner, m_ArcFillInside, m_Attachable);
 
@@ -1061,6 +1168,8 @@ void MapEditorUI::CreateCircleSurfaceObject(const Vec2& _StartWorld, const Vec2&
         role = CSurfaceScript::SURFACE_ROLE::WALL;
     else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
         role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_STICKY_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
 
     pScript->ConfigureCircle(localStart, localEnd, role, (CSurfaceScript::ARC_CORNER)(int)m_ArcCorner, m_ArcFillInside, m_Attachable);
 
@@ -1116,6 +1225,8 @@ void MapEditorUI::CreateFullCircleSurfaceObject(const Vec2& _StartWorld, const V
         role = CSurfaceScript::SURFACE_ROLE::WALL;
     else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
         role = CSurfaceScript::SURFACE_ROLE::VERTICAL_ENTRY;
+    else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_STICKY_ENTRY)
+        role = CSurfaceScript::SURFACE_ROLE::VERTICAL_STICKY_ENTRY;
 
     GameObject* pSurface = new GameObject;
     pSurface->SetName(
@@ -2322,8 +2433,9 @@ void MapEditorUI::DrawFreeformOverlay()
             float radius = 0.f;
             pScript->GetArcWorldData(center, radius, boxMin, boxMax);
             const bool fullCircle = (pScript->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE);
+            const Vec2 radii = GetSurfaceCurveRadii(pScript.Get(), center, boxMin, boxMax, radius);
 
-            if (pScript->GetRole() == CSurfaceScript::SURFACE_ROLE::WALL && radius > 0.001f)
+            if (pScript->GetRole() == CSurfaceScript::SURFACE_ROLE::WALL && radii.x > 0.001f && radii.y > 0.001f)
             {
                 const int fillSegmentCount = fullCircle ? 48 : 24;
                 vector<ImVec2> fillPoints;
@@ -2366,12 +2478,16 @@ void MapEditorUI::DrawFreeformOverlay()
                         break;
                     }
 
-                    Vec2 radial = Vec2(cosf(angle), sinf(angle));
-                    Vec2 arcWorld = Vec2(center.x + radial.x * radius, center.y + radial.y * radius);
+                    Vec2 arcWorld = MakeEllipsePointFromAngle(center, radii, angle);
                     arcPoints.push_back(arcWorld);
 
                     if (!pScript->GetFillInside())
-                        outerPoints.push_back(arcWorld + radial * kWallOverlayDepth);
+                    {
+                        Vec2 surfaceNormal = GetEllipseOutwardNormal(center, radii, arcWorld);
+                        if (pScript->GetFillInside())
+                            surfaceNormal = -surfaceNormal;
+                        outerPoints.push_back(arcWorld + surfaceNormal * kWallOverlayDepth);
+                    }
                 }
 
                 for (size_t i = 0; i < arcPoints.size(); ++i)
@@ -2425,7 +2541,7 @@ void MapEditorUI::DrawFreeformOverlay()
                     break;
                 }
 
-                Vec2 worldPos = Vec2(center.x + cosf(angle) * radius, center.y + sinf(angle) * radius);
+                Vec2 worldPos = MakeEllipsePointFromAngle(center, radii, angle);
                 ImVec2 screenPos = {};
                 if (!WorldToScreen(worldPos, screenPos))
                     continue;
@@ -2435,8 +2551,9 @@ void MapEditorUI::DrawFreeformOverlay()
 
                 if (m_ShowNormals && segment < segmentCount)
                 {
-                    Vec2 radial = NormalizeVec2(worldPos - center, Vec2(0.f, 1.f));
-                    Vec2 normal = pScript->GetFillInside() ? -radial : radial;
+                    Vec2 normal = GetEllipseOutwardNormal(center, radii, worldPos);
+                    if (pScript->GetFillInside())
+                        normal = -normal;
                     Vec2 worldEnd = worldPos + normal * 36.f;
 
                     ImVec2 screenEnd = {};
@@ -2505,6 +2622,7 @@ void MapEditorUI::DrawFreeformOverlay()
                         pScript->GetArcWorldData(center, radius, boxMin, boxMax);
 
                         const bool fullCircle = (pScript->GetGeometry() == CSurfaceScript::SURFACE_GEOMETRY::FULL_CIRCLE);
+                        const Vec2 radii = GetSurfaceCurveRadii(pScript.Get(), center, boxMin, boxMax, radius);
                         const int segmentCount = fullCircle ? 48 : 24;
                         ImVec2 prev = {};
                         bool hasPrev = false;
@@ -2535,7 +2653,7 @@ void MapEditorUI::DrawFreeformOverlay()
                                 break;
                             }
 
-                            Vec2 worldPos = Vec2(center.x + cosf(angle) * radius, center.y + sinf(angle) * radius);
+                            Vec2 worldPos = MakeEllipsePointFromAngle(center, radii, angle);
                             ImVec2 screenPos = {};
                             if (!WorldToScreen(worldPos, screenPos))
                                 continue;
@@ -2704,8 +2822,18 @@ void MapEditorUI::DrawFreeformOverlay()
         Vec2 minBox = {};
         Vec2 maxBox = {};
         Vec2 center = {};
-        float side = 0.f;
-        BuildQuarterSurfaceBounds(m_StartPoint, previewEnd, m_FreeformShape == FREEFORM_SHAPE::CIRCLE, minBox, maxBox, center, side);
+        Vec2 radii = {};
+        if (m_FreeformShape == FREEFORM_SHAPE::ARC)
+        {
+            BuildArcSurfaceBounds(m_StartPoint, previewEnd, minBox, maxBox, center);
+            radii = GetQuarterArcRadii(center, minBox, maxBox, (CSurfaceScript::ARC_CORNER)(int)m_ArcCorner);
+        }
+        else
+        {
+            float side = 0.f;
+            BuildQuarterSurfaceBounds(m_StartPoint, previewEnd, true, minBox, maxBox, center, side);
+            radii = Vec2(side, side);
+        }
 
         const int segmentCount = 24;
         ImVec2 prev = {};
@@ -2732,7 +2860,7 @@ void MapEditorUI::DrawFreeformOverlay()
                 break;
             }
 
-            Vec2 worldPos = Vec2(center.x + cosf(angle) * side, center.y + sinf(angle) * side);
+            Vec2 worldPos = MakeEllipsePointFromAngle(center, radii, angle);
             ImVec2 screenPos = {};
             if (!WorldToScreen(worldPos, screenPos))
                 continue;
@@ -2994,7 +3122,7 @@ void MapEditorUI::Tick_UI()
         m_HasStartPoint = false;
     }
 
-    const char* roleNames[] = { "Surface", "Correction", "Pure Wall", "Vertical Entry", "Erase" };
+    const char* roleNames[] = { "Surface", "Correction", "Pure Wall", "Vertical Entry", "Vertical Hold", "Erase" };
     int roleIdx = (int)m_FreeformRole;
     if (ImGui::Combo("Role", &roleIdx, roleNames, IM_ARRAYSIZE(roleNames)))
     {
@@ -3003,7 +3131,9 @@ void MapEditorUI::Tick_UI()
 
         if (m_FreeformRole == FREEFORM_ROLE::WALL)
             m_Attachable = false;
-        else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY && !m_Attachable)
+        else if ((m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY ||
+                  m_FreeformRole == FREEFORM_ROLE::VERTICAL_STICKY_ENTRY) &&
+                 !m_Attachable)
             m_Attachable = true;
     }
 
@@ -3011,6 +3141,8 @@ void MapEditorUI::Tick_UI()
     {
         if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_ENTRY)
             ImGui::TextWrapped("Vertical Entry line only catches when the player's world Y movement is dominant. Side approaches are ignored.");
+        else if (m_FreeformRole == FREEFORM_ROLE::VERTICAL_STICKY_ENTRY)
+            ImGui::TextWrapped("Vertical Hold also requires a vertical approach, but once attached it keeps the current vertical line through mid intersections instead of handing off to crossing lines.");
 
         if (m_FreeformShape == FREEFORM_SHAPE::LINE || m_FreeformShape == FREEFORM_SHAPE::FLAT)
         {
@@ -3035,10 +3167,10 @@ void MapEditorUI::Tick_UI()
             ImGui::Checkbox("Fill Inside", &m_ArcFillInside);
             ImGui::Checkbox("Attachable", &m_Attachable);
 
-            if (m_FreeformShape == FREEFORM_SHAPE::ARC)
-                ImGui::TextWrapped("Arc is a pure quarter-curve with no automatic half-check or line fallback.");
-            else if (m_FreeformShape == FREEFORM_SHAPE::CIRCLE)
-                ImGui::TextWrapped("Quarter Circle creates one curved quarter. If Fill Inside is on, its guide correction line is created automatically.");
+        if (m_FreeformShape == FREEFORM_SHAPE::ARC)
+            ImGui::TextWrapped("Arc uses the clicked span as a quarter ellipse with no automatic half-check or line fallback.");
+        else if (m_FreeformShape == FREEFORM_SHAPE::CIRCLE)
+            ImGui::TextWrapped("Quarter Circle creates one curved quarter. If Fill Inside is on, its guide correction line is created automatically.");
             else
                 ImGui::TextWrapped("Full Circle uses the first click as center. The second click sets radius, or just confirms placement when Use Radius is on.");
 

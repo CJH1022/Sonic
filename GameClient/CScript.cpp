@@ -8,12 +8,14 @@
 CScript::CScript(int _ScriptType)
 	: Component(COMPONENT_TYPE::SCRIPT)
 	, m_ScriptType(_ScriptType)
+	, m_bTickEnabled(true)
 {
 }
 
 CScript::CScript(const CScript& _Origin)
 	: Component(_Origin)
 	, m_ScriptType(_Origin.m_ScriptType)
+	, m_bTickEnabled(_Origin.m_bTickEnabled)
 {
 }
 

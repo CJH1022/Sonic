@@ -3,6 +3,7 @@
 #include "CScript.h"
 #include "GameObject.h"
 
+#include <unordered_set>
 #include <vector>
 
 class CCollider2D;
@@ -11,6 +12,22 @@ class CSurfaceCircleGuideScript;
 class CPlayerScript
     : public CScript
 {
+public:
+    enum class CylinderState
+    {
+        None,
+        Bounce,
+    };
+
+    enum class ITEM_STATE
+    {
+        NONE,
+        FIRE,
+        WATER,
+        ELECTRIC,
+        STAR,
+    };
+
 private:
     static constexpr float kKnockBackInvincibleDuration = 3.f;
 
@@ -30,6 +47,8 @@ private:
         Vec2 SeamStart = Vec2(0.f, 0.f);
         Vec2 SeamEnd = Vec2(0.f, 0.f);
         Vec2 ContactPoint = Vec2(0.f, 0.f);
+        Vec2 Tangent = Vec2(1.f, 0.f);
+        float SlopeAngle = 0.f;
     };
 
     struct SurfaceAttachBlock
@@ -80,6 +99,14 @@ private:
     float m_SkillDashSpeed = 600.f;
     float m_PushSpeed = 30.f;
     float m_AirAccelScale = 0.5f;
+    float m_WaterAccelScale = 1.f;
+    int m_WaterVolumeCount = 0;
+    ITEM_STATE m_eShieldType = ITEM_STATE::NONE;
+    bool m_bIsFirebouncing = false;
+    bool m_bIsWaterbouncing = false;
+    bool m_bIsElectricbouncing = false;
+    float m_StarShieldTime = 0.f;
+    float m_StoredMaxMoveSpeed = 1000.f;
 
     bool IsJump = false;
     bool m_bNeedGravity = false;
@@ -91,6 +118,7 @@ private:
 
     PoseState m_Pose = PoseState::None;
     ActionState m_Action = ActionState::None;
+    CylinderState m_CylinderState = CylinderState::None;
     bool m_bBackReaction = false;
 
     float m_IdleTime = 0.f;
@@ -103,6 +131,7 @@ private:
     int m_TurnTargetFacing = -1;
 
     bool IsGround = false;
+    bool m_bVerticalRoleLineAttached = false;
     int m_PhysicalGroundOverlapCount = 0;
     int m_AttachableSurfaceOverlapCount = 0;
     bool m_bHasNearbyAttachableSurface = false;
@@ -116,12 +145,17 @@ private:
     bool m_bBreakWallLocked = false;
     float m_LastTickPosX = 0.f;
     float m_LastFrameDeltaX = 0.f;
+    float m_PhysicalGroundAnimGraceTime = 0.f;
     vector<SurfaceAttachBlock> m_vecAttachBlockedSurfaces;
     float m_ForcedFlatGroundLockTime = 0.f;
     float m_SurfaceGroundHoldTime = 0.f;
+    float m_ItemBoxBounceAttachIgnoreTime = 0.f;
     float m_SurfaceResolveFrame = -1.f;
     float m_SurfaceResolveScore = 999999.f;
     float m_LastSceneSurfaceProbeFrame = -1.f;
+    Vec2 m_LastSceneSurfaceQueryMin = Vec2(0.f, 0.f);
+    Vec2 m_LastSceneSurfaceQueryMax = Vec2(0.f, 0.f);
+    bool m_bHasLastSceneSurfaceQueryBounds = false;
     GameObject* m_pResolvedSurface = nullptr;
     bool m_bInwardCircleLoopTracked = false;
     bool m_bInwardCirclePassedLowerHalf = false;
@@ -158,6 +192,7 @@ private:
     bool m_bHasCurrentSurfaceContact = false;
     SurfaceContact m_CurrentSurfaceContact = {};
     vector<GameObject*> m_vecActiveSurfaceObjects;
+    std::unordered_set<GameObject*> m_setActiveSurfaceObjects;
 
     bool m_bAutoplayInitialized = false;
     bool m_bAutoplayFinished = false;
@@ -179,6 +214,31 @@ private:
     bool m_bAutoplayPendingJumpDetach = false;
     PlayerInput m_AutoplayInput = {};
     FILE* m_pAutoplayLog = nullptr;
+
+private:
+    static int m_PlayerLife;
+
+public:
+    static void AddLife()
+    {
+        m_PlayerLife += 1;
+        if (m_PlayerLife < 0)
+            m_PlayerLife = -1;
+        // 여기서 UI 업데이트 함수를 호출하면 편리합니다!
+    }
+
+    static void SubLife()
+    {
+        m_PlayerLife -= 1;
+        if (m_PlayerLife < 0)
+            m_PlayerLife = -1;
+        // 여기서 UI 업데이트 함수를 호출하면 편리합니다!
+    }
+
+    static int GetPlayerLife()
+    {
+        return m_PlayerLife;
+    }
 
 public:
     void SetTarget(Ptr<GameObject> _Target) { m_Target = _Target; }
@@ -238,6 +298,7 @@ public:
     float GetMaxMoveSpeed() const { return m_MaxMoveSpeed; }
     float GetBreakSpeed() const { return m_fBreakSpeed; }
     ActionState GetAction() const { return m_Action; }
+    CylinderState GetCylinderState() const { return m_CylinderState; }
     bool GetIsGround() const { return IsGround; }
     bool HasCurrentCircleSurfaceContact() const
     {
@@ -245,13 +306,47 @@ public:
             m_CurrentSurfaceContact.Surface != nullptr &&
             m_CurrentSurfaceContact.Circle;
     }
+    bool ShouldFreezeInwardCircleHalfChecker() const
+    {
+        return m_InwardCircleAttachBlockTime > 0.f ||
+            (m_bHasRecentReleasedInwardCircleContact && m_RecentReleasedInwardCircleTime > 0.f);
+    }
     bool IsBreakOrRollAction() const { return m_Action == ActionState::Break || m_Action == ActionState::Roll || m_Action == ActionState::SkillDash; }
     bool IsKnockBackInvincible() const { return m_KnockBackInvincibleTime > 0.f; }
     float GetKnockBackInvincibleTime() const { return m_KnockBackInvincibleTime; }
     bool IsBackReaction() const { return m_bBackReaction; }
-    void SetIsGround(bool _IsGround) { IsGround = _IsGround; }
+    bool IsCylinderBounceState() const { return m_CylinderState == CylinderState::Bounce; }
+    void ClearStableAttachJumpState()
+    {
+        IsJump = false;
+        bIsSpringJump = false;
+        if (m_Action == ActionState::Spring)
+        {
+            m_Action = ActionState::None;
+            m_ActionTime = 0.f;
+        }
+    }
+    void SetIsGround(bool _IsGround)
+    {
+        IsGround = _IsGround;
+        if (_IsGround)
+            ClearStableAttachJumpState();
+
+        m_bVerticalRoleLineAttached = false;
+    }
+    void SetVerticalRoleLineAttached(bool _Attached)
+    {
+        m_bVerticalRoleLineAttached = _Attached;
+        if (_Attached)
+        {
+            IsGround = true;
+            ClearStableAttachJumpState();
+        }
+    }
+    bool IsVerticalRoleLineAttached() const { return m_bVerticalRoleLineAttached; }
     void SetIsJump(bool _IsJump) { IsJump = _IsJump; }
     bool GetIsJump() const { return IsJump; }
+    void SetCylinderState(CylinderState _State) { m_CylinderState = _State; }
     bool HasPhysicalGroundOverlap() const { return m_PhysicalGroundOverlapCount > 0; }
     bool HasAttachableSurfaceOverlap() const { return m_AttachableSurfaceOverlapCount > 0 || m_bHasNearbyAttachableSurface; }
     bool HasAnyGroundOverlap() const { return HasPhysicalGroundOverlap() || HasAttachableSurfaceOverlap(); }
@@ -261,6 +356,8 @@ public:
     void ForceFlatGroundContact(float _HoldTime = 0.12f);
     void BlockSurfaceAttach(GameObject* _Surface, float _Time);
     bool IsSurfaceAttachBlocked(GameObject* _Surface) const;
+    void ClearPlainSurfaceAttachBlocks();
+    void BeginItemBoxBounceDetach(float _BlockTime = 0.14f);
     void RefreshSurfaceGroundHold(float _Time = 0.08f)
     {
         if (_Time > m_SurfaceGroundHoldTime)
@@ -298,8 +395,10 @@ public:
     }
     bool IsSameInwardCircleLoop(const Vec2& _Center, float _Radius) const;
     bool IsSameInwardCircleHalfChecker(const Vec2& _Center, float _Radius) const;
+    bool TryInferInwardCircleHalfOwnership(const Vec2& _Center, float _Radius, bool& _OutLineOwnsTopRight) const;
     bool IsSameGuidedInwardCircleEntryState(const Vec2& _Center, float _Radius) const;
     bool IsAttachableLineSurfaceObject(GameObject* _SurfaceObject) const;
+    bool IsVerticalRoleLineSurfaceObject(GameObject* _SurfaceObject) const;
     const SurfaceContact* GetReferenceAttachableLineContact() const;
     GameObject* GetReferenceAttachableLineSurface() const;
     bool AreLineSurfaceEndpointsConnected(GameObject* _SurfaceA, GameObject* _SurfaceB) const;
@@ -308,6 +407,9 @@ public:
     bool AreTransitionLineContactsSeamCompatible(const SurfaceContact& _ReferenceContact, const SurfaceContact& _CandidateContact) const;
     bool IsConnectedTransitionLineContact(const SurfaceContact& _Contact) const;
     bool IsRelaxedDownwardTransitionLineContact(const SurfaceContact& _Contact) const;
+    float ComputeVerticalRoleLineNormalAlignment(const SurfaceContact& _Contact) const;
+    float ComputeVerticalRoleLineTransferAlignment(const SurfaceContact& _Contact) const;
+    bool IsVerticalRoleLineTransferCandidate(const SurfaceContact& _Contact) const;
     bool InferGuidedInwardCircleEntryFromRight(const Vec2& _Center);
     bool TryGetInwardCircleSurfaceData(const SurfaceContact& _Contact, Vec2& _OutCenter, float& _OutRadius) const;
     bool TryGetInwardCircleGuideData(const SurfaceContact& _Contact, Vec2& _OutCenter, float& _OutRadius, const CSurfaceCircleGuideScript*& _OutGuide) const;
@@ -349,6 +451,7 @@ public:
     void CacheRecentGuidedCorrectionLineFromSurface(GameObject* _Surface, float _Time);
     bool IsTopHalfInwardCircleContact(const SurfaceContact& _Contact);
     bool IsChordLineForInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact) const;
+    bool IsPreservedInwardCircleContact(const SurfaceContact& _Contact) const;
     bool ShouldIgnoreTopHalfInwardCircleContact(const SurfaceContact& _Contact);
     bool ShouldPreferLineOverTopHalfInwardCircle(const SurfaceContact& _LineContact, const SurfaceContact& _CircleContact);
     bool ShouldPreferTopHalfInwardCircleOverLine(const SurfaceContact& _CircleContact, const SurfaceContact& _LineContact);
@@ -357,10 +460,26 @@ public:
                               bool _TransitionSurface, bool _Attachable, bool _WallLike, bool _Circle, bool _InwardCircle, float _Score,
                               float _SeamBlendT = 0.f, bool _SeamBlendHasValue = false,
                               const Vec2& _SeamStart = Vec2(0.f, 0.f), const Vec2& _SeamEnd = Vec2(0.f, 0.f),
-                              const Vec2& _ContactPoint = Vec2(0.f, 0.f));
+                              const Vec2& _ContactPoint = Vec2(0.f, 0.f),
+                              const Vec2& _Tangent = Vec2(1.f, 0.f), float _SlopeAngle = 0.f);
 
     void SetNeedGravity(bool _Value) { m_bNeedGravity = _Value; }
     bool GetNeedGravity() const { return m_bNeedGravity; }
+    void EnterWaterVolume(float _AccelScale);
+    void ExitWaterVolume();
+    float GetWaterAccelScale() const { return m_WaterAccelScale; }
+    ITEM_STATE GetItemState() const { return m_eShieldType; }
+    void SetItemState(ITEM_STATE _State);
+    void Fire();
+    void Water();
+    void Electric();
+    void Star();
+    void CreateFireShield();
+    void CreateWaterShield();
+    void CreateElectricShield();
+    void CreateStarShield();
+    void CreateElectricShieldEffect();
+    void OnEatShield();
 
 public:
     void SetSpringJumpState(ActionState _Action, int _Dir)
@@ -371,6 +490,7 @@ public:
         m_Facing = _Dir;
         bIsSpringJump = true;
         IsGround = false;
+        m_bVerticalRoleLineAttached = false;
         m_ActionTime = 0.f;
     }
 
@@ -378,6 +498,7 @@ public:
     {
         vTangent = _Tangent;
     }
+    Vec2 GetGroundTangent() const { return vTangent; }
 
     void SetKnockBackState(ActionState _Action)
     {
@@ -393,10 +514,12 @@ public:
 
         IsJump = true;
         m_Action = _Action;
+        m_CylinderState = CylinderState::None;
         m_bBackReaction = false;
         bIsSpringJump = false;
         bIsSpringDash = false;
         IsGround = false;
+        m_bVerticalRoleLineAttached = false;
         m_Pose = PoseState::None;
         m_bPushContact = false;
         m_PushContactDir = 0;
@@ -426,10 +549,12 @@ public:
 
         IsJump = true;
         m_Action = ActionState::Roll;
+        m_CylinderState = CylinderState::None;
         m_bBackReaction = true;
         bIsSpringJump = false;
         bIsSpringDash = false;
         IsGround = false;
+        m_bVerticalRoleLineAttached = false;
         m_Pose = PoseState::None;
         m_bPushContact = false;
         m_PushContactDir = 0;
@@ -443,9 +568,13 @@ public:
         m_KnockBackInvincibleTime = 0.f;
     }
 
+    void SetItemBoxBounceState();
+
 public:
     virtual void SaveToLevelFile(FILE* _File) override;
     virtual void LoadFromLevelFile(FILE* _File) override;
+
+    void Dead();
 
     CLONE(CPlayerScript);
     CPlayerScript();
@@ -464,6 +593,10 @@ private:
     void ResolvePose(const PlayerInput& in, float dt);
     void ResolveAction(const PlayerInput& in, float dt);
     bool ApplySurfaceContact(const SurfaceContact& _Contact);
+    bool HandleCirclePhysics(const SurfaceContact& _Contact, const Vec2& _CurrentNormal,
+                             bool _JumpPressed, bool _BlockedByWallLikeSurface,
+                             bool _SuppressSlopeSlip,
+                             float& _InOutTangentSpeed, bool& _OutForceFall);
 
     bool CanStartJump(const PlayerInput& in) const;
     void StartJump();
@@ -481,6 +614,7 @@ private:
     void UpdateGroundRotation();
     void UpdateAnimation(float dt);
 
+    void NormalizeStableSurfaceAttachmentState();
     void ResetGroundContact();
     void RegisterActiveSurface(GameObject* _SurfaceObject);
     void UnregisterActiveSurface(GameObject* _SurfaceObject);
@@ -492,8 +626,6 @@ private:
     bool ProbeSurfaceObject(GameObject* _SurfaceObject, bool _WasGround,
                             SurfaceContact& _BestContact, float& _BestScore,
                             GameObject*& _BestSurface, bool& _HasBest);
-    void ProbeSceneSurfaceContacts(bool _WasGround, SurfaceContact& _BestContact, float& _BestScore,
-                                   GameObject*& _BestSurface, bool& _HasBest);
     void ResolveBufferedSurfaceContacts();
 
     float Lerp(float _Start, float _End, float _Ratio)

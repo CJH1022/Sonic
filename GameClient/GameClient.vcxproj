@@ -176,6 +176,7 @@ call CodeGen.exe</Command>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="AFlipbook.h" />
+    <ClInclude Include="AComputeShader.h" />
     <ClInclude Include="ALevel.h" />
     <ClInclude Include="AMaterial.h" />
     <ClInclude Include="AMesh.h" />
@@ -187,11 +188,19 @@ call CodeGen.exe</Command>
     <ClInclude Include="assets.h" />
     <ClInclude Include="AssetUI.h" />
     <ClInclude Include="ATexture.h" />
+    <ClInclude Include="AParticleTickCS.h" />
     <ClInclude Include="ATileMap.h" />
     <ClInclude Include="CameraUI.h" />
     <ClInclude Include="CBillboardRender.h" />
     <ClInclude Include="Source\Scripts\CBackScript.h" />
+    <ClInclude Include="Source\Scripts\CItemScript.h" />
+    <ClInclude Include="Source\Scripts\CUIMgrScript.h" />
+    <ClInclude Include="Source\Scripts\CBasicPhysicBoxScript.h" />
+    <ClInclude Include="Source\Scripts\CCoinMgrScript.h" />
+    <ClInclude Include="Source\Scripts\CCoinScript.h" />
     <ClInclude Include="Source\Scripts\CCylinderScript.h" />
+    <ClInclude Include="Source\Scripts\CDeadPieceScript.h" />
+    <ClInclude Include="Source\Scripts\CEffectScript.h" />
     <ClInclude Include="Source\Scripts\CFireScript.h" />
     <ClInclude Include="Source\Scripts\CBossScript.h" />
     <ClInclude Include="CCamera.h" />
@@ -200,6 +209,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="CFlipbookRender.h" />
     <ClInclude Include="CLight2D.h" />
     <ClInclude Include="CMeshRender.h" />
+    <ClInclude Include="CParticleRender.h" />
     <ClInclude Include="Collider2DUI.h" />
     <ClInclude Include="CollisionMgr.h" />
     <ClInclude Include="Component.h" />
@@ -219,6 +229,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="Entity.h" />
     <ClInclude Include="enum.h" />
     <ClInclude Include="extern.h" />
+    <ClInclude Include="FontMgr.h" />
     <ClInclude Include="FlipbookRenderUI.h" />
     <ClInclude Include="FlipbookUI.h" />
     <ClInclude Include="framework.h" />
@@ -280,6 +291,7 @@ call CodeGen.exe</Command>
     <ClInclude Include="Source\Scripts\CSurfaceScript.h" />
     <ClInclude Include="Source\Scripts\CSpringScript.h" />
     <ClInclude Include="Source\Scripts\CTileScript.h" />
+    <ClInclude Include="Source\Scripts\CWaterScript.h" />
     <ClInclude Include="SpriteRenderUI.h" />
     <ClInclude Include="SpriteUI.h" />
     <ClInclude Include="struct.h" />
@@ -291,9 +303,11 @@ call CodeGen.exe</Command>
     <ClInclude Include="TimeMgr.h" />
     <ClInclude Include="TransformUI.h" />
     <ClInclude Include="TreeUI.h" />
+    <ClInclude Include="ASound.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AFlipbook.cpp" />
+    <ClCompile Include="AComputeShader.cpp" />
     <ClCompile Include="ALevel.cpp" />
     <ClCompile Include="AMaterial.cpp" />
     <ClCompile Include="AMesh.cpp" />
@@ -305,11 +319,19 @@ call CodeGen.exe</Command>
     <ClCompile Include="AssetMgr_Init.cpp" />
     <ClCompile Include="AssetUI.cpp" />
     <ClCompile Include="ATexture.cpp" />
+    <ClCompile Include="AParticleTickCS.cpp" />
     <ClCompile Include="ATileMap.cpp" />
     <ClCompile Include="CameraUI.cpp" />
     <ClCompile Include="CBillboardRender.cpp" />
     <ClCompile Include="Source\Scripts\CBackScript.cpp" />
+    <ClCompile Include="Source\Scripts\CItemScript.cpp" />
+    <ClCompile Include="Source\Scripts\CUIMgrScript.cpp" />
+    <ClCompile Include="Source\Scripts\CBasicPhysicBoxScript.cpp" />
+    <ClCompile Include="Source\Scripts\CCoinMgrScript.cpp" />
+    <ClCompile Include="Source\Scripts\CCoinScript.cpp" />
     <ClCompile Include="Source\Scripts\CCylinderScript.cpp" />
+    <ClCompile Include="Source\Scripts\CDeadPieceScript.cpp" />
+    <ClCompile Include="Source\Scripts\CEffectScript.cpp" />
     <ClCompile Include="Source\Scripts\CFireScript.cpp" />
     <ClCompile Include="Source\Scripts\CBossScript.cpp" />
     <ClCompile Include="CCamera.cpp" />
@@ -318,6 +340,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="CFlipbookRender.cpp" />
     <ClCompile Include="CLight2D.cpp" />
     <ClCompile Include="CMeshRender.cpp" />
+    <ClCompile Include="CParticleRender.cpp" />
     <ClCompile Include="Collider2DUI.cpp" />
     <ClCompile Include="CollisionMgr.cpp" />
     <ClCompile Include="Component.cpp" />
@@ -336,6 +359,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="Entity.cpp" />
     <ClCompile Include="AGraphicShader.cpp" />
     <ClCompile Include="extern.cpp" />
+    <ClCompile Include="FontMgr.cpp" />
     <ClCompile Include="FlipbookRenderUI.cpp" />
     <ClCompile Include="FlipbookUI.cpp" />
     <ClCompile Include="func.cpp" />
@@ -395,6 +419,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="Source\Scripts\CSurfaceScript.cpp" />
     <ClCompile Include="Source\Scripts\CSpringScript.cpp" />
     <ClCompile Include="Source\Scripts\CTileScript.cpp" />
+    <ClCompile Include="Source\Scripts\CWaterScript.cpp" />
     <ClCompile Include="SpriteRenderUI.cpp" />
     <ClCompile Include="SpriteUI.cpp" />
     <ClCompile Include="StructuredBuffer.cpp" />
@@ -404,6 +429,7 @@ call CodeGen.exe</Command>
     <ClCompile Include="TimeMgr.cpp" />
     <ClCompile Include="TransformUI.cpp" />
     <ClCompile Include="TreeUI.cpp" />
+    <ClCompile Include="ASound.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="GameClient.rc" />

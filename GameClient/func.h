@@ -1,9 +1,24 @@
 #pragma once
 
+enum class GAME_BGM_PLAYLIST
+{
+    NONE = 0,
+    OPENING,
+    STAGE,
+    BOSS,
+    ENDING,
+};
+
 // Task
 void CreateObject(class GameObject* _Object, int LayerIdx);
 void ChangeLevel(const wstring& _NextLevelName);
 void ChangeLevelState(LEVEL_STATE _NextState);
+
+void PreloadGameplaySounds();
+void SetGameBGMPlaylist(GAME_BGM_PLAYLIST _Playlist);
+void UpdateGameBGM();
+void StopGameBGM();
+void PlayGameSFX(const wchar_t* _RelativePath, float _Volume = 1.f, bool _Overlap = true);
 
 
 

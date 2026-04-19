@@ -7,6 +7,8 @@
 #include "LevelMgr.h"
 #include "Source/ScriptMgr.h"
 #include "Source/Scripts/CBossScript.h"
+#include "Source/Scripts/CCoinMgrScript.h"
+#include "Source/Scripts/CItemScript.h"
 #include "Source/Scripts/CPlayerScript.h"
 #include "Source/Scripts/CSurfaceSetScript.h"
 
@@ -399,6 +401,78 @@ void ScriptUI::Tick_UI()
 		ImGui::Text("%u", pSurfaceSetScript->GetBuiltSurfaceCount());
 		AddItemHeight();
 	}
+
+    CCoinMgrScript* pCoinMgrScript = dynamic_cast<CCoinMgrScript*>(m_TargetScript.Get());
+    if (nullptr != pCoinMgrScript)
+    {
+        ImGui::Separator();
+        AddItemHeight();
+
+        ImGui::PushID(pCoinMgrScript);
+
+        int coinCount = CCoinMgrScript::GetCoinCount();
+        ImGui::Text("Current Coin");
+        ImGui::SameLine(120);
+        if (ImGui::DragInt("##CurrentCoin", &coinCount, 1.f))
+            CCoinMgrScript::SetCoinCount(coinCount);
+        AddItemHeight();
+
+        bool useGravity = pCoinMgrScript->GetKnockbackCoinGravity();
+        ImGui::Text("Coin Gravity");
+        ImGui::SameLine(120);
+        if (ImGui::Checkbox("##CoinGravity", &useGravity))
+            pCoinMgrScript->SetKnockbackCoinGravity(useGravity);
+        AddItemHeight();
+
+        ImGui::PopID();
+    }
+
+    CItemScript* pItemScript = dynamic_cast<CItemScript*>(m_TargetScript.Get());
+    if (nullptr != pItemScript)
+    {
+        static const char* itemBoxNames[] =
+        {
+            "None",
+            "Life",
+            "Electric",
+            "Fire",
+            "Water",
+            "Star",
+            "Coin",
+        };
+
+        int itemBoxIndex = (int)pItemScript->GetBoxType();
+        if (itemBoxIndex < 0)
+            itemBoxIndex = 0;
+        if (itemBoxIndex >= (int)IM_ARRAYSIZE(itemBoxNames))
+            itemBoxIndex = (int)IM_ARRAYSIZE(itemBoxNames) - 1;
+
+        ImGui::Separator();
+        AddItemHeight();
+
+        ImGui::PushID(pItemScript);
+
+        ImGui::Text("Item Box Type");
+        ImGui::SameLine(120);
+        if (ImGui::Combo("##ItemBoxType", &itemBoxIndex, itemBoxNames, IM_ARRAYSIZE(itemBoxNames)))
+        {
+            pItemScript->SetBoxType((CItemScript::ITEMBOX)itemBoxIndex);
+            pItemScript->ApplyEditorBoxSetup();
+            if (nullptr != LevelMgr::GetInst()->GetCurLevel())
+                LevelMgr::GetInst()->GetCurLevel()->SetChanged();
+        }
+        AddItemHeight();
+
+        if (ImGui::Button("Apply Item Box"))
+        {
+            pItemScript->ApplyEditorBoxSetup();
+            if (nullptr != LevelMgr::GetInst()->GetCurLevel())
+                LevelMgr::GetInst()->GetCurLevel()->SetChanged();
+        }
+        AddItemHeight();
+
+        ImGui::PopID();
+    }
 
 	SetSizeAsChild(Vec2(0.f, (float)m_ItemHeight));
 }

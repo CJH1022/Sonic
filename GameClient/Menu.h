@@ -10,12 +10,15 @@ private:
     void View();
     void GameObjectMenu();
     void Asset();
+    void CreateEmptyObject();
+    void CreateBossObject();
     void CreateCylinderObject();
     void CreateBlockObject();
     void CreateMovingBlockObject();
     void CreatePushingBlockObject();
     void CreateSpikeObject(float _RotationZ, const wchar_t* _NamePrefix);
     void CreateSpringObject(float _RotationZ, const wchar_t* _NamePrefix);
+    void CreateCoinObject();
     void DeleteSelectedObject();
 
 public:

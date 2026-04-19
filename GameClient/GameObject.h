@@ -44,6 +44,7 @@ public:
     template<typename T>
     Ptr<T> GetScript();
     bool IsDescendantOf(Ptr<GameObject> _Object) const;
+    int GetLayerIdx() const { return m_LayerIdx; }
 
     void AddChild(Ptr<GameObject> _Child);
     void DisconnectWithParent();
@@ -59,6 +60,7 @@ public:
     void Destroy();
 
     // 특정 컴포넌트를 다운캐스팅해서 바로 리턴
+    GET_COMPONENT(ParticleRender, PARTICLE_RENDER);
     GET_COMPONENT(Light2D, LIGHT2D);
     GET_COMPONENT(TileRender, TILE_RENDER);
     GET_COMPONENT(FlipbookRender, FLIPBOOK_RENDER);

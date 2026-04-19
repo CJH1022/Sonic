@@ -6,9 +6,12 @@
 #include "Source/Scripts/CBlockScript.h"
 #include "Source/Scripts/CBlockMovingScript.h"
 #include "Source/Scripts/CBlockPushingScript.h"
+#include "Source/Scripts/CBackScript.h"
 #include "Source/Scripts/CDestroyBlockScript.h"
 #include "Source/Scripts/CKnockbackScript.h"
 #include "Source/Scripts/CSpikeScript.h"
+#include "Source/Scripts/CCoinScript.h"
+#include "Source/Scripts/CItemScript.h"
 
 void AssetMgr::Init()
 {
@@ -28,6 +31,21 @@ void AssetMgr::Init()
 void AssetMgr::CreateEngineMesh()
 {
 	Ptr<AMesh> pMesh = nullptr;
+
+	// =========
+	// PointMesh
+	// =========
+	{
+		Vtx pointVtx = {};
+		pointVtx.vPos = Vec3(0.f, 0.f, 0.f);
+		pointVtx.vUV = Vec2(0.f, 0.f);
+		pointVtx.vColor = Vec4(1.f, 1.f, 1.f, 1.f);
+		UINT pointIdx = 0;
+
+		pMesh = new AMesh;
+		pMesh->Create(&pointVtx, 1, &pointIdx, 1);
+		AddAsset(L"PointMesh", pMesh.Get());
+	}
 
 	// ========
 	// RectMesh
@@ -155,8 +173,8 @@ void AssetMgr::CreateEngineShader()
 	pShader->CreatePixelShader(L"Shader\\std2d.fx", "PS_Std2D");
 	pShader->SetRSType(RS_TYPE::CULL_NONE);
 
-	pShader->AddShaderParam(SHADER_PARAM::VEC4, 0, L"TintColor");
-	pShader->AddShaderParam(SHADER_PARAM::TEX, 0, L"OutColor");
+	// Shader param metadata is editor-only. Skip registration here to avoid
+	// startup instability from dynamic param list construction.
 
 	AddAsset(L"Std2DShader", pShader.Get());
 
@@ -194,7 +212,6 @@ void AssetMgr::CreateEngineShader()
 	pShader->CreatePixelShader(L"Shader\\flipbook.fx", "PS_Flipbook");
 	pShader->SetBSType(BS_TYPE::DEFAULT);
 	pShader->SetRSType(RS_TYPE::CULL_NONE);
-	pShader->AddShaderParam(SHADER_PARAM::VEC4, 0, L"FlashColor");
 	AssetMgr::GetInst()->AddAsset(pShader->GetName(), pShader.Get());
 
 	// ==============
@@ -207,7 +224,6 @@ void AssetMgr::CreateEngineShader()
 	pShader->SetBSType(BS_TYPE::ALPHABLEND);
 	pShader->SetRSType(RS_TYPE::CULL_NONE);
 	pShader->SetDSType(DS_TYPE::NO_TEST_NO_WRITE);
-	pShader->AddShaderParam(SHADER_PARAM::VEC4, 0, L"FlashColor");
 	AssetMgr::GetInst()->AddAsset(pShader->GetName(), pShader.Get());
 
 	// =============
@@ -272,6 +288,13 @@ void AssetMgr::CreateEngineTexture()
 	Load<ATexture>(L"BOSS", L"Texture\\Boss.png");
 
 	Load<ATexture>(L"Opening", L"Texture\\Opening.png");
+
+	Load<ATexture>(L"Coin", L"Texture\\Sonic_Ring.png");
+	Load<ATexture>(L"Monitor", L"Texture\\Monitor.png");
+	Load<ATexture>(L"Number", L"Texture\\Number.png");
+	Load<ATexture>(L"UI_Start", L"Texture\\UI_Start.png");
+	Load<ATexture>(L"UI_General", L"Texture\\UI_General.png");
+	Load<ATexture>(L"UI_Ending", L"Texture\\UI_ENDING.png");
 }
 
 void AssetMgr::CreateEngineMaterial()
@@ -884,7 +907,196 @@ void AssetMgr::CreateEngineSprite()
 
 		AddAsset(pTileMap->GetName(), pTileMap.Get());
 		// pTileMap->Save(CONTENT_PATH + pTileMap->GetKey());
-}
+
+		Ptr<ATexture> pMonitorAtlas = FIND(ATexture, L"Monitor");
+		if (nullptr != pMonitorAtlas)
+		{
+			const float monitorWidth = pMonitorAtlas->GetWidth();
+			const float monitorHeight = pMonitorAtlas->GetHeight();
+
+			auto SaveMonitorSprite = [this, pMonitorAtlas, monitorWidth, monitorHeight](const wchar_t* _Name, const Vec2& _LeftTopPx, const Vec2& _SizePx)
+			{
+				Ptr<ASprite> pMonitorSprite = new ASprite;
+				pMonitorSprite->SetName(_Name);
+				pMonitorSprite->SetAtlas(pMonitorAtlas);
+				pMonitorSprite->SetLeftTopUV(Vec2(_LeftTopPx.x / monitorWidth, _LeftTopPx.y / monitorHeight));
+				pMonitorSprite->SetSliceUV(Vec2(_SizePx.x / monitorWidth, _SizePx.y / monitorHeight));
+				AddAsset(pMonitorSprite->GetName(), pMonitorSprite.Get());
+				pMonitorSprite->Save(CONTENT_PATH + pMonitorSprite->GetKey());
+			};
+
+			SaveMonitorSprite(L"Sprite\\ItemBox_Base.sprite", Vec2(26.f, 747.f), Vec2(29.f, 38.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_Lid.sprite", Vec2(26.f, 699.f), Vec2(29.f, 14.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_Dead.sprite", Vec2(56.f, 747.f), Vec2(29.f, 38.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_0.sprite", Vec2(104.f, 698.f), Vec2(16.f, 16.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_1.sprite", Vec2(128.f, 698.f), Vec2(16.f, 16.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_2.sprite", Vec2(152.f, 698.f), Vec2(16.f, 16.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_3.sprite", Vec2(176.f, 698.f), Vec2(16.f, 16.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_4.sprite", Vec2(200.f, 698.f), Vec2(16.f, 16.f));
+			SaveMonitorSprite(L"Sprite\\ItemBox_5.sprite", Vec2(224.f, 698.f), Vec2(16.f, 16.f));
+		}
+
+		auto SaveFullTextureSprite = [this](const wchar_t* _SpritePath, const wchar_t* _TextureKey)
+		{
+			Ptr<ATexture> pTexture = FIND(ATexture, _TextureKey);
+			if (nullptr == pTexture)
+				return;
+
+			Ptr<ASprite> pSprite = new ASprite;
+			pSprite->SetName(_SpritePath);
+			pSprite->SetAtlas(pTexture);
+			pSprite->SetLeftTopUV(Vec2(0.f, 0.f));
+			pSprite->SetSliceUV(Vec2(1.f, 1.f));
+			AddAsset(pSprite->GetName(), pSprite.Get());
+			pSprite->Save(CONTENT_PATH + pSprite->GetKey());
+		};
+
+		auto SaveFlipbookFromSprites = [this](const wchar_t* _FlipbookPath, std::initializer_list<const wchar_t*> _SpritePaths)
+		{
+			Ptr<AFlipbook> pFlipbook = new AFlipbook;
+			pFlipbook->SetName(_FlipbookPath);
+
+			for (const wchar_t* pSpritePath : _SpritePaths)
+			{
+				Ptr<ASprite> pSprite = LOAD(ASprite, pSpritePath);
+				if (nullptr != pSprite)
+					pFlipbook->AddSprite(pSprite);
+			}
+
+			if (0 == pFlipbook->GetSpriteCount())
+				return;
+
+			AddAsset(pFlipbook->GetName(), pFlipbook.Get());
+			pFlipbook->Save(CONTENT_PATH + pFlipbook->GetKey());
+		};
+
+        auto SaveFlipbookFromSpriteKeys = [this](const wchar_t* _FlipbookPath, const vector<wstring>& _SpritePaths)
+        {
+            Ptr<AFlipbook> pFlipbook = new AFlipbook;
+            pFlipbook->SetName(_FlipbookPath);
+
+            for (size_t i = 0; i < _SpritePaths.size(); ++i)
+            {
+                Ptr<ASprite> pSprite = LOAD(ASprite, _SpritePaths[i]);
+                if (nullptr != pSprite)
+                    pFlipbook->AddSprite(pSprite);
+            }
+
+            if (0 == pFlipbook->GetSpriteCount())
+                return;
+
+            AddAsset(pFlipbook->GetName(), pFlipbook.Get());
+            pFlipbook->Save(CONTENT_PATH + pFlipbook->GetKey());
+        };
+
+        auto SaveAtlasSprite = [this](Ptr<ATexture> _Atlas
+            , const wchar_t* _SpritePath
+            , const Vec2& _LeftTopPx
+            , const Vec2& _SizePx)
+        {
+            if (nullptr == _Atlas)
+                return;
+
+            const float atlasWidth = max(1.f, _Atlas->GetWidth());
+            const float atlasHeight = max(1.f, _Atlas->GetHeight());
+
+            Ptr<ASprite> pSprite = new ASprite;
+            pSprite->SetName(_SpritePath);
+            pSprite->SetAtlas(_Atlas);
+            pSprite->SetLeftTopUV(Vec2(_LeftTopPx.x / atlasWidth, _LeftTopPx.y / atlasHeight));
+            pSprite->SetSliceUV(Vec2(_SizePx.x / atlasWidth, _SizePx.y / atlasHeight));
+            pSprite->SetBackgroundUV(Vec2(_SizePx.x / atlasWidth, _SizePx.y / atlasHeight));
+            pSprite->SetOffsetUV(Vec2(0.f, 0.f));
+            AddAsset(pSprite->GetName(), pSprite.Get());
+            pSprite->Save(CONTENT_PATH + pSprite->GetKey());
+        };
+
+        auto SaveAtlasSpriteSequence = [&](const wchar_t* _SpritePrefix
+            , const wchar_t* _FlipbookPath
+            , Ptr<ATexture> _Atlas
+            , const Vec2& _StartPx
+            , const Vec2& _FrameSizePx
+            , const Vec2& _StepPx
+            , int _FrameCount)
+        {
+            vector<wstring> spritePaths;
+            spritePaths.reserve(_FrameCount);
+
+            for (int i = 0; i < _FrameCount; ++i)
+            {
+                const Vec2 leftTopPx = Vec2(_StartPx.x + (_StepPx.x * (float)i)
+                    , _StartPx.y + (_StepPx.y * (float)i));
+
+                wchar_t spritePath[128] = {};
+                swprintf_s(spritePath, L"Sprite\\%ls_frame_%d.sprite", _SpritePrefix, i);
+                SaveAtlasSprite(_Atlas, spritePath, leftTopPx, _FrameSizePx);
+                spritePaths.push_back(spritePath);
+            }
+
+            SaveFlipbookFromSpriteKeys(_FlipbookPath, spritePaths);
+        };
+
+        Ptr<ATexture> pItemAtlas = FIND(ATexture, L"Item");
+        if (nullptr != pItemAtlas)
+        {
+            const Vec2 shieldFrameSize = Vec2(47.f, 47.f);
+            SaveAtlasSpriteSequence(L"FireShield"
+                , L"Flipbook\\FireShield.flip"
+                , pItemAtlas
+                , Vec2(512.f, 605.f)
+                , shieldFrameSize
+                , Vec2(47.f, 0.f)
+                , 8);
+            SaveAtlasSpriteSequence(L"ElectricShield"
+                , L"Flipbook\\ElectricShield.flip"
+                , pItemAtlas
+                , Vec2(807.f, 813.f)
+                , shieldFrameSize
+                , Vec2(47.f, 0.f)
+                , 8);
+            SaveAtlasSpriteSequence(L"WaterShield"
+                , L"Flipbook\\WaterShield.flip"
+                , pItemAtlas
+                , Vec2(512.f, 939.f)
+                , shieldFrameSize
+                , Vec2(47.f, 0.f)
+                , 8);
+
+            // Attack strips are rebuilt as separate assets so later runtime hooks
+            // can swap in the matching motion without relying on the broken restore set.
+            SaveAtlasSpriteSequence(L"FireShieldAttack"
+                , L"Flipbook\\FireShieldAttack.flip"
+                , pItemAtlas
+                , Vec2(20.f, 705.f)
+                , shieldFrameSize
+                , Vec2(47.f, 0.f)
+                , 8);
+            SaveAtlasSpriteSequence(L"ElectricShieldAttack"
+                , L"Flipbook\\ElectricShieldAttack.flip"
+                , pItemAtlas
+                , Vec2(40.f, 913.f)
+                , shieldFrameSize
+                , Vec2(36.f, 0.f)
+                , 25);
+            SaveAtlasSpriteSequence(L"WaterShieldAttack"
+                , L"Flipbook\\WaterShieldAttack.flip"
+                , pItemAtlas
+                , Vec2(225.f, 1039.f)
+                , shieldFrameSize
+                , Vec2(47.f, 0.f)
+                , 8);
+        }
+
+		SaveFullTextureSprite(L"Sprite\\Stage_Start_0.sprite", L"UI_Start");
+		SaveFullTextureSprite(L"Sprite\\Stage_General.sprite", L"UI_General");
+		SaveFullTextureSprite(L"Sprite\\Stage_Start_1.sprite", L"UI_General");
+		SaveFullTextureSprite(L"Sprite\\Stage_End_0.sprite", L"UI_Ending");
+		SaveFlipbookFromSprites(L"Flipbook\\Dead.flip",
+		{
+			L"Sprite\\Sonic_Hurt.sprite",
+			L"Sprite\\Sonic_Hurt_1.sprite",
+		});
+	}
 
 void AssetMgr::CreateEnginePrefab()
 {
@@ -933,10 +1145,110 @@ void AssetMgr::CreateEnginePrefab()
 		pPrefab->Save(wstring(CONTENT_PATH) + _AssetKey);
 	};
 
+	auto SaveFlipbookPrefabAsset = [&](const wchar_t* _AssetKey, const wchar_t* _ObjectName, const wchar_t* _FlipbookPath, const Vec3& _Scale, CScript* _Script)
+	{
+		Ptr<GameObject> pPrefabObject = new GameObject;
+		pPrefabObject->SetName(_ObjectName);
+
+		pPrefabObject->AddComponent(new CTransform);
+		pPrefabObject->AddComponent(new CFlipbookRender);
+		pPrefabObject->AddComponent(new CCollider2D);
+
+		if (nullptr != _Script)
+			pPrefabObject->AddComponent(_Script);
+
+		pPrefabObject->Transform()->SetRelativeScale(_Scale);
+		pPrefabObject->FlipbookRender()->AddFlipbook(LOAD(AFlipbook, _FlipbookPath));
+
+		Ptr<APrefab> pPrefab = new APrefab;
+		pPrefab->SetObject(pPrefabObject);
+		AddAsset(_AssetKey, pPrefab.Get());
+		pPrefab->SetRelativePath(_AssetKey);
+		pPrefab->Save(wstring(CONTENT_PATH) + _AssetKey);
+	};
+
+	auto SaveItemBoxPrefabAsset = [&](const wchar_t* _AssetKey, const wchar_t* _ObjectName, CItemScript::ITEMBOX _Type)
+	{
+		Ptr<GameObject> pPrefabObject = new GameObject;
+		pPrefabObject->SetName(_ObjectName);
+
+		pPrefabObject->AddComponent(new CTransform);
+		pPrefabObject->AddComponent(new CSpriteRender);
+		pPrefabObject->AddComponent(new CCollider2D);
+		pPrefabObject->AddComponent(new CBackScript);
+
+		Ptr<CItemScript> pItemScript = new CItemScript;
+		pPrefabObject->AddComponent(pItemScript.Get());
+		pPrefabObject->Transform()->SetRelativeScale(Vec3(100.f, 120.f, 1.f));
+		pItemScript->SetBoxType(_Type);
+		pItemScript->ApplyEditorBoxSetup();
+
+		Ptr<APrefab> pPrefab = new APrefab;
+		pPrefab->SetObject(pPrefabObject);
+		AddAsset(_AssetKey, pPrefab.Get());
+		pPrefab->SetRelativePath(_AssetKey);
+		pPrefab->Save(wstring(CONTENT_PATH) + _AssetKey);
+	};
+
+	auto BinaryContainsWideText = [&](const wstring& _FilePath, const wchar_t* _Text)
+	{
+		FILE* pFile = nullptr;
+		_wfopen_s(&pFile, _FilePath.c_str(), L"rb");
+		if (nullptr == pFile)
+			return false;
+
+		fseek(pFile, 0, SEEK_END);
+		const long fileSize = ftell(pFile);
+		fseek(pFile, 0, SEEK_SET);
+
+		if (fileSize <= 0)
+		{
+			fclose(pFile);
+			return false;
+		}
+
+		vector<unsigned char> fileData((size_t)fileSize);
+		fread(fileData.data(), 1, (size_t)fileSize, pFile);
+		fclose(pFile);
+
+		const unsigned char* textBytes = reinterpret_cast<const unsigned char*>(_Text);
+		const size_t textByteCount = wcslen(_Text) * sizeof(wchar_t);
+		if (0 == textByteCount || fileData.size() < textByteCount)
+			return false;
+
+		for (size_t i = 0; i + textByteCount <= fileData.size(); ++i)
+		{
+			if (0 == memcmp(fileData.data() + i, textBytes, textByteCount))
+				return true;
+		}
+
+		return false;
+	};
+
 	SaveMeshPrefabAsset(L"Prefab\\Missile.pref", L"Missile", Vec3(10.f, 30.f, 1.f), new CMissileScript);
 	SaveSpritePrefabAsset(L"Prefab\\Block_Mid.pref", L"Block_Mid", L"Sprite\\Block_Mid.sprite", Vec3(100.f, 100.f, 1.f), new CBlockPushingScript);
 	SaveSpritePrefabAsset(L"Prefab\\Block_Tall.pref", L"Block_Tall", L"Sprite\\Block_Tall.sprite", Vec3(100.f, 150, 1.f), new CBlockScript);
 	SaveSpritePrefabAsset(L"Prefab\\Block_Small.pref", L"Block_Small", L"Sprite\\Block_Small.sprite", Vec3(100, 70, 1.f), new CBlockScript);
 	SaveSpritePrefabAsset(L"Prefab\\Block_Move.pref", L"Block_Move", L"Sprite\\Block_Move.sprite", Vec3(150.f, 100.f, 1.f), new CBlockMovingScript);
 	SaveSpritePrefabAsset(L"Prefab\\Spike.pref", L"Spike", L"Sprite\\Spike.sprite", Vec3(150.f, 150.f, 1.f), new CSpikeScript);
+	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_LIFE.pref", L"ITEMBOX_LIFE", CItemScript::ITEMBOX::UPLIFEBOX);
+	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_ELECTRIC.pref", L"ITEMBOX_ELECTRIC", CItemScript::ITEMBOX::ELECTIRCBOX);
+	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_FIRE.pref", L"ITEMBOX_FIRE", CItemScript::ITEMBOX::FIREBOX);
+	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_FRIE.pref", L"ITEMBOX_FRIE", CItemScript::ITEMBOX::FIREBOX);
+	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_WATER.pref", L"ITEMBOX_WATER", CItemScript::ITEMBOX::WATERBOX);
+	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_STAR.pref", L"ITEMBOX_STAR", CItemScript::ITEMBOX::STARBOX);
+	SaveItemBoxPrefabAsset(L"Prefab\\ITEMBOX_COIN.pref", L"ITEMBOX_COIN", CItemScript::ITEMBOX::COINBOX);
+	SaveSpritePrefabAsset(L"Prefab\\ITEMBOX_DEAD.pref", L"ITEMBOX_DEAD", L"Sprite\\ItemBox_Dead.sprite", Vec3(100.f, 120.f, 1.f), nullptr);
+
+	const wstring coinPrefabPath = wstring(CONTENT_PATH) + L"Prefab\\Coin.pref";
+	const bool coinPrefabMissing = (GetFileAttributesW(coinPrefabPath.c_str()) == INVALID_FILE_ATTRIBUTES);
+	const bool coinPrefabSavedWithBrokenSpritePath =
+		!coinPrefabMissing
+		&& BinaryContainsWideText(coinPrefabPath, L"SpriteMtrl")
+		&& BinaryContainsWideText(coinPrefabPath, L"Flipbook\\CoinTurn.flip");
+
+	if (coinPrefabMissing || coinPrefabSavedWithBrokenSpritePath)
+	{
+		SaveFlipbookPrefabAsset(L"Prefab\\Coin.pref", L"Coin", L"Flipbook\\CoinTurn.flip", Vec3(100.f, 100.f, 1.f), new CCoinScript);
+	}
 }

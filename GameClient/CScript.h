@@ -34,6 +34,7 @@ class CScript :
 private:
     int                  m_ScriptType;
     vector<tScriptParam> m_vecScriptParam;
+    bool                 m_bTickEnabled;
 
 public:
     int GetScriptType() { return m_ScriptType; }
@@ -47,6 +48,8 @@ protected:
 
 public:
     const vector<tScriptParam>& GetScriptParam() { return m_vecScriptParam; }
+    bool IsTickEnabled() const { return m_bTickEnabled; }
+    void SetTickEnabled(bool _Enable) { m_bTickEnabled = _Enable; }
 
     virtual void Tick() = 0;
     virtual void FinalTick() final {};

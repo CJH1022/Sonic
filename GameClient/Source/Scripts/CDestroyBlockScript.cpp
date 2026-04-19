@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "CDestroyBlockScript.h"
 #include "CCollider2D.h"
+#include "CDeadPieceScript.h"
 #include "GameObject.h"
 #include "CTransform.h"
 #include "CPlayerScript.h"
@@ -8,6 +9,7 @@
 CDestroyBlockScript::CDestroyBlockScript()
     : CScript(SCRIPT_TYPE::DESTROYBLOCKSCRIPT)
     , m_life(2)
+    , m_bDeadPiecesSpawned(false)
 {
 }
 
@@ -24,10 +26,27 @@ void CDestroyBlockScript::Begin()
 
 void CDestroyBlockScript::Tick()
 {
-    if (m_life == 0)
-        this->GetOwner()->Destroy();
-    else if (m_life < 0)
+    if (m_life < 0)
         m_life = 0;
+
+    if (m_life == 0)
+    {
+        if (!m_bDeadPiecesSpawned && GetOwner() != nullptr && !GetOwner()->IsDead())
+        {
+            DeadPieceSpawnDesc desc;
+            desc.HorizontalSpeed = 18.f;
+            desc.TopUpwardSpeed = 240.f;
+            desc.BottomUpwardSpeed = 180.f;
+            desc.Gravity = 850.f;
+            desc.LifeTime = 0.75f;
+            desc.SpinSpeed = 5.5f;
+
+            CDeadPieceScript::SpawnSplitPieces(GetOwner(), desc);
+            m_bDeadPiecesSpawned = true;
+        }
+
+        this->GetOwner()->Destroy();
+    }
 }
 
 void CDestroyBlockScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)

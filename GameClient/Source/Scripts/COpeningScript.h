@@ -1,16 +1,34 @@
 #pragma once
 #include "CScript.h"
 
+class ASprite;
+class GameObject;
+
 class COpeningScript
     : public CScript
 {
 private:
     bool m_bSpawnedSonicMain;
+    bool m_bSpawnedEyeHand;
 
 private:
-    float           m_TransitionAccTime; // 애니메이션 경과 시간
-    bool            m_bTransitionEnd;    // 애니메이션 종료 여부
-    Ptr<GameObject> m_pOverlay20;        // 20번째 스프라이트 (포인터 보관)
+    float           m_FrontOpeningZ;
+    float           m_EyeHandLocalZ;
+    float           m_SonicMainZ;
+    float           m_Overlay20Z;
+    float           m_StartButtonLocalZ;
+    float           m_TransitionAccTime;
+    float           m_PostTransitionAccTime;
+    bool            m_bTransitionEnd;
+    Ptr<GameObject> m_pSonicMain;
+    Ptr<GameObject> m_pOverlay20;
+    Ptr<GameObject> m_pStartButton;
+    Ptr<ASprite>    m_pStartButtonOnSprite;
+    Ptr<ASprite>    m_pStartButtonOffSprite;
+    bool            m_bStartLevelRequested;
+
+private:
+    void RegisterScriptParams();
 
 public:
     virtual void Begin() override;
@@ -19,5 +37,6 @@ public:
 public:
     CLONE(COpeningScript);
     COpeningScript();
+    COpeningScript(const COpeningScript& _Origin);
     virtual ~COpeningScript();
 };

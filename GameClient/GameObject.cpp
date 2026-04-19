@@ -63,6 +63,37 @@ namespace
 		fwprintf(pTrace, L"\n");
 		fclose(pTrace);
 	}
+
+	void AppendRuntimeComponentTrace(const wchar_t* _Format, ...)
+	{
+		FILE* pTrace = nullptr;
+		_wfopen_s(&pTrace
+			, L"C:\\Users\\141245124\\Desktop\\Sonic_Last\\Sonic++_ (3)\\Sonic++_\\Game\\Bin\\runtime_component_trace.txt"
+			, L"a, ccs=UTF-8");
+		if (nullptr == pTrace)
+			return;
+
+		va_list args;
+		va_start(args, _Format);
+		vfwprintf(pTrace, _Format, args);
+		va_end(args);
+		fwprintf(pTrace, L"\n");
+		fclose(pTrace);
+	}
+
+	bool IsTransientOpeningRuntimeObject(GameObject* _Object)
+	{
+		if (nullptr == _Object)
+			return false;
+
+		const wstring& name = _Object->GetName();
+
+		return name == L"Opening_Sonic_main"
+			|| name == L"Opening_Sonic_Eye"
+			|| name == L"Opening_Sonic_Hand"
+			|| name == L"Opening_Overlay_20"
+			|| name == L"Opening_Start_Button";
+	}
 }
 
 
@@ -150,7 +181,8 @@ void GameObject::Tick()
 {
 	for (size_t i = 0; i < m_vecScripts.size(); ++i)
 	{
-		m_vecScripts[i]->Tick();
+		if (m_vecScripts[i]->IsTickEnabled())
+			m_vecScripts[i]->Tick();
 	}	
 	
 	for (size_t i = 0; i < m_vecChild.size(); ++i)
@@ -238,6 +270,12 @@ void GameObject::Render()
 
 void GameObject::AddComponent(Ptr<Component> _Com)
 {
+	if (nullptr == _Com)
+	{
+		AppendRuntimeComponentTrace(L"null_component object=%ls", GetName().c_str());
+		return;
+	}
+
 	// 렌더링 기능 컴포넌트는 하나만 가질 수 있음
 	if (dynamic_cast<CRenderComponent*>(_Com.Get()))
 	{
@@ -256,7 +294,15 @@ void GameObject::AddComponent(Ptr<Component> _Com)
 	else
 	{
 		// 해당 컴포넌트를 이미 가지고 있지 않아야 한다.
-		assert(nullptr == m_Com[(UINT)_Com->GetType()]);
+		if (nullptr != m_Com[(UINT)_Com->GetType()])
+		{
+			AppendRuntimeComponentTrace(L"duplicate_component object=%ls type=%u existing=%p incoming=%p"
+				, GetName().c_str()
+				, (UINT)_Com->GetType()
+				, m_Com[(UINT)_Com->GetType()].Get()
+				, _Com.Get());
+			return;
+		}
 		m_Com[(UINT)_Com->GetType()] = _Com;
 	}
 		
@@ -466,10 +512,24 @@ void GameObject::SaveToLevelFile(FILE* _File)
 		Script->SaveToLevelFile(_File);
 	}
 
-	size_t ChildCount = m_vecChild.size();
-	fwrite(&ChildCount, sizeof(size_t), 1, _File);
+	vector<Ptr<GameObject>> vecSaveChild;
+	vecSaveChild.reserve(m_vecChild.size());
 
 	for (const auto& Child : m_vecChild)
+	{
+		if (Child == nullptr || Child->IsDead())
+			continue;
+
+		if (IsTransientOpeningRuntimeObject(Child.Get()))
+			continue;
+
+		vecSaveChild.push_back(Child);
+	}
+
+	size_t ChildCount = vecSaveChild.size();
+	fwrite(&ChildCount, sizeof(size_t), 1, _File);
+
+	for (const auto& Child : vecSaveChild)
 	{
 		Child->SaveToLevelFile(_File);
 	}
@@ -477,6 +537,41 @@ void GameObject::SaveToLevelFile(FILE* _File)
 
 void GameObject::LoadFromLevelFile(FILE* _File)
 {
+	if (m_RenderCom != nullptr)
+	{
+		m_RenderCom->m_Owner = nullptr;
+		m_RenderCom = nullptr;
+	}
+
+	for (UINT i = 0; i < (UINT)COMPONENT_TYPE::END; ++i)
+	{
+		if (nullptr != m_Com[i])
+		{
+			m_Com[i]->m_Owner = nullptr;
+			m_Com[i] = nullptr;
+		}
+	}
+
+	for (size_t i = 0; i < m_vecScripts.size(); ++i)
+	{
+		if (nullptr != m_vecScripts[i])
+		{
+			RemoveScriptDelegatesRecursive(this, m_vecScripts[i].Get());
+			m_vecScripts[i]->m_Owner = nullptr;
+		}
+	}
+	m_vecScripts.clear();
+
+	for (size_t i = 0; i < m_vecChild.size(); ++i)
+	{
+		if (nullptr != m_vecChild[i])
+		{
+			m_vecChild[i]->m_Parent = nullptr;
+			m_vecChild[i]->m_LayerIdx = -1;
+		}
+	}
+	m_vecChild.clear();
+
 	SetName(LoadWString(_File));
 	AppendAutoplayTrace(L"object_begin name=%ls", GetName().c_str());
 
@@ -516,6 +611,9 @@ void GameObject::LoadFromLevelFile(FILE* _File)
 		case COMPONENT_TYPE::FLIPBOOK_RENDER:
 			pComponent = new CFlipbookRender;
 			break;
+		case COMPONENT_TYPE::PARTICLE_RENDER:
+			pComponent = new CParticleRender;
+			break;
 		case COMPONENT_TYPE::TILE_RENDER:
 			pComponent = new CTileRender;
 			break;
@@ -523,7 +621,11 @@ void GameObject::LoadFromLevelFile(FILE* _File)
 			break;
 		}
 
-		assert(nullptr != pComponent);
+		if (nullptr == pComponent)
+		{
+			AppendRuntimeComponentTrace(L"invalid_component object=%ls type=%u", GetName().c_str(), ComType);
+			return;
+		}
 		AddComponent(pComponent);
 		AppendAutoplayTrace(L"object=%ls component=%u begin", GetName().c_str(), ComType);
 		pComponent->LoadFromLevelFile(_File);
@@ -539,7 +641,11 @@ void GameObject::LoadFromLevelFile(FILE* _File)
 		wstring ScriptName = LoadWString(_File);
 		AppendAutoplayTrace(L"object=%ls script=%ls begin", GetName().c_str(), ScriptName.c_str());
 		Ptr<CScript> pScript = ScriptMgr::GetScript(ScriptName);
-		assert(nullptr != pScript);
+		if (nullptr == pScript)
+		{
+			AppendRuntimeComponentTrace(L"invalid_script object=%ls name=%ls", GetName().c_str(), ScriptName.c_str());
+			return;
+		}
 		AddComponent(pScript.Get());
 		pScript->LoadFromLevelFile(_File);
 		AppendAutoplayTrace(L"object=%ls script=%ls end", GetName().c_str(), ScriptName.c_str());

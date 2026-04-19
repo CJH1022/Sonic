@@ -61,3 +61,8 @@ void ConstBuffer::Binding()
 	CONTEXT->PSSetConstantBuffers((UINT)m_Type/*상수버퍼를 바인딩할 레지스터 번호*/, 1, m_CB.GetAddressOf());
 }
 
+void ConstBuffer::Binding_CS()
+{
+	CONTEXT->CSSetConstantBuffers((UINT)m_Type, 1, m_CB.GetAddressOf());
+}
+

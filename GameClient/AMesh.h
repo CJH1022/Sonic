@@ -21,6 +21,7 @@ public:
     int Create(Vtx* _VtxSysMem, UINT _VtxCount, UINT* _IdxSysMem, UINT _IdxCount);
     void Binding();
     void Render();
+    void Render_Particle(UINT _Count);
 
     const Vtx* GetVtxSysMem() { return m_VtxSysMem; }
     const UINT* GetIdxSysMem() { return m_IdxSysMem; }

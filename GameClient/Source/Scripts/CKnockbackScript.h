@@ -5,12 +5,14 @@ class CKnockbackScript :
 {
 private:
     Vec2 m_vKnockBackPower;
+    void TryApplyKnockback(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
 
 public:
     virtual void Begin();
     virtual void Tick() override;
 
     void BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
+    void Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
 
 public:
     Vec2 GetKnockBackPower() const { return m_vKnockBackPower; }

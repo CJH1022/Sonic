@@ -94,8 +94,12 @@ ASSET_TYPE GetAssetType()
 		return ASSET_TYPE::MATERIAL;
 	else if constexpr (std::is_same_v<T, AGraphicShader>)
 		return ASSET_TYPE::GRAPHICSHADER;
+	else if constexpr (std::is_same_v<T, AComputeShader>)
+		return ASSET_TYPE::COMPUTESHADER;
 	else if constexpr (std::is_same_v<T, ATexture>)
 		return ASSET_TYPE::TEXTURE;
+	else if constexpr (std::is_same_v<T, ASound>)
+		return ASSET_TYPE::SOUND;
 	else if constexpr (std::is_same_v<T, ASprite>)
 		return ASSET_TYPE::SPRITE;
 	else if constexpr (std::is_same_v<T, AFlipbook>)
@@ -151,30 +155,39 @@ Ptr<T> AssetMgr::Load(const wstring& _Key, const wstring& _RelativePath)
 		return pAsset;
 	}
 
-	// 에셋 객체 생성
-	pAsset = new T;
-	AppendAutoplayAssetTrace(L"asset_load_new key=%ls", _Key.c_str());
+	// 추상 에셋 타입은 런타임 생성 대신 이미 등록된 에셋만 재사용한다.
+	if constexpr (std::is_abstract_v<T>)
+	{
+		AppendAutoplayAssetTrace(L"asset_load_abstract_miss key=%ls", _Key.c_str());
+		return nullptr;
+	}
+	else
+	{
+		// 에셋 객체 생성
+		pAsset = new T;
+		AppendAutoplayAssetTrace(L"asset_load_new key=%ls", _Key.c_str());
 
-	// 입력된 경로로부터 에셋 로딩작업 진행	
-	AppendAutoplayAssetTrace(L"asset_load_call key=%ls path=%ls", _Key.c_str(), (CONTENT_PATH + _RelativePath).c_str());
-	pAsset->Load(CONTENT_PATH + _RelativePath);
-	AppendAutoplayAssetTrace(L"asset_load_return key=%ls", _Key.c_str());
+		// 입력된 경로로부터 에셋 로딩작업 진행	
+		AppendAutoplayAssetTrace(L"asset_load_call key=%ls path=%ls", _Key.c_str(), (CONTENT_PATH + _RelativePath).c_str());
+		pAsset->Load(CONTENT_PATH + _RelativePath);
+		AppendAutoplayAssetTrace(L"asset_load_return key=%ls", _Key.c_str());
 
-	// T 타입에 해당하는 실제 AssetType 확인
-	ASSET_TYPE type = GetAssetType<T>();
-	
-	// 맵에 에셋등록
-	m_mapAsset[(UINT)type].insert(make_pair(_Key, pAsset.Get()));
+		// T 타입에 해당하는 실제 AssetType 확인
+		ASSET_TYPE type = GetAssetType<T>();
+		
+		// 맵에 에셋등록
+		m_mapAsset[(UINT)type].insert(make_pair(_Key, pAsset.Get()));
 
-	// 에셋이 자신이 매니저에 등롣될때 상요된 Key 와, 
-	// 자신이 어떤 경로에 있는 파일로부터 로딩된 에셋인지 스스로 알 수 있도록 해줌
-	pAsset->SetKey(_Key);
-	pAsset->SetRelativePath(_RelativePath);
+		// 에셋이 자신이 매니저에 등롣될때 상요된 Key 와, 
+		// 자신이 어떤 경로에 있는 파일로부터 로딩된 에셋인지 스스로 알 수 있도록 해줌
+		pAsset->SetKey(_Key);
+		pAsset->SetRelativePath(_RelativePath);
 
-	m_Changed = true;
-	AppendAutoplayAssetTrace(L"asset_load_end key=%ls reused=0", _Key.c_str());
+		m_Changed = true;
+		AppendAutoplayAssetTrace(L"asset_load_end key=%ls reused=0", _Key.c_str());
 
-	return pAsset;
+		return pAsset;
+	}
 }
 
 template<typename T>

@@ -1,9 +1,12 @@
 #include "pch.h"
 #include "CMissileScript.h"
 
+#include "CCamera.h"
 #include "GameObject.h"
-#include "TimeMgr.h"
 #include "CCollider2D.h"
+#include "Engine.h"
+#include "RenderMgr.h"
+#include "TimeMgr.h"
 
 CMissileScript::CMissileScript()
 	: CScript(SCRIPT_TYPE::MISSILESCRIPT)
@@ -23,34 +26,62 @@ void CMissileScript::Begin()
 
 void CMissileScript::Tick()
 {
-	// 추적 대상이 있다면
-	if (IsValid(m_Target))
-	{		
-		Vec3 vTargetPos = m_Target->Transform()->GetWorldPos();
-		Vec3 vPos = Transform()->GetRelativePos();
+	if (Transform() == nullptr || GetOwner() == nullptr)
+		return;
 
-		
-		if (m_Dir == Vec3(0.f, 0.f, 0.f))
+	auto IsZeroDir = [](const Vec3& _Dir)
+	{
+		return fabsf(_Dir.x) <= 0.0001f &&
+			fabsf(_Dir.y) <= 0.0001f &&
+			fabsf(_Dir.z) <= 0.0001f;
+	};
+
+	auto ApplyMissileRotation = [this](const Vec3& _Dir)
+	{
+		Vec3 vBase = Vec3(0.f, 1.f, 0.f);
+		float dot = vBase.Dot(_Dir);
+		dot = max(-1.f, min(1.f, dot));
+		float radian = acosf(dot);
+
+		if (_Dir.x < 0.f)
+			Transform()->SetRelativeRot(Vec3(0.f, 0.f, radian));
+		else
+			Transform()->SetRelativeRot(Vec3(0.f, 0.f, -radian));
+	};
+
+	Vec3 vPos = Transform()->GetRelativePos();
+
+	if (IsValid(m_Target))
+	{
+		Vec3 vTargetPos = m_Target->Transform()->GetWorldPos();
+		if (IsZeroDir(m_Dir))
 		{
 			m_Dir = vTargetPos - vPos;
-			m_Dir.Normalize();
+			if (!IsZeroDir(m_Dir))
+				m_Dir.Normalize();
+		}
+	}
 
-			Vec3 vBase = Vec3(0.f, 1.f, 0.f);						
-			float Dot = vBase.Dot(m_Dir);
-			float Radian = acosf(Dot);
+	if (IsZeroDir(m_Dir))
+		return;
 
-			if (vTargetPos.x < vPos.x)
-				Transform()->SetRelativeRot(Vec3(0.f, 0.f, Radian));
-			else
-				Transform()->SetRelativeRot(Vec3(0.f, 0.f, -Radian));
-		}	
-		vPos += m_Dir * 200.f * DT;
+	ApplyMissileRotation(m_Dir);
+	vPos += m_Dir * 200.f * DT;
+	Transform()->SetRelativePos(vPos);
 
-		//Vec3 vDirToTarget = vTargetPos - vPos;
-		//vDirToTarget.Normalize();
-		//vPos += vDirToTarget * 200.f * DT;
+	Ptr<CCamera> pCamera = RenderMgr::GetInst()->GetPOVCamera();
+	if (pCamera == nullptr)
+		pCamera = RenderMgr::GetInst()->GetEditorCamera();
 
-		Transform()->SetRelativePos(vPos);
+	if (pCamera != nullptr && pCamera->Transform() != nullptr)
+	{
+		const Vec2 resol = Engine::GetInst()->GetResolution();
+		const Vec3 cameraPos = pCamera->Transform()->GetWorldPos();
+		const float bottomLimitY = cameraPos.y - (resol.y * 0.5f) - 220.f;
+		const float sideLimit = (resol.x * 0.8f) + 220.f;
+
+		if (vPos.y <= bottomLimitY || fabsf(vPos.x - cameraPos.x) >= sideLimit)
+			GetOwner()->Destroy();
 	}
 }
 

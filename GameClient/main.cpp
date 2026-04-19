@@ -59,6 +59,8 @@ int APIENTRY wWinMain(_In_      HINSTANCE hInstance,
         return 0;
     }
 
+    PreloadGameplaySounds();
+
     if (autoplay)
     {
         const wstring reportPath = BuildAutoplayReportPath(L"autoplay_boot_report.txt");
@@ -116,8 +118,9 @@ int APIENTRY wWinMain(_In_      HINSTANCE hInstance,
     }
     else
     {
-        // CreateOpenLevel();
-         CreateTestLevel();
+        CreateOpenLevel();
+        SetGameBGMPlaylist(GAME_BGM_PLAYLIST::OPENING);
+        // CreateTestLevel();
     }
 
     // 메세지 루프
@@ -158,6 +161,8 @@ int APIENTRY wWinMain(_In_      HINSTANCE hInstance,
             // Game 실행, 1 프레임
             if (FAILED(Engine::GetInst()->Progress()))
                 break;
+
+            UpdateGameBGM();
 
             if (autoplay)
             {

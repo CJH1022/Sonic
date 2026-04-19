@@ -328,6 +328,12 @@
     <ClInclude Include="Source\Scripts\CBackScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Scripts\CItemScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CUIMgrScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Scripts\CKnockbackScript.h">
       <Filter>Source\Scripts</Filter>
     </ClInclude>
@@ -347,6 +353,18 @@
       <Filter>Source\Scripts</Filter>
     </ClInclude>
     <ClInclude Include="Source\Scripts\CCylinderScript.h" />
+    <ClInclude Include="Source\Scripts\CDeadPieceScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CCoinScript.h">
+      <Filter>Source\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Scripts\CCoinMgrScript.h" />
+    <ClInclude Include="Source\Scripts\CEffectScript.h" />
+    <ClInclude Include="Source\Scripts\CBasicPhysicBoxScript.h" />
+    <ClInclude Include="ASound.h">
+      <Filter>GameEngine\04. Asset\11. Sound</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="GameClient.ico">
@@ -611,6 +629,9 @@
     </Filter>
     <Filter Include="GameEngine\07. EditorUI\09. ImageEditorUI">
       <UniqueIdentifier>{b5ce831f-bcd6-4514-a878-2c21df9d1027}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GameEngine\04. Asset\11. Sound">
+      <UniqueIdentifier>{B5F9740C-2E2D-4F41-BEE3-6FD37EC9E4B4}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -914,6 +935,12 @@
     <ClCompile Include="Source\Scripts\CBackScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Scripts\CItemScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CUIMgrScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Scripts\CSpikeScript.cpp">
       <Filter>Source\Scripts</Filter>
     </ClCompile>
@@ -933,6 +960,18 @@
       <Filter>Source\Scripts</Filter>
     </ClCompile>
     <ClCompile Include="Source\Scripts\CCylinderScript.cpp" />
+    <ClCompile Include="Source\Scripts\CDeadPieceScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CCoinScript.cpp">
+      <Filter>Source\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Scripts\CCoinMgrScript.cpp" />
+    <ClCompile Include="Source\Scripts\CEffectScript.cpp" />
+    <ClCompile Include="Source\Scripts\CBasicPhysicBoxScript.cpp" />
+    <ClCompile Include="ASound.cpp">
+      <Filter>GameEngine\04. Asset\11. Sound</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="SimpleMath.inl">

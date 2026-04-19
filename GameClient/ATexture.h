@@ -13,24 +13,33 @@ private:
     ComPtr<ID3D11RenderTargetView>      m_RTV;
     ComPtr<ID3D11DepthStencilView>      m_DSV;
     ComPtr<ID3D11ShaderResourceView>    m_SRV;
+    ComPtr<ID3D11UnorderedAccessView>   m_UAV;
 
     int                                 m_RecentNum;
+    int                                 m_RecentSRV_CS;
+    int                                 m_RecentUAV_CS;
 
 
 public:
     void Binding(UINT _RegisterNum);
     void Clear();
     bool BuildRGBA8Image(ScratchImage& _OutImage) const;
+    void Binding_CS_SRV(UINT _RegisterNum);
+    void Binding_CS_UAV(UINT _RegisterNum);
+    void Clear_CS_SRV(int _RegisterNum = -1);
+    void Clear_CS_UAV();
 
     float GetWidth() { return m_Desc.Width; }
     float GetHeight() { return m_Desc.Height; }
 
+    ComPtr<ID3D11Texture2D> GetTex2D() { return m_Tex2D; }
     ComPtr<ID3D11RenderTargetView> GetRTV() { return m_RTV; }
     ComPtr<ID3D11DepthStencilView> GetDSV() { return m_DSV; }
     ComPtr<ID3D11ShaderResourceView> GetSRV() { return m_SRV; }
 
 
 public:
+    int Create(UINT _Width, UINT _Height, DXGI_FORMAT _format, UINT _Flag, D3D11_USAGE _usage);
     virtual int Load(const wstring& _FilePath);    
 
 public:

@@ -6,7 +6,40 @@
 #include "CTransform.h"
 #include "CCamera.h"
 #include "LevelMgr.h"
+#include "ALevel.h"
+#include "Layer.h"
+#include "Source/Scripts/CUIMgrScript.h"
 #include <cmath>
+
+namespace
+{
+    CUIMgrScript* FindStageUIManager()
+    {
+        Ptr<ALevel> pLevel = LevelMgr::GetInst()->GetCurLevel();
+        if (nullptr == pLevel)
+            return nullptr;
+
+        for (UINT layerIdx = 0; layerIdx < MAX_LAYER; ++layerIdx)
+        {
+            Layer* pLayer = pLevel->GetLayer(layerIdx);
+            if (nullptr == pLayer)
+                continue;
+
+            const vector<Ptr<GameObject>>& vecObjects = pLayer->GetAllObjects();
+            for (size_t i = 0; i < vecObjects.size(); ++i)
+            {
+                if (vecObjects[i] == nullptr || vecObjects[i]->IsDead())
+                    continue;
+
+                Ptr<CUIMgrScript> pUI = vecObjects[i]->GetScript<CUIMgrScript>();
+                if (nullptr != pUI)
+                    return pUI.Get();
+            }
+        }
+
+        return nullptr;
+    }
+}
 
 CCamMoveScript::CCamMoveScript()
 	: CScript(SCRIPT_TYPE::CAMMOVESCRIPT)
@@ -72,26 +105,78 @@ void CCamMoveScript::MovePerspective()
 
 void CCamMoveScript::MoveOrthographic()
 {
-	Vec3 vPos = Transform()->GetRelativePos();
+	Vec3 vCamPos = Transform()->GetRelativePos();
+    CUIMgrScript* pStageUI = FindStageUIManager();
+    const bool bStageUILocked = (pStageUI != nullptr)
+        && (pStageUI->GetStageState() == CUIMgrScript::STAGESTATE::START
+            || pStageUI->GetStageState() == CUIMgrScript::STAGESTATE::END);
+    const int stageLockState = (pStageUI != nullptr) ? (int)pStageUI->GetStageState() : -1;
 
-	if (IsValid(m_Target))
+	if (m_bLockPosition)
 	{
-		Vec3 vTargetPos = m_Target->Transform()->GetRelativePos();
-
-		vPos.x = vTargetPos.x;
-		vPos.y = vTargetPos.y;
-
-		Transform()->SetRelativePos(vPos);
+		vCamPos = m_LockedPosition;
+		ClampToCameraBounds(vCamPos);
+		Transform()->SetRelativePos(vCamPos);
 		Transform()->SetRelativeRot(Vec3(0.f, 0.f, 0.f));
 		return;
 	}
 
-	if (KEY_PRESSED(KEY::W)) vPos.y += DT * 500.f;
-	if (KEY_PRESSED(KEY::S)) vPos.y -= DT * 500.f;
-	if (KEY_PRESSED(KEY::A)) vPos.x -= DT * 500.f;
-	if (KEY_PRESSED(KEY::D)) vPos.x += DT * 500.f;
+    if (bStageUILocked)
+    {
+        if (!m_bStageUILockActive || m_StageUILockState != stageLockState)
+        {
+            m_bStageUILockActive = true;
+            m_StageUILockState = stageLockState;
+            m_StageUILockedPosition = Transform()->GetRelativePos();
+        }
 
-	Transform()->SetRelativePos(vPos);
+        vCamPos = m_StageUILockedPosition;
+        ClampToCameraBounds(vCamPos);
+        Transform()->SetRelativePos(vCamPos);
+        Transform()->SetRelativeRot(Vec3(0.f, 0.f, 0.f));
+        return;
+    }
+
+    m_bStageUILockActive = false;
+    m_StageUILockState = -1;
+
+	if (IsValid(m_Target))
+	{
+		Vec3 vTargetPos = m_Target->Transform()->GetRelativePos();
+        vTargetPos.y += m_fFollowOffsetY;
+		Vec3 vCamPos = Transform()->GetRelativePos();
+		float LerpTime = DT * 5.f;
+		vCamPos = DirectX::SimpleMath::Vector3::Lerp(vCamPos, vTargetPos, LerpTime);
+
+		// 3. [핵심] 카메라 벽(Camera Wall) 제한 적용
+		// m_fMinX, m_fMaxX 등은 레벨 디자인에 맞춰 미리 설정해둡니다.
+		ClampToCameraBounds(vCamPos);
+
+		Transform()->SetRelativePos(vCamPos);
+		Transform()->SetRelativeRot(Vec3(0.f, 0.f, 0.f));
+		return;
+	}
+	if (KEY_PRESSED(KEY::W)) vCamPos.y += DT * 1500.f;
+	if (KEY_PRESSED(KEY::S)) vCamPos.y -= DT * 1500.f;
+	if (KEY_PRESSED(KEY::A)) vCamPos.x -= DT * 1500.f;
+	if (KEY_PRESSED(KEY::D)) vCamPos.x += DT * 1500.f;
+
+	Transform()->SetRelativePos(vCamPos);
+}
+
+void CCamMoveScript::ClampToCameraBounds(Vec3& _InOutCamPos) const
+{
+	if (_InOutCamPos.x < m_fMinLimitX) _InOutCamPos.x = m_fMinLimitX;
+	if (_InOutCamPos.x > m_fMaxLimitX) _InOutCamPos.x = m_fMaxLimitX;
+
+	if (_InOutCamPos.y < m_fMinLimitY) _InOutCamPos.y = m_fMinLimitY;
+	if (_InOutCamPos.y > m_fMaxLimitY) _InOutCamPos.y = m_fMaxLimitY;
+
+	if (_InOutCamPos.x > m_fMaxLimitX && _InOutCamPos.y > m_fMaxLimitY)
+	{
+		_InOutCamPos.x = m_fMaxLimitX;
+		_InOutCamPos.y = m_fMaxLimitY;
+	}
 }
 
 

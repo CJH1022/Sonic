@@ -188,4 +188,4 @@ enum class LEVEL_STATE
 
 // ✅ "불가능한 조합"을 막기 위한 레이어 상태
 enum class PoseState { None, LookUp, LookDown };
-enum class ActionState { None, SkillCharge, SkillDash, Attack, Roll, Break, Spring, Falling, Pushing, KnockBack};
+enum class ActionState { None, Dead, Die, SkillCharge, SkillDash, Attack, Roll, Break, Spring, Falling, Pushing, KnockBack, Cylinder};

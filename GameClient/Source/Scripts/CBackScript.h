@@ -2,6 +2,7 @@
 #include "CScript.h"
 
 class CCollider2D;
+class GameObject;
 
 class CBackScript :
     public CScript
@@ -14,6 +15,7 @@ public:
     virtual void Tick() override;
 
     void BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider);
+    void ExecuteItemBounce(GameObject* _Target);
 
 public:
     Vec2 GetBackPower() const { return m_vBackPower; }

@@ -12,6 +12,12 @@ private:
 
 public:
     void SetTarget(Ptr<GameObject> _Target) { m_Target = _Target; }
+    void SetMoveDir(Vec3 _Dir)
+    {
+        m_Dir = _Dir;
+        if (m_Dir != Vec3(0.f, 0.f, 0.f))
+            m_Dir.Normalize();
+    }
 
 public:
     virtual void Begin();
