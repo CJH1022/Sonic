@@ -171,6 +171,10 @@ void LevelMgr::ChangeLevelState(LEVEL_STATE _NextState)
 		m_CurLevel->SetChanged();
 		m_LevelState = _NextState;
 		m_CurLevel->Begin();
+		// Prime transforms and collision once before the first gameplay tick so
+		// opening-driven level starts don't spend a frame falling without ground contact.
+		m_CurLevel->FinalTick();
+		CollisionMgr::GetInst()->Progress(m_CurLevel);
 		return;
 	}
 
