@@ -4,6 +4,7 @@
 #include "APrefab.h"
 #include "ASprite.h"
 #include "AssetMgr.h"
+#include "Source/Scripts/CBlockScript.h"
 #include "CCollider2D.h"
 #include "CSpriteRender.h"
 #include "CTransform.h"
@@ -126,22 +127,6 @@ namespace
         return pSprite;
     }
 
-    bool CanBreakItemBox(CPlayerScript* _PlayerScript)
-    {
-        if (nullptr == _PlayerScript)
-            return false;
-
-        if (_PlayerScript->GetIsJump())
-            return true;
-
-        if (_PlayerScript->IsBreakOrRollAction())
-            return true;
-
-        if (_PlayerScript->IsBackReaction())
-            return true;
-
-        return _PlayerScript->GetAction() == ActionState::SkillDash;
-    }
 }
 
 CItemScript::CItemScript()
@@ -214,6 +199,9 @@ bool CItemScript::ApplyEditorBoxSetup()
     if (nullptr == pOwner->Collider2D())
         pOwner->AddComponent(new CCollider2D);
 
+    if (nullptr == pOwner->GetScript<CBlockScript>())
+        pOwner->AddComponent(new CBlockScript);
+
     if (nullptr == pOwner->GetScript<CBackScript>())
         pOwner->AddComponent(new CBackScript);
 
@@ -271,6 +259,17 @@ bool CItemScript::ApplyEditorBoxSetup()
     return true;
 }
 
+bool CItemScript::CanPlayerBreakItemBox(const CPlayerScript* _PlayerScript) const
+{
+    if (_PlayerScript == nullptr)
+        return false;
+
+    if (_PlayerScript->GetAction() == ActionState::SkillDash)
+        return true;
+
+    return _PlayerScript->GetIsJump();
+}
+
 void CItemScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollider)
 {
     if (_OwnCollider == nullptr || _OtherCollider == nullptr || GetOwner() == nullptr || GetOwner()->IsDead())
@@ -281,7 +280,7 @@ void CItemScript::BeginOverlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCol
         return;
 
     Ptr<CPlayerScript> pPlayerScript = pPlayerObj->GetScript<CPlayerScript>();
-    if (nullptr == pPlayerScript || !CanBreakItemBox(pPlayerScript.Get()))
+    if (nullptr == pPlayerScript || !CanPlayerBreakItemBox(pPlayerScript.Get()))
         return;
 
     Ptr<CBackScript> pBackScript = GetOwner()->GetScript<CBackScript>();

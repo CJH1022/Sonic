@@ -6,6 +6,7 @@
 #include "CTransform.h"
 #include "LevelMgr.h"
 #include "CPlayerScript.h"
+#include "CItemScript.h"
 
 namespace
 {
@@ -67,6 +68,10 @@ void CBlockScript::Overlap(CCollider2D* _OwnCollider, CCollider2D* _OtherCollide
 
 	Ptr<CPlayerScript> pPlayer = _OtherCollider->GetOwner()->GetScript<CPlayerScript>();
 	if (pPlayer == nullptr)
+        return;
+
+    Ptr<CItemScript> pItemBox = _OwnCollider->GetOwner()->GetScript<CItemScript>();
+    if (pItemBox != nullptr && pItemBox->CanPlayerBreakItemBox(pPlayer.Get()))
         return;
 
 	Vec3 myTransformPos = _OwnCollider->GetOwner()->Transform()->GetWorldPos();

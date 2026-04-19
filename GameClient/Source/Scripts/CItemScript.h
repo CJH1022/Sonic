@@ -33,6 +33,7 @@ public:
 
     ITEMBOX GetBoxType() const { return m_Curstate; }
     void SetBoxType(ITEMBOX _Type);
+    bool CanPlayerBreakItemBox(const CPlayerScript* _PlayerScript) const;
 
     bool ApplyEditorBoxSetup();
     void ApplyItemEffect(CPlayerScript* _PlayerScript);

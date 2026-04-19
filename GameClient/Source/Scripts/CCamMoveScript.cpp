@@ -111,6 +111,7 @@ void CCamMoveScript::MoveOrthographic()
         && (pStageUI->GetStageState() == CUIMgrScript::STAGESTATE::START
             || pStageUI->GetStageState() == CUIMgrScript::STAGESTATE::END);
     const int stageLockState = (pStageUI != nullptr) ? (int)pStageUI->GetStageState() : -1;
+    const bool bWasStageUILockActive = m_bStageUILockActive;
 
 	if (m_bLockPosition)
 	{
@@ -145,8 +146,15 @@ void CCamMoveScript::MoveOrthographic()
 		Vec3 vTargetPos = m_Target->Transform()->GetRelativePos();
         vTargetPos.y += m_fFollowOffsetY;
 		Vec3 vCamPos = Transform()->GetRelativePos();
-		float LerpTime = DT * 5.f;
-		vCamPos = DirectX::SimpleMath::Vector3::Lerp(vCamPos, vTargetPos, LerpTime);
+        if (bWasStageUILockActive)
+        {
+            vCamPos = vTargetPos;
+        }
+        else
+        {
+		    float LerpTime = DT * 5.f;
+		    vCamPos = DirectX::SimpleMath::Vector3::Lerp(vCamPos, vTargetPos, LerpTime);
+        }
 
 		// 3. [핵심] 카메라 벽(Camera Wall) 제한 적용
 		// m_fMinX, m_fMaxX 등은 레벨 디자인에 맞춰 미리 설정해둡니다.
